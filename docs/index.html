@@ -74,7 +74,7 @@ button.ghost.tickok{color:var(--ok)}
    floor so the four codes line up, and a ceiling so the one row carrying "z1.Transferred"
    widens a little rather than setting the width for all of them. */
 .allipick{width:auto;min-width:88px;max-width:150px;padding:7px 9px}
-#tbl tr.drop{opacity:.4}
+#tbl tr.drop,#cpTbl tr.drop{opacity:.4}
 .menu{position:fixed;z-index:50;background:var(--panel);border:1px solid var(--line);
   border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.16);max-height:210px;overflow-y:auto;
   min-width:200px;padding:4px 0}
@@ -93,12 +93,22 @@ td select{padding:4px 6px;font-size:12px;min-width:150px}
   font-size:13px;margin-top:10px}
 details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .hide{display:none}
+.tabs{display:flex;gap:2px;margin:0 0 12px;border-bottom:1px solid var(--line)}
+.tabs .tab{width:auto;background:transparent;color:var(--muted);border-radius:8px 8px 0 0;
+  padding:8px 14px;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs .tab.on{color:var(--accent);border-bottom-color:var(--accent)}
 </style>
 </head>
 <body>
 <div class="wrap">
 <h1>Kartz Extractor</h1>
 
+<nav class="tabs" role="tablist">
+  <button class="tab on" data-tab="kartz" role="tab">Kartz Extractor</button>
+  <button class="tab" data-tab="cp" role="tab">Base CP</button>
+</nav>
+
+<div id="tab-kartz">
 <section>
   <h2>1 &middot; Setup <span id="setupState" class="pill p-new">not configured</span></h2>
   <!-- The roster tab is fixed in the code rather than typed in on every device: everyone pulls
@@ -152,6 +162,41 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
     <button class="ghost" id="learn">Remember my fixes</button>
   </div>
 </section>
+</div>
+
+<!-- Base CP: the alliance member list, read into In-game Name and Base CP. Logic in cp.js. -->
+<div id="tab-cp" class="hide">
+<section>
+  <h2>1 &middot; Setup <span id="cpSetupState" class="pill p-new">not configured</span></h2>
+  <div class="row">
+    <button class="ghost" id="cpPull">Pull / Update Alliance Roster</button>
+  </div>
+</section>
+
+<section>
+  <h2>2 &middot; Member list recording</h2>
+  <div class="drop" id="cpDrop">
+    <strong>Choose or drop the screen recording</strong><br>
+    <span id="cpFileName">the alliance member list, scrolled from top to bottom</span>
+  </div>
+  <input id="cpFile" type="file" accept="video/*" class="hide">
+  <button id="cpGo" style="margin-top:12px" disabled>Extract</button>
+  <div class="bar"><i id="cpProg"></i></div>
+  <div class="log" id="cpLog"></div>
+  <div class="strip" id="cpStrip"></div>
+</section>
+
+<section id="cpOut" class="hide">
+  <h2>3 &middot; Results</h2>
+  <div id="cpVerdict"></div>
+  <div class="tablewrap"><table id="cpTbl"></table></div>
+  <div class="row" style="margin-top:12px">
+    <button id="cpCopy">Copy for sheet</button>
+    <button class="ghost" id="cpCsv">Download CSV</button>
+    <button class="ghost" id="cpLearn">Remember my fixes</button>
+  </div>
+</section>
+</div>
 </div>
 
 <script>
@@ -214,14 +259,22 @@ function loadSetup() {
 }
 function refreshState() {
   const names = currentRoster().length;
-  $('setupState').className = 'pill ' + (names ? 'p-ok' : 'p-new');
-  $('setupState').textContent = names ? `${names} roster names` : 'not configured';
+  // one badge per tab, both saying the same thing about the one roster
+  for (const el of [$('setupState'), $('cpSetupState')].filter(Boolean)) {
+    el.className = 'pill ' + (names ? 'p-ok' : 'p-new');
+    el.textContent = names ? `${names} roster names` : 'not configured';
+  }
   $('go').disabled = !(names && videoFile);
+  // cp.js loads after this script, so its file may not exist yet on the first call
+  if ($('cpGo')) $('cpGo').disabled = !(names && typeof cpFile !== 'undefined' && cpFile);
 }
 
-$('pull').onclick = async () => {
-  $('pull').disabled = true;
-  const was = $('pull').textContent; $('pull').textContent = 'Pulling…';
+// Both tabs have a Pull button, for the one roster; each reports in its own tab's log.
+$('pull').onclick = () => pullNow($('pull'), 'log');
+async function pullNow(btn, logTo) {
+  const logWas = logEl; logEl = logTo;
+  btn.disabled = true;
+  const was = btn.textContent; btn.textContent = 'Pulling…';
   let ok = false;
   try {
     rosterCache = await pullRoster(ROSTER_SHEET);
@@ -229,13 +282,14 @@ $('pull').onclick = async () => {
     log(`roster: ${rosterCache.all.length} names`);
     ok = true;
   } catch (e) { log('✗ ' + e.message); }
-  $('pull').textContent = was; $('pull').disabled = false;
+  btn.textContent = was; btn.disabled = false;
+  logEl = logWas;
   if (ok) {
     store.set('datestr', $('datestr').value);   // the only other thing setup ever saved
-    flash($('pull'), `${rosterCache.all.length} rows ✓`);
+    flash(btn, `${rosterCache.all.length} rows ✓`);
   }
   refreshState();
-};
+}
 
 /* ---------------- roster ---------------- */
 // Google serves any link-readable sheet as CSV from /export, with permissive CORS, so the
@@ -650,7 +704,10 @@ function resolve(name, plain, ix, aliases) {
 
 /* ---------------- frame extraction ---------------- */
 let videoFile = null;
-const log = m => { $('log').textContent = m; };
+// Where progress is reported. The Base CP tab points these at its own log and bar for the
+// length of its run, so the shared sampler and model calls report on whichever tab started them.
+let logEl = 'log', progEl = 'prog';
+const log = m => { $(logEl).textContent = m; };
 if ($('build')) $('build').textContent =
   ` · build ${BUILD}`;
 // Say it on the button. Each of these actions reports what it did in the log at the top of
@@ -669,7 +726,7 @@ function flash(btn, text, ms = 1600) {
     delete btn.dataset.flashing;
   }, ms);
 }
-const setProg = p => { $('prog').style.width = (p * 100) + '%'; };
+const setProg = p => { $(progEl).style.width = (p * 100) + '%'; };
 
 $('drop').onclick = () => $('file').click();
 $('file').onchange = e => pickFile(e.target.files[0]);
@@ -1227,14 +1284,15 @@ async function withFallback(call, chain, note, paced) {
 
 // Same request the direct Gemini path sends, aimed at the team Worker instead. No key
 // travels with it; the Worker holds that and adds it upstream.
-async function callProxy(batch, model, base) {
+// `spec` lets another tab ask its own question through the same path: { prompt, schema, parse }.
+async function callProxy(batch, model, base, spec = null) {
   const r = await fetch(base + '/' + encodeURIComponent(model), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [
         ...batch.map(d => ({ inline_data: { mime_type: 'image/jpeg', data: d } })),
-        { text: buildPrompt(false) }] }],
+        { text: spec ? spec.prompt : buildPrompt(false) }] }],
       generationConfig: {
         temperature: 0, maxOutputTokens: 32768,
         // The same recording gives the same rows. Temperature 0 was never enough on its own —
@@ -1253,7 +1311,7 @@ async function callProxy(batch, model, base) {
         // Everything is a string: models will happily emit "1,234" or "#4" for a number and
         // then the whole response is rejected, so take text and convert here.
         responseMimeType: 'application/json',
-        responseSchema: {
+        responseSchema: spec ? spec.schema : {
           type: 'ARRAY',
           items: {
             type: 'OBJECT',
@@ -1278,7 +1336,8 @@ async function callProxy(batch, model, base) {
     callProxy.spent = (callProxy.spent || 0) + callProxy.lastUsage;
     callProxy.calls = (callProxy.calls || 0) + 1;
   }
-  return parseJSON(j.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '');
+  const text = j.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+  return spec ? spec.parse(text) : parseJSON(text);
 }
 
 // Parse row objects individually rather than requiring one well-formed array. A long
@@ -1411,6 +1470,78 @@ const mode = arr => {
   return best;
 };
 
+// Which roster player a row is, or that it is none of them. Shared by both tabs: the Ranking
+// rows and the Base CP member cards are identified in exactly the same way, and one copy of
+// the rules means a fix to them reaches both. A row brings its readings — name, plain, obs —
+// and the model's roster claims — claims, pick_.
+function makeMatcher(index, skipIndex, aliases) {
+  // A roster_name the model returned is only worth anything if it is genuinely in the
+  // roster; models will occasionally produce a plausible-looking name that is not on the
+  // list, and that is exactly the case a human needs to see.
+  // Folded name -> roster entries. A Set, because a handful of keys are claimed by two
+  // players — "Killua" and "Killua swords" both reduce to killua — and those cases must
+  // not be decided by string folding.
+  const byFold = new Map();
+  for (const e of index) {
+    if (!byFold.has(e.k)) byFold.set(e.k, new Set());
+    byFold.get(e.k).add(e.r);
+  }
+  const soleMatch = k => { const set = k && byFold.get(k); return set && set.size === 1 ? [...set][0] : null; };
+  return r => {
+    // Order matters, most authoritative first.
+    // 1. Something you corrected by hand and saved. Nothing should overrule that.
+    const al = aliases[aliasKey(r.plain || r.name)] || aliases[aliasKey(r.name)];
+    if (al) {
+      const nm = typeof al === 'string' ? al : al.name;
+      const hit = soleMatch(fold(nm)) || byFold.get(fold(nm))?.values().next().value;
+      if (hit) return { ...r, match: hit, score: 1, pick: hit.search };
+    }
+    // 2. The name as actually drawn, when exactly one roster entry reduces to it. This is
+    //    stronger evidence than the model's own choice: a player shown as "JoJo🐼" folds to
+    //    jojo, which only Jojo answers to, however the model happened to label the row.
+    //    Where a key is shared, we skip this and let the model decide, since it saw the
+    //    glyphs and a fold cannot tell those two apart.
+    // Only the drawn name here — r.plain carries the model's own answer, and folding that
+    // would just be step 3 wearing a disguise.
+    //    Every distinct reading of the row is tried, not just the commonest: a name read
+    //    three ways is three chances to land on the player, and taking only the mode threw
+    //    the other attempts away.
+    const readings = (r.obs && r.obs.length) ? r.obs : [r.name];
+    for (const o of readings) {
+      const bySeen = soleMatch(fold(o));
+      if (bySeen) return { ...r, match: bySeen, score: 1,
+                           pick: bySeen.ingame || bySeen.search, via: 'drawn:' + o };
+    }
+    // 3. The roster entry the model named — provided it really exists AND some reading of
+    //    the row actually supports it. Without that second test this step accepts whatever
+    //    the model asserts, which is how a row drawn "𝓡𝓝/𝓑" was confidently filed as MB.
+    for (const c of (r.claims && r.claims.length ? r.claims : [r.pick_]).filter(Boolean)) {
+      const entry = soleMatch(fold(c)) || byFold.get(fold(c))?.values().next().value;
+      if (!entry) continue;
+      if (!readings.some(o => claimPlausible(o, entry))) continue;
+      return { ...r, match: entry, score: 1,
+               pick: entry.ingame || entry.search, claimed: true, via: 'claim:' + c };
+    }
+    // There is no step here for "the model named a player but nothing in the reading
+    // supports it". One was tried, guarded by requiring the claim to be unanimous within the
+    // run, and it matched rank 33 to angkasa — the row is batman. That row reads as Thai one
+    // run, IPA the next and 🦇man the third, and the claim flips between batman and angkasa
+    // with it, so agreement inside a single run says nothing about being right. A name the
+    // model cannot transcribe and cannot consistently recognise belongs in the confirm list.
+    // 4. Fuzzy over every reading, and failing that the row is raised for confirmation.
+    let m = { r: null, score: 0, near: null }, from = '';
+    for (const o of readings) {
+      const t = resolve(o, o, index, aliases);
+      if (t.score > m.score) { m = t; from = o; }
+    }
+    if (m.r) return { ...r, match: m.r, score: m.score, near1: m.near1,
+                      pick: m.r.ingame || m.r.search, via: 'near:' + from };
+    const sk = skipIndex.length ? resolve(r.name, r.plain, skipIndex, {}) : { r: null };
+    if (sk.r) return { ...r, match: null, skipped: sk.r, score: sk.score, pick: '' };
+    return { ...r, match: null, score: m.score, near: m.near, pick: '', via: 'none' };
+  };
+}
+
 /* ---------------- run ---------------- */
 let rows = [], index = [], skipIndex = [], aliases = {};
 $('go').onclick = async () => {
@@ -1431,74 +1562,10 @@ $('go').onclick = async () => {
     log(`${frames.length} frames (${(frames.join('').length * 0.75 / 1024 | 0)} KB) — sending…`);
     let sightings = await callModel(frames);
     const frameCount = frames.length;
-    // A roster_name the model returned is only worth anything if it is genuinely in the
-    // roster; models will occasionally produce a plausible-looking name that is not on the
-    // list, and that is exactly the case a human needs to see.
-    // Folded name -> roster entries. A Set, because a handful of keys are claimed by two
-    // players — "Killua" and "Killua swords" both reduce to killua — and those cases must
-    // not be decided by string folding.
-    const byFold = new Map();
-    for (const e of index) {
-      if (!byFold.has(e.k)) byFold.set(e.k, new Set());
-      byFold.get(e.k).add(e.r);
-    }
-    const soleMatch = k => { const set = k && byFold.get(k); return set && set.size === 1 ? [...set][0] : null; };
 
     sightings = dropForeignRows(sightings);
     const base = consolidate(sightings, frameCount);
-    rows = base.map(r => {
-      // Order matters, most authoritative first.
-      // 1. Something you corrected by hand and saved. Nothing should overrule that.
-      const al = aliases[aliasKey(r.plain || r.name)] || aliases[aliasKey(r.name)];
-      if (al) {
-        const nm = typeof al === 'string' ? al : al.name;
-        const hit = soleMatch(fold(nm)) || byFold.get(fold(nm))?.values().next().value;
-        if (hit) return { ...r, match: hit, score: 1, pick: hit.search };
-      }
-      // 2. The name as actually drawn, when exactly one roster entry reduces to it. This is
-      //    stronger evidence than the model's own choice: a player shown as "JoJo🐼" folds to
-      //    jojo, which only Jojo answers to, however the model happened to label the row.
-      //    Where a key is shared, we skip this and let the model decide, since it saw the
-      //    glyphs and a fold cannot tell those two apart.
-      // Only the drawn name here — r.plain carries the model's own answer, and folding that
-      // would just be step 3 wearing a disguise.
-      //    Every distinct reading of the row is tried, not just the commonest: a name read
-      //    three ways is three chances to land on the player, and taking only the mode threw
-      //    the other attempts away.
-      const readings = (r.obs && r.obs.length) ? r.obs : [r.name];
-      for (const o of readings) {
-        const bySeen = soleMatch(fold(o));
-        if (bySeen) return { ...r, match: bySeen, score: 1,
-                             pick: bySeen.ingame || bySeen.search, via: 'drawn:' + o };
-      }
-      // 3. The roster entry the model named — provided it really exists AND some reading of
-      //    the row actually supports it. Without that second test this step accepts whatever
-      //    the model asserts, which is how a row drawn "𝓡𝓝/𝓑" was confidently filed as MB.
-      for (const c of (r.claims && r.claims.length ? r.claims : [r.pick_]).filter(Boolean)) {
-        const entry = soleMatch(fold(c)) || byFold.get(fold(c))?.values().next().value;
-        if (!entry) continue;
-        if (!readings.some(o => claimPlausible(o, entry))) continue;
-        return { ...r, match: entry, score: 1,
-                 pick: entry.ingame || entry.search, claimed: true, via: 'claim:' + c };
-      }
-      // There is no step here for "the model named a player but nothing in the reading
-      // supports it". One was tried, guarded by requiring the claim to be unanimous within the
-      // run, and it matched rank 33 to angkasa — the row is batman. That row reads as Thai one
-      // run, IPA the next and 🦇man the third, and the claim flips between batman and angkasa
-      // with it, so agreement inside a single run says nothing about being right. A name the
-      // model cannot transcribe and cannot consistently recognise belongs in the confirm list.
-      // 4. Fuzzy over every reading, and failing that the row is raised for confirmation.
-      let m = { r: null, score: 0, near: null }, from = '';
-      for (const o of readings) {
-        const t = resolve(o, o, index, aliases);
-        if (t.score > m.score) { m = t; from = o; }
-      }
-      if (m.r) return { ...r, match: m.r, score: m.score, near1: m.near1,
-                        pick: m.r.ingame || m.r.search, via: 'near:' + from };
-      const sk = skipIndex.length ? resolve(r.name, r.plain, skipIndex, {}) : { r: null };
-      if (sk.r) return { ...r, match: null, skipped: sk.r, score: sk.score, pick: '' };
-      return { ...r, match: null, score: m.score, near: m.near, pick: '', via: 'none' };
-    });
+    rows = base.map(makeMatcher(index, skipIndex, aliases));
     // Two rows resolving to one player means at least one of them is wrong, and neither the
     // model nor the fuzzy match can tell which. Surface both rather than silently emitting a
     // duplicate the sheet would then double-count.
@@ -1902,5 +1969,6 @@ $('learn').onclick = () => {
 
 loadSetup();
 </script>
+<script src="cp.js"></script>
 </body>
 </html>
