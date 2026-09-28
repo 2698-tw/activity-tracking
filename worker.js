@@ -16,7 +16,6 @@ const ALLOWED_ORIGINS = [
   'http://localhost:8731',
   'https://kartz-tracking.github.io',
   'https://data-extractor.jk06nm04.workers.dev',
-  'https://data-extractor.jk06nm04.workers.dev/test',
 ];
 
 // Ollama Cloud API. Authentication is supplied through the Authorization header below.
@@ -104,13 +103,14 @@ async function runOllama(env, model, body) {
 }
 
 /* ---------------- Google Sheets append ---------------- */
-// Rows go to Input-RawData, columns B to J, of the tracking sheet. The Worker signs in as a
+// Rows go to Input-RawData, columns B to J, of the Kartz Tracker. The Worker signs in as a
 // service account, so the sheet must be shared with that account's email as an Editor.
 //
 // Required Cloudflare secret — the service account's JSON key, pasted whole:
 //   wrangler secret put GOOGLE_SA_KEY
-const SHEET_ID = '13NeOXdGbsb7znqYOqQa_MntCZSlNzwv-8XOvtG6JiIM';
-const SHEET_RANGE = "'Input-RawData'!B:J";
+const SHEET_ID = '1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE';
+// The tab is found by its gid, the number in the link, so renaming it breaks nothing.
+const SHEET_GID = 1243524383;
 const SHEET_COLS = 9;
 const MAX_ROWS = 1000;
 
@@ -173,15 +173,34 @@ async function appendRows(env, values) {
                         { status: 400 });
 
   const token = await googleToken(env);
-  // OVERWRITE, not INSERT_ROWS: the tab has formulas filled down in A and Q:T, and inserting
-  // rows would open gaps in them. Overwriting fills the empty B:J cells below the last entry.
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/`
-    + `${encodeURIComponent(SHEET_RANGE)}:append`
-    + '?valueInputOption=USER_ENTERED&insertDataOption=OVERWRITE';
-  const r = await fetch(url, {
-    method: 'POST',
+  const tab = `'${(await tabTitle(token)).replace(/'/g, "''")}'`;
+
+  // Not values:append. Append looks for the "table" the range touches and writes from that
+  // table's first column, and column A of this tab is filled with lookup formulas — so rows
+  // aimed at B:J landed in A:I. Instead: find the last row with anything in B:J, and write the
+  // new rows into B:J directly below it. Columns A and Q:T are never touched.
+  const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(tab + '!B:J')}`
+    + '?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE');
+  // Trailing empty rows are not returned, but a formula showing "" still counts as a value,
+  // so walk back past any row whose cells are all blank.
+  const seen = got.values || [];
+  let filled = seen.length;
+  while (filled > 0 && !(seen[filled - 1] || []).some(v => v !== '' && v != null)) filled--;
+  const first = filled + 1;
+  const last = first + values.length - 1;
+  const range = `${tab}!B${first}:J${last}`;
+
+  const out = await sheetsCall(token, 'PUT',
+    `/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
+    { range, majorDimension: 'ROWS', values: values.map(row => row.map(asCell)) });
+  return { range: out.updatedRange || range, rows: out.updatedRows || values.length };
+}
+
+async function sheetsCall(token, method, path, body) {
+  const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}${path}`, {
+    method,
     headers: { 'content-type': 'application/json', 'authorization': `Bearer ${token}` },
-    body: JSON.stringify({ majorDimension: 'ROWS', values: values.map(row => row.map(asCell)) }),
+    body: body ? JSON.stringify(body) : undefined,
   });
   const out = await r.json().catch(() => ({}));
   if (!r.ok) {
@@ -190,7 +209,16 @@ async function appendRows(env, values) {
       ? `The sheet refused the service account — share it with the account's email as Editor. (${msg})`
       : `Sheets API: ${msg}`);
   }
-  return { range: out?.updates?.updatedRange || '', rows: out?.updates?.updatedRows || 0 };
+  return out;
+}
+
+let cachedTab = null;
+async function tabTitle(token) {
+  if (cachedTab) return cachedTab;
+  const out = await sheetsCall(token, 'GET', '?fields=sheets.properties(sheetId,title)');
+  const hit = (out.sheets || []).find(t => t.properties?.sheetId === SHEET_GID);
+  if (!hit) throw new Error(`No tab with gid ${SHEET_GID} in the Kartz Tracker.`);
+  return (cachedTab = hit.properties.title);
 }
 
 export default {
