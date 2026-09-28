@@ -156,16 +156,15 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 
 <script>
 const $ = id => document.getElementById(id);
-// One configuration. The model call goes to /api on this same deployment, where the Worker
-// holds the Google key — nothing about the model or the credentials is exposed here, and
-// there is nothing for anyone to configure or get wrong.
+// One configuration. The model call goes to /api on this deployment, where the Worker
+// holds the Ollama Cloud key — nothing about the model or credentials is exposed here.
 // Shown on the page. Several people run this from their own phones and a browser can sit on
 // an open tab for days, so "it is still happening" and "it is fixed" are easy to say about
 // different builds. Bump it with any change worth telling apart from the one before.
-const BUILD = '2026-08-28c-gh';
-const MODEL = 'gemini-3.5-flash-lite';
+const BUILD = '2026-09-28-ollama';
+const MODEL = 'gemma4:31b';
 const FALLBACKS = [];        // one model, deliberately: a run either works or says why
-// This copy is served from GitHub Pages, not from the Worker, so its requests are
+// This copy may be served from GitHub Pages, so its requests are
 // cross-origin and need the Worker's own address. On the workers.dev deployment of the same
 // file the page and the API share an origin and the relative path is right.
 const API_BASE = location.hostname.endsWith('.workers.dev')
