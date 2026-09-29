@@ -117,22 +117,24 @@ function cpValue(s) {
 
 // This tab runs on Gemini, through the Worker's /api/gemini route, where the key lives; the
 // Ranking tab stays on Ollama. The key is on the paid tier (4,000 requests and 4M tokens a
-// minute), so there is no pacing any more: a run goes out at once and is done in seconds.
+// minute), so there is no pacing: every batch goes out at once, and a run is done in about the
+// time of its slowest answer — measured at 13 seconds end to end, 7 of them the model.
 //
-// What is watched instead is the run's total, which should stay under 250,000 tokens. On
-// Gemini 2.5 an image costs a flat ~258 tokens per 768-pixel tile rather than the ~1,100 the
-// 3.x models charged, so the 192 images of a typical run are a small part of it; the roster,
-// which goes with every request, is the larger part. The total is logged after each run.
+// gemini-3.5-flash-lite. 2.5-flash-lite was tried and is refused outright: "no longer available
+// to new users" (404).
 //
-// 12 images a request. Shorter batches are read more carefully — at 24 the CP decimal points
-// went missing — and the cheaper images leave room for it: 16 requests of ~12 images plus the
-// roster come to roughly 140,000–190,000 tokens.
+// What is watched instead of the rate is the run's total, which should stay under 250,000
+// tokens; it is logged after each run. Measured on a 165-image member list:
+//   full image detail    259k — images 181k (~1,100 each), roster+prompt 63k, output 15k
+//   medium image detail  170k — images ~90k, the rest the same
+// Medium was no worse, and on that run better: every CP decimal still read correctly, 3 rows
+// to confirm instead of 6, and one card full detail misread as 100 came back as its real 87.
 //
-// Thinking is off. 2.5 does not take the thinkingLevel the Ranking tab sends, and reading a
-// name and a number off a card gains nothing from it while every thought is an output token.
-const CP_MODEL = 'gemini-2.5-flash-lite';
-const CP_BATCH = 12, CP_PARALLEL = 8;
-const CP_CONFIG = { thinkingConfig: { thinkingBudget: 0 } };
+// 16 images a request: at 24 the decimal points went missing, and below 16 the roster, which
+// goes with every request, starts to cost more than the images saved by medium detail.
+const CP_MODEL = 'gemini-3.5-flash-lite';
+const CP_BATCH = 16;
+const CP_CONFIG = { mediaResolution: 'MEDIA_RESOLUTION_MEDIUM' };
 const CP_RUN_BUDGET = 250000;
 
 async function cpCallModel(frames) {
@@ -140,12 +142,14 @@ async function cpCallModel(frames) {
   for (let i = 0; i < frames.length; i += CP_BATCH) batches.push(frames.slice(i, i + CP_BATCH));
   const spec = { prompt: cpPrompt(), schema: CP_SCHEMA, parse: cpParse, config: CP_CONFIG };
   let done = 0;
-  cpCallModel.tokens = 0;
+  cpCallModel.tokens = 0; cpCallModel.slowest = 0;
   const one = async (b, bi) => {
     const got = await withFallback(async m => {
       const call = { ...spec };          // its own, so its usage is not another request's
+      const t0 = Date.now();
       const got = await callProxy(b, m, API_BASE + '/gemini', call);
       cpCallModel.tokens += call.usage || 0;
+      cpCallModel.slowest = Math.max(cpCallModel.slowest, Date.now() - t0);
       return got;
     }, [CP_MODEL], () => {}, true);
     done++; setProg(0.5 + 0.5 * done / batches.length);
@@ -153,7 +157,7 @@ async function cpCallModel(frames) {
     // the batch number keeps the list order: batches finish in any order, frames do not
     return got.map((s, i) => ({ ...s, order: bi * 1e4 + i }));
   };
-  return (await inTurn(batches, one, CP_PARALLEL)).flat();
+  return (await inTurn(batches, one, batches.length)).flat();
 }
 
 // Gemini sometimes writes non-ASCII characters as HTML entities — "Martha &#127801;" for
@@ -300,7 +304,8 @@ $('cpGo').onclick = async () => {
     cpRender();
     const t = cpCallModel.tokens;
     log(`done — ${sightings.length} readings → ${cpRows.length} members · `
-        + `${Math.round(t / 1000)}k tokens` + (t > CP_RUN_BUDGET ? ' (over the 250k budget)' : ''));
+        + `${Math.round(t / 1000)}k tokens · slowest answer ${Math.round(cpCallModel.slowest / 1000)}s`
+        + (t > CP_RUN_BUDGET ? ' (over the 250k budget)' : ''));
     setProg(1);
   } catch (e) { log('✗ ' + e.message); }
   logEl = 'log'; progEl = 'prog';
