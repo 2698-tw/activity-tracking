@@ -116,40 +116,33 @@ function cpValue(s) {
 }
 
 // This tab runs on Gemini, through the Worker's /api/gemini route, where the key lives; the
-// Ranking tab stays on Ollama. Gemini's allowance is 15 requests and 250,000 tokens a minute,
-// both rolling, so the gate below meters both and a request waits until the minute has room.
+// Ranking tab stays on Ollama. Gemini's allowance is 15 requests and 250,000 tokens a minute.
 // The key's daily cap, if it has one, is not metered here: withFallback reports it when hit.
 //
 // 16 images a request. At 24 the small print suffered — CP decimal points went missing, 56.3M
-// coming back as 563 — and a shorter batch is read more carefully. Every request still carries
-// the whole roster (~6,500 tokens), so 192 images come to 12 requests and about 290,000 tokens:
-// a little over one minute's allowance, which makes a run take a little over a minute.
+// coming back as 563 — and a shorter batch is read more carefully. Every request also carries
+// the whole roster, so a run is about 12 requests and, as Google counts, ~350,000 tokens: more
+// than one minute's allowance, however it is sent.
+//
+// So the run is paced, not bursted. Requests used to go out as fast as a rolling budget allowed
+// and stop when it filled — and whenever Google counted a little more than the estimate, the
+// last few were refused. Now each request starts a fixed gap after the one before, the gap
+// sized so that a minute of them stays well inside both limits: at ~30,000 tokens a request and
+// 170,000 a minute, about one every 11 seconds, and a run takes about two minutes with nothing
+// ever refused or waiting on the allowance.
 const CP_MODEL = 'gemini-3.5-flash-lite';
-// Budgeted at 200k and 12, not 250k and 15. Google counts a little more than the estimate below,
-// and a run that spills into a second minute was being refused at batch ten or so; the margin
-// makes it wait instead. Two in flight rather than four, so the spill is gradual.
-const CP_BATCH = 16, CP_PARALLEL = 2, CP_RPM = 12, CP_TPM = 200000;
-// What Google actually counts, as a multiple of the estimate, learned from each reply. It only
-// ever rises, so a run that starts under-estimating corrects itself after the first batch.
-let cpScale = 1;
-const cpGate = (() => {
-  const win = [];                      // { t, tokens } for the last minute
-  return async tokens => {
-    for (;;) {
-      const now = Date.now();
-      while (win.length && now - win[0].t > 60000) win.shift();
-      const used = win.reduce((n, e) => n + e.tokens, 0);
-      if (!win.length || (win.length < CP_RPM && used + tokens <= CP_TPM)) {
-        const entry = { t: now, tokens };
-        win.push(entry);
-        // a refused request gives back its tokens but still counts as a request
-        return { settle: a => { if (a > 0) entry.tokens = a; }, refund: () => { entry.tokens = 0; } };
-      }
-      log(`waiting for Gemini's per-minute allowance…`);
-      await new Promise(r => setTimeout(r, 1000));
-    }
-  };
-})();
+const CP_BATCH = 16, CP_PARALLEL = 3;
+const CP_RPM = 10, CP_TPM = 170000;          // two thirds of 15 / 250k: a margin, not a target
+// What Google counts, as a multiple of the page's estimate, learned from each reply. It only
+// rises. It starts at what was measured rather than at 1, so the first gaps are right too.
+let cpScale = 1.25;
+let cpNextStart = 0;
+async function cpPace(tokens) {
+  const gap = Math.max(60000 / CP_RPM, 60000 * tokens / CP_TPM);
+  const at = Math.max(Date.now(), cpNextStart);
+  cpNextStart = at + gap;
+  if (at > Date.now()) await new Promise(r => setTimeout(r, at - Date.now()));
+}
 
 async function cpCallModel(frames) {
   const B = CP_BATCH;
@@ -161,17 +154,11 @@ async function cpCallModel(frames) {
   const one = async (b, bi) => {
     const got = await withFallback(async m => {
       const est = b.length * IMG_TOKENS + promptTokens;
-      const lease = await cpGate(Math.ceil(est * cpScale));
+      await cpPace(Math.ceil(est * cpScale));
       const call = { ...spec };          // its own, so its usage is not another request's
-      try {
-        const got = await callProxy(b, m, API_BASE + '/gemini', call);
-        if (call.usage > 0) {
-          cpScale = Math.max(cpScale, call.usage / est);
-          // charge what was really spent, but never less than was reserved
-          lease.settle(Math.max(call.usage, Math.ceil(est * cpScale)));
-        }
-        return got;
-      } catch (e) { lease.refund(); throw e; }
+      const got = await callProxy(b, m, API_BASE + '/gemini', call);
+      if (call.usage > 0) cpScale = Math.max(cpScale, call.usage / est);
+      return got;
     }, [CP_MODEL], () => {}, true);
     done++; setProg(0.5 + 0.5 * done / batches.length);
     log(`read ${done} of ${batches.length} batches…`);
