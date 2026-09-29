@@ -80,7 +80,9 @@ Rules:
   are genuinely confident this player is not on it. Never invent a spelling.
 - "seen" is the name exactly as drawn, including emoji, symbols and decorations that are part
   of the name (a ⚒ or 💯 beside the letters belongs to the name). Leave out the ♂/♀ symbol.
-- "cp" keeps its unit letter (K, M or B) exactly as shown.
+- "cp" is copied exactly, including its decimal point and unit letter: "56.3M", "103M". Most
+  CP values have one digit after a small decimal point — look for it, and never drop it:
+  "56.3M" written as "563M" is wrong by ten times.
 - The same member appears in several frames. List every sighting; do not deduplicate.
 - Ignore rank headers, the "Level" line, "Online" / "2 hr ago" labels and Manage buttons.
 - If a card is cut off at an edge so that its name or CP cannot be read fully, skip it.
@@ -102,10 +104,13 @@ const CP_SCHEMA = {
 };
 
 // "98.4M" -> 98.4, in millions, which is how the roster's CP column is kept (64, 73.9).
+// A comma followed by one or two digits is a decimal point written the European way — "56,3M"
+// is 56.3, not 563. A CP in millions never needs a thousands separator.
 function cpValue(s) {
   const m = String(s ?? '').replace(/\s/g, '').match(/(\d[\d,]*(?:\.\d+)?)([KMBT]?)/i);
   if (!m) return null;
-  const n = parseFloat(m[1].replace(/,/g, ''));
+  const digits = /^\d+,\d{1,2}$/.test(m[1]) ? m[1].replace(',', '.') : m[1].replace(/,/g, '');
+  const n = parseFloat(digits);
   const scale = { K: 1e-3, M: 1, B: 1e3, T: 1e6 }[m[2].toUpperCase()] ?? 1e-6;
   return +(n * scale).toFixed(3);
 }
@@ -115,12 +120,12 @@ function cpValue(s) {
 // both rolling, so the gate below meters both and a request waits until the minute has room.
 // The key's daily cap, if it has one, is not metered here: withFallback reports it when hit.
 //
-// 24 images a request. Every request carries the whole roster (~6,500 tokens), so fewer, larger
-// batches keep that repetition down: 192 images come to 8 requests and about 265,000 tokens,
-// which is one minute's allowance and a few seconds of the next. Smaller batches read a little
-// more carefully but spend the minute on roster text instead of pictures.
+// 16 images a request. At 24 the small print suffered — CP decimal points went missing, 56.3M
+// coming back as 563 — and a shorter batch is read more carefully. Every request still carries
+// the whole roster (~6,500 tokens), so 192 images come to 12 requests and about 290,000 tokens:
+// a little over one minute's allowance, which makes a run take a little over a minute.
 const CP_MODEL = 'gemini-3.5-flash-lite';
-const CP_BATCH = 24, CP_PARALLEL = 4, CP_RPM = 14, CP_TPM = 240000;  // a little under 15 / 250k
+const CP_BATCH = 16, CP_PARALLEL = 4, CP_RPM = 14, CP_TPM = 240000;  // a little under 15 / 250k
 const cpGate = (() => {
   const win = [];                      // { t, tokens } for the last minute
   return async tokens => {
@@ -206,6 +211,13 @@ function cpParse(text) {
 // is no rank to group by here, so the key is the drawn name, and groups whose names are close
 // (similar once folded, or one the start of the other: W💤 and W💤ᶻᶻ) and whose CP agrees are
 // folded together.
+// The CP of one card across its sightings. A reading that lost its decimal point is exactly
+// ten times another reading of the same card, and the one with the point is the right one —
+// the point can be missed, it is never invented.
+function cpBest(values) {
+  const have = new Set(values.map(v => +v.toFixed(3)));
+  return mode(values.map(v => have.has(+(v / 10).toFixed(3)) ? +(v / 10).toFixed(3) : v));
+}
 function cpGroups(sightings) {
   const byName = new Map();
   for (const s of sightings) {
@@ -213,7 +225,7 @@ function cpGroups(sightings) {
     byName.get(s.seen).push(s);
   }
   const groups = [...byName.values()]
-    .map(g => ({ items: g, cp: mode(g.map(x => x.cp)) }))
+    .map(g => ({ items: g, cp: cpBest(g.map(x => x.cp)) }))
     .sort((a, b) => b.items.length - a.items.length);
   const kept = [];
   for (const g of groups) {
@@ -221,7 +233,9 @@ function cpGroups(sightings) {
     const into = kept.find(h => {
       if (h.cp !== g.cp) return false;
       const b = h.items[0].seen;
-      return (k && sim(k, fold(b)) >= 0.8) || a.startsWith(b) || b.startsWith(a);
+      // the CP already agrees to the decimal, so the names need only be close: ŧanjirŏ and
+      // łanjiroơ are one player read twice
+      return (k && sim(k, fold(b)) >= 0.7) || a.startsWith(b) || b.startsWith(a);
     });
     if (into) into.items.push(...g.items); else kept.push(g);
   }
@@ -234,7 +248,7 @@ function cpGroups(sightings) {
       obs: [...new Set(items.map(x => x.seen))],
       claims: [...new Set(claims)],
       pick_: claims.length ? mode(claims) : '',
-      cp: mode(items.map(x => x.cp)),
+      cp: cpBest(items.map(x => x.cp)),
       seen: items.length,
       order: Math.min(...items.map(x => x.order)),
     };
@@ -264,7 +278,20 @@ function cpIdentify(groups, roster) {
       }
     } else for (const r of group) { r.match = null; r.pick = ''; r.score = 0; }
   }
-  return rows.filter(r => !gone.has(r)).sort((a, b) => a.order - b.order);
+  const out = rows.filter(r => !gone.has(r)).sort((a, b) => a.order - b.order);
+  // A card whose every reading dropped the point has no dotted reading to be corrected by, and
+  // lands at ten times its CP: 563 among players in the 40s to 140s. A whole number more than
+  // 3.5 times the list's median is taken as that, divided by ten, and shown with what was read
+  // so it can be checked. Real CPs that far above an alliance's middle do not occur in practice.
+  const cps = out.map(r => r.cp).filter(v => v > 0).sort((a, b) => a - b);
+  const median = cps[cps.length >> 1] || 0;
+  if (cps.length >= 8)
+    for (const r of out)
+      if (Number.isInteger(r.cp) && r.cp >= 100 && r.cp > median * 3.5) {
+        r.cpRead = r.cp;
+        r.cp = +(r.cp / 10).toFixed(1);
+      }
+  return out;
 }
 
 /* run */
@@ -319,7 +346,8 @@ function cpRender() {
                     + ` style="width:auto;padding:4px 9px;margin-left:6px">✓</button>` : '')
               : `<input class="pickbox" data-i="${i}" placeholder="type to search…"
                         value="${esc(outName(r))}" spellcheck="false">`}</td>
-        <td>${r.cp}</td>
+        <td>${r.cp}${r.cpRead ? ` <span class="note" title="the decimal point was missed">`
+              + `read ${r.cpRead}</span>` : ''}</td>
         <td>${r.match ? `<span class="pill p-ok">${r.near1 ? '1 char' : 'exact'}</span>`
             : r.confirmed || r.pick ? '<span class="pill p-ok">confirmed</span>'
                                     : '<span class="pill p-new">confirm</span>'}</td>
