@@ -8,7 +8,7 @@
 // each card is. Only the question put to the model and the table differ, so the two tabs
 // cannot drift apart in how they read a recording or name a player.
 
-let cpFile = null, cpRows = [];
+let cpFile = null, cpRows = [], cpHeaders = [];
 
 /* tabs */
 function showTab(name) {
@@ -71,38 +71,61 @@ LEFT-hand sheet name. Where only one name is listed, the two forms are identical
 This list is reference material — never report a word from it as a card you saw.
 ${names.join(', ')}
 
-Return every member card you can read across ALL the images as a single JSON array, one object
-per card:
-{"roster_name": "<a name copied exactly from the ROSTER, or null>", "seen": "<the name as drawn>", "cp": "<the text after CP:, e.g. 98.4M>", "img": <int>}
+Return one JSON object with two lists:
+{"cards": [ {"roster_name": "<a name copied exactly from the ROSTER, or null>", "seen": "<the name as drawn>", "cp": "<the text after CP:, e.g. 98.4M>"}, ... ],
+ "headers": [ {"group": "<R1 to R5>", "size": "<the number after the slash>", "first_card": "<the name on the first card directly below the header, as drawn>"}, ... ]}
+
+"cards" holds every member card you can read across ALL the images, in the order you see them.
+"headers" holds the group headers that are actually visible: bars reading
+"R<n>  <online> / <size>" — the group (R1 to R5), how many are online, and after the slash the
+group's size. Leave "headers" empty when none is visible.
 
 Rules:
 - "roster_name" MUST be copied character-for-character from the list above, or be null if you
   are genuinely confident this player is not on it. Never invent a spelling.
 - "seen" is the name exactly as drawn, including emoji, symbols and decorations that are part
   of the name (a ⚒ or 💯 beside the letters belongs to the name). Leave out the ♂/♀ symbol.
-- "img" is which image the card was read from, counting the images in this request from 1.
 - "cp" is copied exactly, including its decimal point and unit letter: "56.3M", "103M". Most
   CP values have one digit after a small decimal point — look for it, and never drop it:
   "56.3M" written as "563M" is wrong by ten times.
 - The same member appears in several frames. List every sighting; do not deduplicate.
-- Ignore rank headers, the "Level" line, "Online" / "2 hr ago" labels and Manage buttons.
+- Ignore the "Level" line, "Online" / "2 hr ago" labels and Manage buttons.
 - If a card is cut off at an edge so that its name or CP cannot be read fully, skip it.
 - Write emoji and symbols as the characters themselves (🌹, ⚡, Ø). Never as HTML entities such
   as &#127801; or escape codes.
 - Output raw JSON only. No markdown fence, no commentary.`;
 }
+// Cards and group headers in separate lists. Mixed into one list, with neither kind's fields
+// required, the model split every card in two — a name in one object, its CP in the next.
 const CP_SCHEMA = {
-  type: 'ARRAY',
-  items: {
-    type: 'OBJECT',
-    properties: {
-      roster_name: { type: 'STRING' },
-      seen:        { type: 'STRING' },
-      cp:          { type: 'STRING' },
-      img:         { type: 'STRING' },
+  type: 'OBJECT',
+  properties: {
+    cards: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          roster_name: { type: 'STRING' },
+          seen:        { type: 'STRING' },
+          cp:          { type: 'STRING' },
+        },
+        required: ['seen', 'cp'],
+      },
     },
-    required: ['seen', 'cp'],
+    headers: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          group:      { type: 'STRING' },
+          size:       { type: 'STRING' },
+          first_card: { type: 'STRING' },
+        },
+        required: ['group', 'size'],
+      },
+    },
   },
+  required: ['cards', 'headers'],
 };
 
 // "98.4M" -> 98.4, in millions, which is how the roster's CP column is kept (64, 73.9).
@@ -159,13 +182,15 @@ async function cpCallModel(frames) {
     }, [CP_MODEL], () => {}, true);
     done++; setProg(0.5 + 0.5 * done / batches.length);
     log(`read ${done} of ${batches.length} batches…`);
-    // the batch number keeps the list order: batches finish in any order, frames do not
-    // and which of the run's frames each card was read from, for the second look
-    // Where the model leaves the number out, which it often does, the card's place in its reply
-    // stands in: cards come back in image order, and the second look sends neighbours too.
-    return got.map((s, i) => ({ ...s, order: bi * 1e4 + i,
-      frame: bi * CP_BATCH + (s.img >= 1 && s.img <= b.length ? s.img - 1
-             : Math.round(got.length > 1 ? i / (got.length - 1) * (b.length - 1) : 0)) }));
+    // The batch number keeps the list order: batches finish in any order, frames do not. A header
+    // is placed just before the card it names as the first below it; failing that, at the head of
+    // its batch, which is where a header is first seen as the list scrolls up past it.
+    const cards = got.filter(s => !s.header).map((s, i) => ({ ...s, order: bi * 1e4 + i }));
+    const heads = got.filter(s => s.header).map(h => {
+      const j = h.first ? cards.findIndex(c => c.seen === h.first || fold(c.seen) === fold(h.first)) : -1;
+      return { ...h, order: j >= 0 ? cards[j].order - 0.5 : bi * 1e4 - 0.5 };
+    });
+    return [...cards, ...heads];
   };
   return (await inTurn(batches, one, batches.length)).flat();
 }
@@ -194,12 +219,19 @@ function cpParse(text) {
   for (const o of objs) {
     try {
       const r = JSON.parse(o);
+      const group = !r.seen && String(r.group || '').toUpperCase().match(/R[1-5]/);
+      if (group) {
+        const total = parseInt(String(r.size ?? '').replace(/\D/g, ''), 10);
+        out.push({ header: group[0], total: total > 0 ? total : null,
+                   first: cpDecode(r.first_card).trim() });
+        continue;
+      }
       const seen = cpDecode(r.seen || r.roster_name).trim();
-      const cp = cpValue(r.cp);
+      // a CP put in the wrong field is still the card's CP
+      const cp = cpValue(r.cp ?? Object.values(r).find(v => /^\s*\d[\d.,]*\s*[KMB]\s*$/i.test(String(v))));
       // a name that decoded to nothing but replacement characters is not a reading
       if (seen && /[^�\s?]/.test(seen) && cp !== null && cp > 0)
-        out.push({ seen, claim: cpDecode(r.roster_name).trim(), cp,
-                   img: parseInt(String(r.img ?? '').replace(/\D/g, ''), 10) || null });
+        out.push({ seen, claim: cpDecode(r.roster_name).trim(), cp });
     } catch { /* half-written object at the cut */ }
   }
   if (!out.length && !objs.length && !/^\s*[\[{]/.test(text.trim()))
@@ -253,9 +285,6 @@ function cpGroups(sightings) {
       cp: cpBest(items.map(x => x.cp)),
       seen: items.length,
       order: Math.min(...items.map(x => x.order)),
-      // the frames this card was read in, most-read first
-      frames: Object.entries(items.reduce((c, x) => (x.frame != null && (c[x.frame] = (c[x.frame] || 0) + 1), c), {}))
-                .sort((a, b) => b[1] - a[1]).map(([f]) => +f),
     };
   });
 }
@@ -282,6 +311,23 @@ function cpIdentify(groups, roster) {
         gone.add(r);
       }
     } else for (const r of group) { r.match = null; r.pick = ''; r.score = 0; }
+  }
+  // A card read two ways, where one reading matched and the other did not: DƐƐ left for you,
+  // 𝒟ℰℰ matched to Dee, both 75.6 — one card, counted twice, which the group headers then showed
+  // as one member too many. An unmatched card joins a matched one when the CP agrees exactly, and
+  // only one matched card has it, and its reading passes the same plausibility test the matcher
+  // uses for the model's own claims. Two different players sharing a CP are both matched already,
+  // so they never meet this.
+  for (const r of rows) {
+    if (r.match || gone.has(r)) continue;
+    const same = rows.filter(o => o.match && !gone.has(o) && o.cp === r.cp);
+    if (same.length !== 1) continue;
+    const into = same[0];
+    if (!(r.obs || [r.name]).some(o => claimPlausible(o, into.match))) continue;
+    into.seen += r.seen;
+    into.obs = [...new Set([...into.obs, ...(r.obs || [])])];
+    into.order = Math.min(into.order, r.order);
+    gone.add(r);
   }
   const out = rows.filter(r => !gone.has(r)).sort((a, b) => a.order - b.order);
   // A card whose every reading dropped the point has no dotted reading to be corrected by, and
@@ -315,16 +361,14 @@ $('cpGo').onclick = async () => {
       .map(f => `<img src="data:image/jpeg;base64,${f}">`).join('');
     log(`${frames.length} frames — sending…`);
     const sightings = await cpCallModel(frames);
-    cpRows = cpIdentify(cpGroups(sightings), roster);
-    // The cards nothing could name get the same second look as the Ranking tab's rows: their own
-    // frames at full detail, thinking on, and a shortlist to choose from.
-    const second = await secondLook(cpRows, frames, roster,
-      r => `These images are from a mobile game's alliance member list. Look at the member card whose
-CP reads ${r.cp}M.`, [CP_MODEL]);
+    cpHeaders = sightings.filter(s => s.header);
+    const cards = sightings.filter(s => !s.header);
+    cpRows = cpIdentify(cpGroups(cards), roster);
     cpRender();
-    const t = (callProxy.spent || 0) - spentBefore;     // the second look included
-    log(`done — ${sightings.length} readings → ${cpRows.length} members · `
-        + (second.asked ? `second look matched ${second.found} of ${second.asked} · ` : '')
+    const t = (callProxy.spent || 0) - spentBefore;
+    const short = cpCount().list.reduce((n, g) => n + Math.max(0, (g.total || 0) - g.found), 0);
+    log(`done — ${cards.length} readings → ${cpRows.length} members · `
+        + (short ? `${short} fewer than the group headers say · ` : '')
         + `${Math.round(t / 1000)}k tokens · slowest answer ${Math.round(cpCallModel.slowest / 1000)}s`
         + (t > CP_RUN_BUDGET ? ' (over the 250k budget)' : ''));
     setProg(1);
@@ -338,14 +382,49 @@ CP reads ${r.cp}M.`, [CP_MODEL]);
 // unmatched one either ticked as right as drawn or searched for in the roster, and any row
 // thrown out with ✕. The name that goes out is outName's — the roster's in-game form.
 const cpOpen = r => !r.dropped && (r.editing || (!r.match && !r.confirmed && !r.pick));
+// Checking the run against the list's own headers. Member cards carry no rank, so a card the
+// run never read leaves no hole to point at — but every group header states the group's size,
+// "R3 14 / 114", so each group's cards can be counted against it. A card belongs to the last
+// header before its first sighting in list order. Cards above the first header seen (a recording
+// that starts just below one) are counted but cannot be checked.
+function cpCount() {
+  const byName = new Map();
+  for (const h of cpHeaders) {
+    const g = byName.get(h.header) || { name: h.header, order: Infinity, totals: [], found: 0 };
+    g.order = Math.min(g.order, h.order);
+    if (h.total) g.totals.push(h.total);
+    byName.set(h.header, g);
+  }
+  const list = [...byName.values()].sort((a, b) => a.order - b.order)
+    .map(g => ({ ...g, total: g.totals.length ? mode(g.totals) : null }));
+  let above = 0;
+  for (const r of cpRows) {
+    if (r.dropped) continue;
+    let g = null;
+    for (const h of list) if (h.order <= r.order) g = h;
+    if (g) g.found++; else above++;
+  }
+  return { list, above };
+}
 function cpRender() {
   closeMenu();
   const kept = cpRows.filter(r => !r.dropped).length;
   const need = cpRows.filter(cpOpen).length;
   const matched = cpRows.filter(r => !r.dropped && r.match).length;
+  const { list, above } = cpCount();
+  const checked = list.filter(g => g.total);
+  const short = checked.filter(g => g.found < g.total), over = checked.filter(g => g.found > g.total);
   $('cpVerdict').innerHTML = `<div class="${need ? 'warnbox' : 'okbox'}">${kept} members`
     + ` &middot; ${matched} matched to the roster`
-    + (need ? ` &middot; <strong>${need} to confirm below</strong>` : '') + '</div>';
+    + (need ? ` &middot; <strong>${need} to confirm below</strong>` : '') + '</div>'
+    + (checked.length ? `<div class="${short.length || over.length ? 'warnbox' : 'okbox'}">`
+        + (above ? `${above} above the first header (not checked) &middot; ` : '')
+        + checked.map(g => `${esc(g.name)}: ${g.found} of ${g.total}`).join(' &middot; ')
+        + (short.length ? `<br><strong>${short.map(g => `${g.total - g.found} missing from ${esc(g.name)}`)
+            .join(', ')}</strong> — that stretch was not read in full; record it again more slowly.` : '')
+        + (over.length ? `<br>${over.map(g => `${esc(g.name)} has ${g.found - g.total} more than its header`)
+            .join(', ')} — probably a card read twice under two names; look for a near-duplicate.` : '')
+        + '</div>' : '');
   $('cpTbl').innerHTML = '<thead><tr><th>#</th><th>Name in video</th><th>In-game Name</th>'
     + '<th>Base CP</th><th></th><th></th></tr></thead><tbody>'
     + cpRows.map((r, i) => {
@@ -363,8 +442,7 @@ function cpRender() {
                         value="${esc(outName(r))}" spellcheck="false">`}</td>
         <td>${r.cp}${r.cpRead ? ` <span class="note" title="the decimal point was missed">`
               + `read ${r.cpRead}</span>` : ''}</td>
-        <td>${r.match ? `<span class="pill p-ok"${r.second ? ` title="matched on a second look — worth a glance"` : ''}>`
-                        + `${r.second ? 'second look' : r.near1 ? '1 char' : 'exact'}</span>`
+        <td>${r.match ? `<span class="pill p-ok">${r.near1 ? '1 char' : 'exact'}</span>`
             : r.confirmed || r.pick ? '<span class="pill p-ok">confirmed</span>'
                                     : '<span class="pill p-new">confirm</span>'}</td>
         <td><button class="ghost cpdrop" data-i="${i}"
