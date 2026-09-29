@@ -84,6 +84,8 @@ Rules:
 - The same member appears in several frames. List every sighting; do not deduplicate.
 - Ignore rank headers, the "Level" line, "Online" / "2 hr ago" labels and Manage buttons.
 - If a card is cut off at an edge so that its name or CP cannot be read fully, skip it.
+- Write emoji and symbols as the characters themselves (🌹, ⚡, Ø). Never as HTML entities such
+  as &#127801; or escape codes.
 - Output raw JSON only. No markdown fence, no commentary.`;
 }
 const CP_SCHEMA = {
@@ -162,6 +164,22 @@ async function cpCallModel(frames) {
   return (await inTurn(batches, one, CP_PARALLEL)).flat();
 }
 
+// Gemini sometimes writes non-ASCII characters as HTML entities — "Martha &#127801;" for
+// Martha🌹, "x&#216;&#162;x" for xØ¢x — even inside JSON. The reading is right; only the
+// spelling is wrong, and it stops every such name matching the roster. Turn them back into
+// characters before anything else sees them.
+const CP_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+function cpDecode(s) {
+  // "&#119982; &#8499; &#8499;" is one three-glyph name: the spaces are the entity writer's,
+  // not the player's, so they go before decoding
+  return String(s ?? '').replace(/(&#x?[0-9a-f]+;)\s+(?=&#)/gi, '$1')
+                        .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+    if (e[0] !== '#') return CP_ENTITIES[e.toLowerCase()] ?? m;
+    const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : +e.slice(1);
+    return n > 0 && n <= 0x10FFFF ? String.fromCodePoint(n) : m;
+  });
+}
+
 // Row objects one at a time, as on the Ranking tab, so a reply cut off mid-array keeps
 // everything before the cut.
 function cpParse(text) {
@@ -170,11 +188,11 @@ function cpParse(text) {
   for (const o of objs) {
     try {
       const r = JSON.parse(o);
-      const seen = String(r.seen || r.roster_name || '').trim();
+      const seen = cpDecode(r.seen || r.roster_name).trim();
       const cp = cpValue(r.cp);
       // a name that decoded to nothing but replacement characters is not a reading
       if (seen && /[^�\s?]/.test(seen) && cp !== null && cp > 0)
-        out.push({ seen, claim: String(r.roster_name || '').trim(), cp });
+        out.push({ seen, claim: cpDecode(r.roster_name).trim(), cp });
     } catch { /* half-written object at the cut */ }
   }
   if (!out.length && !objs.length && !/^\s*[\[{]/.test(text.trim()))
