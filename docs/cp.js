@@ -130,7 +130,7 @@ function cpValue(s) {
 // sized so that a minute of them stays well inside both limits: at ~30,000 tokens a request and
 // 170,000 a minute, about one every 11 seconds, and a run takes about two minutes with nothing
 // ever refused or waiting on the allowance.
-const CP_MODEL = 'gemini-3.5-flash-lite';
+const CP_MODEL = 'gemini-3.1-flash-lite';
 const CP_BATCH = 16, CP_PARALLEL = 3;
 const CP_RPM = 10, CP_TPM = 170000;          // two thirds of 15 / 250k: a margin, not a target
 // What Google counts, as a multiple of the page's estimate, learned from each reply. It only
