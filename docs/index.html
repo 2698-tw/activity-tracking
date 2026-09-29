@@ -129,25 +129,21 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   </div>
   <input id="file" type="file" accept="video/*" class="hide">
   <div class="row" style="margin-top:12px">
-    <div>
-      <label for="datestr">Load date</label>
-      <input id="datestr" type="date">
-    </div>
-    <!-- These four are what Input-RawData wants besides the extracted rows. Remembered per
-         device, because the same person usually submits the same alliance run after run. -->
+    <!-- What Input-RawData wants besides the extracted rows. The load date and month are not
+         asked for: both are stamped from the clock at the moment the rows are sent. These three
+         are remembered per device, because the same person usually submits the same alliance. -->
     <div>
       <label for="submitter">Submitter</label>
-      <select id="submitter">
-        <option value="">Choose…</option>
-        <option>star</option><option>glitter</option><option>cein</option>
-        <option>peach</option><option>artu</option><option>mimi</option>
-      </select>
+      <!-- free text, so a new submitter needs no code change; the usual names drop down -->
+      <input id="submitter" type="text" placeholder="Type or choose…" autocomplete="off"
+             spellcheck="false">
     </div>
     <div>
       <label for="alliance">Alliance</label>
       <select id="alliance">
         <option value="">Choose…</option>
         <option>698S</option><option>698N</option><option>698W</option><option>698C</option>
+        <option>Other</option>
       </select>
     </div>
     <div>
@@ -232,7 +228,7 @@ const $ = id => document.getElementById(id);
 // Shown on the page. Several people run this from their own phones and a browser can sit on
 // an open tab for days, so "it is still happening" and "it is fixed" are easy to say about
 // different builds. Bump it with any change worth telling apart from the one before.
-const BUILD = '2026-09-29-sheet-append';
+const BUILD = '2026-09-29-sent-stamp';
 const MODEL = 'gemma4:31b-cloud';
 const FALLBACKS = [];        // one model, deliberately: a run either works or says why
 // This copy may be served from GitHub Pages, so its requests are
@@ -288,19 +284,47 @@ function loadSetup() {
   // the filter can be changed without pulling again.
   if (rosterCache && !rosterCache.all)
     rosterCache = { all: [...(rosterCache.active || []), ...(rosterCache.skipped || [])] };
-  $('datestr').value = store.get('datestr')  || new Date().toLocaleDateString('en-CA');
   for (const id of RUN_FIELDS) $(id).value = store.get(id) || '';
   refreshRosterList(); refreshState();
 }
 // Kept per device and saved as they change, so a phone that always submits for one person and
 // one alliance only ever needs the day picking.
 const RUN_FIELDS = ['submitter', 'alliance', 'kday'];
-for (const id of [...RUN_FIELDS, 'datestr'])
-  $(id).addEventListener('change', () => {
+for (const id of RUN_FIELDS)
+  // 'input' as well, so a typed submitter counts before the box is left
+  for (const ev of ['change', 'input']) $(id).addEventListener(ev, () => {
     store.set(id, $(id).value);
     // the table's Alliance column follows the run's alliance, and Send's readiness all four
     if (rows.length) render(lastRoster);
   });
+
+// The submitter box: typed freely, but focusing or clicking it drops down the usual names,
+// filtered by what is typed. Drawn with the same menu as the roster search in the results table.
+const SUBMITTERS = ['star', 'glitter', 'cein', 'peach', 'artu', 'mimi'];
+function openSubmitters() {
+  const inp = $('submitter');
+  closeMenu();
+  const q = inp.value.trim().toLowerCase();
+  // a box already holding one of the names shows them all, so it can be changed with one click
+  const hits = SUBMITTERS.includes(q) ? SUBMITTERS : SUBMITTERS.filter(n => n.includes(q));
+  if (!hits.length) return;
+  menuEl = document.createElement('div');
+  menuEl.className = 'menu';
+  menuEl.innerHTML = hits.map(n => `<div data-v="${esc(n)}">${esc(n)}</div>`).join('');
+  document.body.appendChild(menuEl);
+  menuEl.querySelectorAll('div[data-v]').forEach(d => d.onmousedown = ev => {
+    ev.preventDefault();
+    inp.value = d.dataset.v;
+    closeMenu();
+    inp.dispatchEvent(new Event('change'));
+  });
+  menuOwner = inp;
+  placeMenu(inp);
+}
+$('submitter').onfocus = openSubmitters;
+$('submitter').onclick = () => { if (!menuEl) openSubmitters(); };
+$('submitter').addEventListener('input', openSubmitters);
+$('submitter').onkeydown = e => { if (e.key === 'Escape' || e.key === 'Enter') closeMenu(); };
 function refreshState() {
   const names = currentRoster().length;
   // one badge per tab, both saying the same thing about the one roster
@@ -329,7 +353,6 @@ async function pullNow(btn, logTo) {
   btn.textContent = was; btn.disabled = false;
   logEl = logWas;
   if (ok) {
-    store.set('datestr', $('datestr').value);   // the only other thing setup ever saved
     flash(btn, `${rosterCache.all.length} rows ✓`);
   }
   refreshState();
@@ -1980,25 +2003,27 @@ function outPlayer(r) {
 }
 const outName = r => outPlayer(r).ingame;
 
-// Input-RawData, columns B to J, in the sheet's own formats: the load stamp as 9/28/2026 14:46:46
-// and the date alone as 2026-09-30.
+// Input-RawData, columns B to J. Both dates come from the clock when the rows go out, not from a
+// picker: the load stamp as 9/28/2026 14:46:46, and the month as Sep26.
 const OUT_HEADERS = ['kartz_load_date', 'kartz_submitter', 'kartz_search_name', 'kartz_ign_name',
   'kartz_alliance', 'kartz_month', 'kartz_day', 'kartz_rank', 'kartz_score'];
-function loadStamp(ymd, at = new Date()) {
-  const [y, m, d] = ymd.split('-').map(Number);
+function loadStamp(at = new Date()) {
   const p = n => String(n).padStart(2, '0');
-  return `${m}/${d}/${y} ${p(at.getHours())}:${p(at.getMinutes())}:${p(at.getSeconds())}`;
+  return `${at.getMonth() + 1}/${at.getDate()}/${at.getFullYear()} `
+       + `${p(at.getHours())}:${p(at.getMinutes())}:${p(at.getSeconds())}`;
 }
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const monthTag = (at = new Date()) => MONTHS[at.getMonth()] + String(at.getFullYear()).slice(-2);
 // The game's own rank, not this row's position in the list. They agree only when every
 // player was captured, and when they disagree it is the position that is wrong: one player
 // missed near the top used to shift every rank beneath them, which is how sixty correct names
 // went into the sheet against ranks that were three too small.
 function outRows() {
-  const date = $('datestr').value, stamp = date ? loadStamp(date) : '';
+  const at = new Date(), stamp = loadStamp(at), month = monthTag(at);
   return rows.filter(r => !r.dropped && !r.skipped).map(r => {
     const p = outPlayer(r);
-    return [stamp, $('submitter').value, p.search, p.ingame, $('alliance').value,
-            date, $('kday').value, r.rank, r.points];
+    return [stamp, $('submitter').value.trim(), p.search, p.ingame, $('alliance').value,
+            month, $('kday').value, r.rank, r.points];
   });
 }
 
@@ -2010,9 +2035,8 @@ function sendBlockers() {
   const open = rows.filter(r => !r.dropped && (r.editing
     || (!r.match && !r.skipped && !r.confirmed && !r.pick))).length;
   if (open) out.push(`${open} row${open > 1 ? 's' : ''} to confirm`);
-  const missing = [['datestr', 'load date'], ['submitter', 'submitter'],
-                   ['alliance', 'alliance'], ['kday', 'day']]
-    .filter(([id]) => !$(id).value).map(([, name]) => name);
+  const missing = [['submitter', 'submitter'], ['alliance', 'alliance'], ['kday', 'day']]
+    .filter(([id]) => !$(id).value.trim()).map(([, name]) => name);
   if (missing.length) out.push('choose a ' + missing.join(', '));
   if (!outRows().length) out.push('no rows to send');
   return out;
@@ -2040,7 +2064,9 @@ $('send').onclick = async () => {
   try {
     const r = await fetch(API_BASE + '/append', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ values }) });
+      // Sheets would read "Sep26" as the 26th of September; the leading apostrophe keeps it the
+      // text it is, and is not itself stored
+      body: JSON.stringify({ values: values.map(r => r.map((v, i) => i === 5 ? "'" + v : v)) }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j?.error?.message || `sheet refused the rows (${r.status})`);
     log(`appended ${values.length} rows to Input-RawData${j.range ? ' at ' + j.range : ''}`);
@@ -2064,7 +2090,7 @@ $('csv').onclick = () => {
     + outRows().map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a = Object.assign(document.createElement('a'), {
     href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })),
-    download: `kartz-${$('datestr').value || 'export'}.csv` });
+    download: `kartz-${new Date().toLocaleDateString('en-CA')}.csv` });
   a.click(); URL.revokeObjectURL(a.href);
   flash($('csv'), 'Downloaded ✓');
 };
