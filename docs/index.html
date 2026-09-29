@@ -231,8 +231,14 @@ const API_BASE = location.hostname.endsWith('.workers.dev')
 // was a bad trade: 47 images to a request instead of 31 dropped the match rate from 91 of 129
 // to 67, for about 14,000 tokens. The model attends to a long batch worse than a short one,
 // and the tokens saved are not worth the reading lost.
-const REQ_CAP = 6, BATCH_MIN = 8, BATCH_MAX = 40;
-const batchSize = n => Math.min(BATCH_MAX, Math.max(BATCH_MIN, Math.ceil(n / REQ_CAP)));
+//
+// All of that was sizing for Gemini's allowance. On Ollama Cloud's free tier the binding limit is
+// how many requests it will run at once: six requests of ~32 images left together, most sat in
+// Ollama's queue ("stuck at batch 2 of 6") and the rest came back 429 and were waited out. So the
+// batch is now a fixed twelve images — a short batch is also read more carefully, as the note
+// above found — and at most PARALLEL of them are in flight at a time (see inTurn below).
+const BATCH = 12, PARALLEL = 2;
+const batchSize = () => BATCH;
 
 /* ---------------- persistence ---------------- */
 // The one tab everybody pulls from. It was a text box on every device, which is a per-person
@@ -1229,7 +1235,19 @@ async function callModel(frames) {
         + (switched.size ? `  (fell back to ${[...switched].join(', ')})` : ''));
     return rows;
   };
-  return (await Promise.all(batches.map(one))).flat();
+  return (await inTurn(batches, one)).flat();
+}
+
+// Run fn over items with no more than `limit` in flight, keeping results in item order.
+// Used by both tabs for their model requests, so neither can overrun Ollama's free tier.
+async function inTurn(items, fn, limit = PARALLEL) {
+  const out = new Array(items.length);
+  let next = 0;
+  const lane = async () => {
+    while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane));
+  return out;
 }
 
 const modelChain = () => [MODEL, ...FALLBACKS.filter(m => m !== MODEL)];
