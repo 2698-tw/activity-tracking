@@ -228,8 +228,11 @@ const $ = id => document.getElementById(id);
 // Shown on the page. Several people run this from their own phones and a browser can sit on
 // an open tab for days, so "it is still happening" and "it is fixed" are easy to say about
 // different builds. Bump it with any change worth telling apart from the one before.
-const BUILD = '2026-09-29-sent-stamp';
-const MODEL = 'gemma4:31b-cloud';
+const BUILD = '2026-09-29-fast-sampling-2';
+// Gemini, through the Worker's /api/gemini route where the key lives — the same paid key the
+// Base CP tab uses (4,000 requests and 4M tokens a minute). It was Ollama's gemma4:31b; that
+// route is still in the Worker, and switching back is this line and MODEL_BASE below.
+const MODEL = 'gemini-3.1-flash-lite';
 const FALLBACKS = [];        // one model, deliberately: a run either works or says why
 // This copy may be served from GitHub Pages, so its requests are
 // cross-origin and need the Worker's own address. On the workers.dev deployment of the same
@@ -237,6 +240,7 @@ const FALLBACKS = [];        // one model, deliberately: a run either works or s
 const API_BASE = location.hostname.endsWith('.workers.dev')
   ? '/api'
   : 'https://data-collection.jk06nm04.workers.dev/api';
+const MODEL_BASE = API_BASE + '/gemini';
 // The allowance is fifteen REQUESTS a minute and it does not care what they carry: sixteen
 // images in one request costs the same one-fifteenth as four images would. So the number of
 // images per request is derived from the work rather than fixed, sized so that the whole run
@@ -259,8 +263,25 @@ const API_BASE = location.hostname.endsWith('.workers.dev')
 // Ollama's queue ("stuck at batch 2 of 6") and the rest came back 429 and were waited out. So the
 // batch is now a fixed twelve images — a short batch is also read more carefully, as the note
 // above found — and at most PARALLEL of them are in flight at a time (see inTurn below).
-const BATCH = 12, PARALLEL = 2;
-const batchSize = () => BATCH;
+//
+// On the paid Gemini key neither limit binds, and what matters is the run's token total, which
+// should stay under 250,000 — images are most of it. So the batch size and the image detail are
+// set here from measurement (see the note on KARTZ), and every batch goes out at once.
+const PARALLEL = 2;                     // inTurn's default; the Kartz run passes its own
+// Measured on the 43-second, 153-player recording, 12 images a request, 13 requests:
+//   thinking low,     full detail    388k tokens, 76 s   153 players, 152 matched, 1 to confirm
+//   thinking minimal, full detail    281k tokens, 10 s   153 players, 149 matched, 4 to confirm
+//   thinking minimal, medium detail  194k tokens, 10 s   153 players, 150 matched, 3 to confirm
+// Every rank and every score was identical in all three; only a few stylised names differed.
+// "Low" thinking spent 104k tokens and a minute to settle two of them, so it is minimal, with
+// medium image detail to bring the run under the 250k budget. The names it leaves for you
+// (ŊŲƁĮ read as DUBI, a bare 🐼) are what Remember my fixes is for: fixed once, matched after.
+const KARTZ = {
+  batch: 12,
+  // merged into the request's generationConfig, over the defaults in callProxy
+  config: { thinkingConfig: { thinkingLevel: 'minimal' }, mediaResolution: 'MEDIA_RESOLUTION_MEDIUM' },
+};
+const batchSize = () => KARTZ.batch;
 
 /* ---------------- persistence ---------------- */
 // The one tab everybody pulls from. It was a text box on every device, which is a per-person
@@ -985,19 +1006,121 @@ function sharpness(canvas) {
     }
   return n ? acc / n : 0;
 }
-async function extractFrames(file, budget, onProg, strips = STRIPS) {
-  const video = await openVideo(file);
-  const dur = video.duration;
-  // Keep the recording's own resolution. 560 was chosen when the worry was payload size,
-  // but token cost turns out to be near enough flat per image, so the downscale bought
-  // nothing and cost the fine detail in stylised names: at 560 the glyphs "ŊŲƁĮ" came back
-  // as "MB" and "DJ", while the same row read at the phone's native width resolves to Nubi.
-  const W = Math.min(video.videoWidth || 720, 1080);
-  const H = Math.round(W * video.videoHeight / video.videoWidth);
-  const cv = Object.assign(document.createElement('canvas'), { width: W, height: H });
-  const cx = cv.getContext('2d', { willReadFrequently: true });
-  const step = 0.25;
+// The first pass, by playing. Seeking is the slow part of sampling — every seek waits for the
+// decoder to find a keyframe and work forward from it, 20 to 50 ms each and more on a phone —
+// and the seeking pass below makes one every quarter second of video, plus three more around
+// every pick: about 420 for a 43-second recording, which is where 13 seconds went. A video that
+// is simply played is decoded in one continuous run, far faster. So it is played, muted and out
+// of sight, and every frame the browser presents is measured as it goes: the scroll motion, the
+// moving region, and a quarter-size grey copy for judging sharpness later, once the list's
+// position is known. Only the chosen frames are then fetched by seeking.
+//
+// Browsers will not play faster than 16x, which puts a floor of a sixteenth of the recording
+// under a single player — 4.4 s for a 71-second one. So the recording is cut into PLAY_LANES
+// stretches played side by side by separate players, which decoders handle in parallel, and the
+// seeks for the chosen frames are shared out between the same players afterwards.
+//
+// At 16x a 60 Hz display presents about four frames per second of video, the same density as the
+// quarter-second seeking pass. A browser that cannot keep up, lacks requestVideoFrameCallback, or
+// refuses to play gets null here, and the seeking pass does the job as before.
+const PLAY_RATE = 16, PLAY_LANES = 4, PLAY_MIN_DENSITY = 1.5;   // frames per video second, at least
+async function scanByPlaying(src, dur, W, H, cx, onProg) {
+  if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype)) return null;
+  const TW = Math.max(8, Math.round(W / 4)), TH = Math.max(8, Math.round(H / 4));
+  const tcv = Object.assign(document.createElement('canvas'), { width: TW, height: TH });
+  const tc = tcv.getContext('2d', { willReadFrequently: true });
+  const lanes = [];
+  try {
+    for (let k = 0; k < PLAY_LANES; k++) {
+      const v = document.createElement('video');
+      v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = src;
+      // A detached video is never composited, and a frame that is never composited is never
+      // reported; so each is attached, but a pixel square and all but transparent.
+      Object.assign(v.style, { position: 'fixed', left: '0', top: '0', width: '2px',
+                               height: '2px', opacity: '0.01', pointerEvents: 'none' });
+      document.body.appendChild(v);
+      lanes.push(v);
+    }
+    await Promise.all(lanes.map(v => v.readyState >= 1 ? null : once(v, 'loadedmetadata')));
+    const seen = [];                     // { t, grid, map, grey } from every lane
+    let progress = 0;
+    const playLane = async (v, from, to) => {
+      await seek(v, from);
+      v.playbackRate = PLAY_RATE;
+      return new Promise(resolve => {
+        let lastTick = Date.now(), finished = false;
+        const finish = ok => {
+          if (finished) return;
+          finished = true; clearInterval(watch); v.pause(); resolve(ok);
+        };
+        // a stalled decoder, or a hidden tab (which presents no frames), gives up to the fallback
+        const watch = setInterval(() => { if (Date.now() - lastTick > 3000) finish(false); }, 500);
+        const onFrame = (_now, meta) => {
+          if (finished) return;
+          lastTick = Date.now();
+          if (meta.mediaTime >= to) return finish(true);
+          // drawn, measured and let go in one step, so the lanes can share the one canvas
+          cx.drawImage(v, 0, 0, W, H);
+          tc.drawImage(cx.canvas, 0, 0, W, H, 0, 0, TW, TH);
+          const px = tc.getImageData(0, 0, TW, TH).data, grey = new Uint8Array(TW * TH);
+          for (let i = 0; i < grey.length; i++)
+            grey[i] = (px[i*4] * 0.299 + px[i*4+1] * 0.587 + px[i*4+2] * 0.114) | 0;
+          seen.push({ t: meta.mediaTime, grid: motionGrid(cx, W, H), map: motionMap(cx, W, H), grey });
+          progress += 1; onProg(0.6 * Math.min(1, progress / (dur * 4)), 0);
+          v.requestVideoFrameCallback(onFrame);
+        };
+        v.requestVideoFrameCallback(onFrame);
+        v.addEventListener('ended', () => finish(true), { once: true });
+        v.play().catch(() => finish(false));
+      });
+    };
+    const span = dur / PLAY_LANES;
+    const oks = await Promise.all(lanes.map((v, k) =>
+      playLane(v, k * span, k === PLAY_LANES - 1 ? Infinity : (k + 1) * span)));
+    if (oks.includes(false)) { lanes.forEach(v => v.remove()); return null; }
 
+    // stitched back into one timeline; motion is measured frame to frame along it
+    seen.sort((a, b) => a.t - b.t);
+    const times = [], motion = [], thumbs = [];
+    const accum = new Float32Array(GW * GH);
+    let total = 0;
+    for (let i = 0; i < seen.length; i++) {
+      if (i > 0) {
+        total += gridDiff(seen[i-1].grid, seen[i].grid);
+        const a = seen[i-1].map, b = seen[i].map;
+        for (let j = 0; j < accum.length; j++) accum[j] += Math.abs(b[j] - a[j]);
+      }
+      times.push(seen[i].t); motion.push(total); thumbs.push(seen[i].grey);
+    }
+    // every lane has to have delivered, densely enough, or the stitched timeline has gaps
+    const gaps = times.some((t, i) => i > 0 && t - times[i-1] > 1.5);
+    if (!times.length || times[0] > 1.5 || times[times.length - 1] < dur - 1.5 || gaps
+        || times.length < Math.max(20, dur * PLAY_MIN_DENSITY)) { lanes.forEach(v => v.remove()); return null; }
+    lanes.forEach(v => { v.playbackRate = 1; });
+    return { times, motion, total, accum, thumbs, TW, TH, lanes };
+  } catch {
+    lanes.forEach(v => v.remove());
+    return null;
+  }
+}
+// Sharpness of a quarter-size grey copy, inside the list: the same mean absolute Laplacian as
+// sharpness(), which only has to rank a few neighbouring frames of the same list against each
+// other, and a smeared frame loses its edges at a quarter size as surely as at full size.
+function thumbSharpness(grey, TW, TH, box) {
+  const x0 = Math.max(1, Math.floor((box ? box.x0 : 0) * TW)), x1 = Math.min(TW - 1, Math.ceil((box ? box.x1 : 1) * TW));
+  const y0 = Math.max(1, Math.floor((box ? box.y0 : 0) * TH)), y1 = Math.min(TH - 1, Math.ceil((box ? box.y1 : 1) * TH));
+  let acc = 0, n = 0;
+  for (let y = y0; y < y1 - 1; y++)
+    for (let x = x0; x < x1 - 1; x++) {
+      const i = y * TW + x;
+      acc += Math.abs(4 * grey[i] - grey[i-1] - grey[i+1] - grey[i-TW] - grey[i+TW]);
+      n++;
+    }
+  return n ? acc / n : 0;
+}
+// The first pass by seeking, as it always was: now the fallback.
+async function scanBySeeking(video, W, H, cx, onProg) {
+  const dur = video.duration, step = 0.25;
   const times = [], motion = [];
   const accum = new Float32Array(GW * GH);     // per-cell change, for locating the list
   let prev = null, prevMap = null, total = 0;
@@ -1013,6 +1136,25 @@ async function extractFrames(file, budget, onProg, strips = STRIPS) {
     times.push(t); motion.push(total);
     onProg(0.6 * t / dur, 0);
   }
+  return { times, motion, total, accum, thumbs: null };
+}
+
+async function extractFrames(file, budget, onProg, strips = STRIPS) {
+  const video = await openVideo(file);
+  const dur = video.duration;
+  // Keep the recording's own resolution. 560 was chosen when the worry was payload size,
+  // but token cost turns out to be near enough flat per image, so the downscale bought
+  // nothing and cost the fine detail in stylised names: at 560 the glyphs "ŊŲƁĮ" came back
+  // as "MB" and "DJ", while the same row read at the phone's native width resolves to Nubi.
+  const W = Math.min(video.videoWidth || 720, 1080);
+  const H = Math.round(W * video.videoHeight / video.videoWidth);
+  const cv = Object.assign(document.createElement('canvas'), { width: W, height: H });
+  const cx = cv.getContext('2d', { willReadFrequently: true });
+
+  const scan = await scanByPlaying(video.src, dur, W, H, cx, onProg)
+            || await scanBySeeking(video, W, H, cx, onProg);
+  extractFrames.mode = scan.thumbs ? 'played' : 'seeked';
+  const { times, motion, total, accum } = scan;
   const box = movingRegion(accum);      // always: it removes the pinned own-rank card
   lastCropBox = box;
 
@@ -1027,7 +1169,8 @@ async function extractFrames(file, budget, onProg, strips = STRIPS) {
   const last = times[times.length - 1];
   if (picks[picks.length - 1] !== last) picks.push(last);
 
-  const frames = [];
+  // For each pick, the sharpest frame within reach of it.
+  const chosen = [];
   for (let i = 0; i < picks.length; i++) {
     const prevGap = i > 0 ? picks[i] - picks[i-1] : Infinity;
     const nextGap = i < picks.length - 1 ? picks[i+1] - picks[i] : Infinity;
@@ -1037,22 +1180,45 @@ async function extractFrames(file, budget, onProg, strips = STRIPS) {
     // from the other and were photographed by neither.
     const reach = Math.min(SHARP_MAX, 0.25 * Math.min(prevGap, nextGap));
     let bestT = null, bestScore = -1;
-    for (let k = 0; k < SHARP_STEPS; k++) {
-      const off = reach * (2 * k / (SHARP_STEPS - 1) - 1);   // -reach .. +reach
-      const t = picks[i] + off;
-      if (t < 0 || t > dur - 0.05) continue;
-      await seek(video, t);
-      cx.drawImage(video, 0, 0, W, H);
-      const score = sharpness(cropFrame(cv, W, H, box));
-      if (score > bestScore) { bestScore = score; bestT = t; }
+    if (scan.thumbs) {
+      // every presented frame in the window was already measured: no seeking to choose
+      for (let k = 0; k < times.length; k++) {
+        if (Math.abs(times[k] - picks[i]) > reach + 1e-6) continue;
+        const score = thumbSharpness(scan.thumbs[k], scan.TW, scan.TH, box);
+        if (score > bestScore) { bestScore = score; bestT = times[k]; }
+      }
+    } else {
+      for (let k = 0; k < SHARP_STEPS; k++) {
+        const off = reach * (2 * k / (SHARP_STEPS - 1) - 1);   // -reach .. +reach
+        const t = picks[i] + off;
+        if (t < 0 || t > dur - 0.05) continue;
+        await seek(video, t);
+        cx.drawImage(video, 0, 0, W, H);
+        const score = sharpness(cropFrame(cv, W, H, box));
+        if (score > bestScore) { bestScore = score; bestT = t; }
+        onProg(0.6 + 0.2 * (i + 1) / picks.length, 0);
+      }
     }
-    if (bestT !== null) {
-      await seek(video, bestT);
-      cx.drawImage(video, 0, 0, W, H);
-      for (const strip of sliceStrips(cropFrame(cv, W, H, box), strips)) frames.push(strip);
-    }
-    onProg(0.6 + 0.4 * (i + 1) / picks.length, frames.length);
+    if (bestT !== null) chosen.push(bestT);
   }
+
+  // Then fetch them. Played, the seeks are shared between the lanes and run side by side; each
+  // frame is drawn, cropped and cut the instant its seek lands, so they can share one canvas.
+  // A presented frame's time is its first instant, so a hair past it is unambiguously that frame.
+  const players = scan.lanes || [video];
+  const pad = scan.thumbs ? 0.001 : 0;
+  const shots = new Array(chosen.length);
+  let fetched = 0;
+  await Promise.all(players.map(async (v, lane) => {
+    for (let i = lane; i < chosen.length; i += players.length) {
+      await seek(v, Math.min(chosen[i] + pad, dur - 0.05));
+      cx.drawImage(v, 0, 0, W, H);
+      shots[i] = sliceStrips(cropFrame(cv, W, H, box), strips);
+      onProg(0.6 + 0.4 * (++fetched) / chosen.length, fetched * strips);
+    }
+  }));
+  if (scan.lanes) scan.lanes.forEach(v => v.remove());
+  const frames = shots.flat();
   URL.revokeObjectURL(video.src);
   return frames;
 }
@@ -1279,17 +1445,15 @@ async function callModel(frames) {
   for (let i = 0; i < frames.length; i += B) batches.push(frames.slice(i, i + B));
   let done = 0;
   const switched = new Set();
-  const promptTokens = Math.ceil(buildPrompt(false).length / CHARS_PER_TOKEN);
+  callModel.slowest = 0;
   const one = async b => {
-    const est = (b.length + (sheet ? 1 : 0)) * IMG_TOKENS + promptTokens;
+    // No rate gate: on the paid key a run is a few dozen requests against 4,000 a minute.
     const rows = await withFallback(async m => {
-                                      const lease = await rateGate(est);
-                                      try {
-                                        const got = await callProxy(sheet ? [sheet, ...b] : b,
-                                                                    m, API_BASE);
-                                        lease.settle(callProxy.lastUsage);
-                                        return got;
-                                      } catch (e) { lease.refund(); throw e; }
+                                      const t0 = Date.now();
+                                      const got = await callProxy(sheet ? [sheet, ...b] : b,
+                                                                  m, MODEL_BASE);
+                                      callModel.slowest = Math.max(callModel.slowest, Date.now() - t0);
+                                      return got;
                                     },
                                     modelChain(), m => switched.add(m), true);
     done++; setProg(0.5 + 0.5 * done / batches.length);
@@ -1297,7 +1461,8 @@ async function callModel(frames) {
         + (switched.size ? `  (fell back to ${[...switched].join(', ')})` : ''));
     return rows;
   };
-  return (await inTurn(batches, one)).flat();
+  // every batch at once: a run takes as long as its slowest answer
+  return (await inTurn(batches, one, batches.length)).flat();
 }
 
 // Run fn over items with no more than `limit` in flight, keeping results in item order.
@@ -1388,7 +1553,7 @@ async function callProxy(batch, model, base, spec = null) {
         seed: 7,
         thinkingConfig: { thinkingLevel: 'low' },
         // a tab on another model can swap settings that model does not take (see cp.js)
-        ...(spec && spec.config),
+        ...(spec ? spec.config : KARTZ.config),
         // Ask the API to enforce the shape rather than hoping the model returns clean JSON.
         // Everything is a string: models will happily emit "1,234" or "#4" for a number and
         // then the whole response is rejected, so take text and convert here.
@@ -1638,6 +1803,7 @@ $('go').onclick = async () => {
     aliases = store.get('aliases') || {};
 
     log('decoding video…'); setProg(0);
+    const spentBefore = callProxy.spent || 0;
     const frames = await extractFrames(videoFile, +$('sens').value,
       (p, n) => { setProg(p * 0.5); log(`sampling video — ${n} frames kept`); });
     if (!frames.length) throw new Error('no frames captured');
@@ -1685,7 +1851,10 @@ $('go').onclick = async () => {
       if (r.rank > n) n = r.rank;
     }
     render(roster);
-    log(`done — ${sightings.length} readings → ${rows.length} players`);
+    const spent = (callProxy.spent || 0) - spentBefore;
+    log(`done — ${sightings.length} readings → ${rows.length} players · `
+        + `${Math.round(spent / 1000)}k tokens · slowest answer ${Math.round(callModel.slowest / 1000)}s`
+        + (spent > 250000 ? ' (over the 250k budget)' : ''));
     setProg(1);
   } catch (e) {
     const m = e.message;
