@@ -228,7 +228,7 @@ const $ = id => document.getElementById(id);
 // Shown on the page. Several people run this from their own phones and a browser can sit on
 // an open tab for days, so "it is still happening" and "it is fixed" are easy to say about
 // different builds. Bump it with any change worth telling apart from the one before.
-const BUILD = '2026-09-29-second-look';
+const BUILD = '2026-09-29-gap-fill';
 // Gemini, through the Worker's /api/gemini route where the key lives — the same paid key the
 // Base CP tab uses (4,000 requests and 4M tokens a minute). It was Ollama's gemma4:31b; that
 // route is still in the Worker, and switching back is this line and MODEL_BASE below.
@@ -449,8 +449,8 @@ const fullRoster = currentRoster;
 // enclosed, squared, struck-through and small-capital forms players decorate names with —
 // "\u{1F157}\u{1F150}\u{1F15D}\u{1F162}" is four NEGATIVE CIRCLED LATIN CAPITAL LETTERs spelling HANS, and
 // Unicode says so. Two parallel strings rather than an object literal, to keep it compact.
-const LATIN_K = '\u00D8\u00F8\u0110\u0111\u0126\u0127\u0141\u0142\u0166\u0167\u0180\u0181\u0182\u0183\u0187\u0188\u018A\u018B\u018C\u0191\u0192\u0193\u0197\u0198\u0199\u019A\u019D\u019E\u019F\u01A4\u01A5\u01AB\u01AC\u01AD\u01AE\u01B2\u01B3\u01B4\u01B5\u01B6\u01E4\u01E5\u01FE\u01FF\u0220\u0221\u0224\u0225\u0234\u0235\u0236\u023A\u023B\u023C\u023D\u023E\u023F\u0240\u0243\u0244\u0246\u0247\u0248\u0249\u024B\u024C\u024D\u024E\u024F\u0253\u0255\u0256\u0257\u0260\u0266\u0268\u026B\u026C\u026D\u0271\u0272\u0273\u027C\u027D\u027E\u0282\u0288\u0289\u028B\u0290\u0291\u029D\u02A0\u0363\u0364\u0365\u0366\u0367\u0368\u0369\u036A\u036B\u036C\u036D\u036E\u036F\u1ABF\u1D6C\u1D6D\u1D6E\u1D6F\u1D70\u1D71\u1D72\u1D73\u1D74\u1D75\u1D76\u1D7B\u1D7D\u1D7E\u1D80\u1D81\u1D82\u1D83\u1D84\u1D85\u1D86\u1D87\u1D88\u1D89\u1D8A\u1D8C\u1D8D\u1D8E\u1D8F\u1D91\u1D92\u1D96\u1D99\u1DCA\u1DD7\u1DDA\u1DDC\u1DDD\u1DE0\u1DE3\u1DE4\u1DE6\u1DE8\u1DEB\u1DEC\u1DED\u1DEE\u1DF0\u1DF1\u1DF2\u1DF3\u1DF4\u1EFE\u1EFF\u24F5\u24F6\u24F7\u24F8\u24F9\u24FA\u24FB\u24FC\u24FD\u24FF\u2776\u2777\u2778\u2779\u277A\u277B\u277C\u277D\u277E\u2780\u2781\u2782\u2783\u2784\u2785\u2786\u2787\u2788\u278A\u278B\u278C\u278D\u278E\u278F\u2790\u2791\u2792\u2C60\u2C61\u2C62\u2C63\u2C64\u2C65\u2C66\u2C67\u2C68\u2C69\u2C6A\u2C6B\u2C6C\u2C6E\u2C71\u2C72\u2C73\u2C74\u2C78\u2C7A\u2C7E\u2C7F\uA740\uA741\uA742\uA743\uA744\uA745\uA748\uA749\uA74A\uA74B\uA74C\uA74D\uA750\uA751\uA752\uA753\uA754\uA755\uA756\uA757\uA758\uA759\uA75A\uA75B\uA75E\uA75F\uA78E\uA790\uA791\uA792\uA793\uA794\uA795\uA796\uA797\uA798\uA799\uA7A0\uA7A1\uA7A2\uA7A3\uA7A4\uA7A5\uA7A6\uA7A7\uA7A8\uA7A9\uA7AA\uA7AD\uA7B2\uA7B8\uA7B9\uA7C4\uA7C5\uA7C6\uA7C7\uA7C8\uA7C9\uA7CA\uAB31\uAB34\uAB37\uAB38\uAB39\uAB3A\uAB3B\uAB47\uAB49\uAB4E\uAB4F\uAB52\uAB56\uAB57\uAB58\uAB59\uAB5A\u{1DF09}\u{1DF11}\u{1DF13}\u{1DF16}\u{1DF1A}\u{1DF1B}\u{1DF1D}\u{1DF1E}\u{1DF25}\u{1DF26}\u{1DF27}\u{1DF28}\u{1DF29}\u{1DF2A}\u{1F10B}\u{1F10C}\u{1F150}\u{1F151}\u{1F152}\u{1F153}\u{1F154}\u{1F155}\u{1F156}\u{1F157}\u{1F158}\u{1F159}\u{1F15A}\u{1F15B}\u{1F15C}\u{1F15D}\u{1F15E}\u{1F15F}\u{1F160}\u{1F161}\u{1F162}\u{1F163}\u{1F164}\u{1F165}\u{1F166}\u{1F167}\u{1F168}\u{1F169}\u{1F170}\u{1F171}\u{1F172}\u{1F173}\u{1F174}\u{1F175}\u{1F176}\u{1F177}\u{1F178}\u{1F179}\u{1F17A}\u{1F17B}\u{1F17C}\u{1F17D}\u{1F17E}\u{1F17F}\u{1F180}\u{1F181}\u{1F182}\u{1F183}\u{1F184}\u{1F185}\u{1F186}\u{1F187}\u{1F188}\u{1F189}\u{1F18A}\u{1F1A5}';
-const LATIN_V = 'OODDHHLLTTBBBBCCDDDFFGIKKLNNOPPTTTTVYYZZGGOONDZZLNTACCLTSZBUEEJJQRRYYBCDDGHILLLMNNRRRSTUVZZJQAEIOUCDHMRTVXWBDFMNPRRSTZIPUBDFGKLMNPRSVXZADEIURCGKLNRSZBFLOPUWAOUYY1234567890123456789123456789123456789LLLPRATHHKKZZMVWWVEOSZKKKKKKLLOOOOPPPPPPQQQQRRVVLNNCCCHBBFFGGKKNNRRSSHLJUUCSZDDSSAELLLMNRRUUUXXXXYTLLRIOCSDLNRST00ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZPD';
+const LATIN_K = '\u00D8\u00F8\u0110\u0111\u0126\u0127\u0141\u0142\u0166\u0167\u0180\u0181\u0182\u0183\u0187\u0188\u018A\u018B\u018C\u0191\u0192\u0193\u0197\u0198\u0199\u019A\u019D\u019E\u019F\u01A4\u01A5\u01AB\u01AC\u01AD\u01AE\u01B2\u01B3\u01B4\u01B5\u01B6\u01E4\u01E5\u01FE\u01FF\u0220\u0221\u0224\u0225\u0234\u0235\u0236\u023A\u023B\u023C\u023D\u023E\u023F\u0240\u0243\u0244\u0246\u0247\u0248\u0249\u024B\u024C\u024D\u024E\u024F\u0253\u0255\u0256\u0257\u0260\u0266\u0268\u026B\u026C\u026D\u0271\u0272\u0273\u027C\u027D\u027E\u0282\u0288\u0289\u028B\u0290\u0291\u029D\u02A0\u0363\u0364\u0365\u0366\u0367\u0368\u0369\u036A\u036B\u036C\u036D\u036E\u036F\u1ABF\u1D6C\u1D6D\u1D6E\u1D6F\u1D70\u1D71\u1D72\u1D73\u1D74\u1D75\u1D76\u1D7B\u1D7D\u1D7E\u1D80\u1D81\u1D82\u1D83\u1D84\u1D85\u1D86\u1D87\u1D88\u1D89\u1D8A\u1D8C\u1D8D\u1D8E\u1D8F\u1D91\u1D92\u1D96\u1D99\u1DCA\u1DD7\u1DDA\u1DDC\u1DDD\u1DE0\u1DE3\u1DE4\u1DE6\u1DE8\u1DEB\u1DEC\u1DED\u1DEE\u1DF0\u1DF1\u1DF2\u1DF3\u1DF4\u1EFE\u1EFF\u24F5\u24F6\u24F7\u24F8\u24F9\u24FA\u24FB\u24FC\u24FD\u24FF\u2776\u2777\u2778\u2779\u277A\u277B\u277C\u277D\u277E\u2780\u2781\u2782\u2783\u2784\u2785\u2786\u2787\u2788\u278A\u278B\u278C\u278D\u278E\u278F\u2790\u2791\u2792\u2C60\u2C61\u2C62\u2C63\u2C64\u2C65\u2C66\u2C67\u2C68\u2C69\u2C6A\u2C6B\u2C6C\u2C6E\u2C71\u2C72\u2C73\u2C74\u2C78\u2C7A\u2C7E\u2C7F\uA740\uA741\uA742\uA743\uA744\uA745\uA748\uA749\uA74A\uA74B\uA74C\uA74D\uA750\uA751\uA752\uA753\uA754\uA755\uA756\uA757\uA758\uA759\uA75A\uA75B\uA75E\uA75F\uA78E\uA790\uA791\uA792\uA793\uA794\uA795\uA796\uA797\uA798\uA799\uA7A0\uA7A1\uA7A2\uA7A3\uA7A4\uA7A5\uA7A6\uA7A7\uA7A8\uA7A9\uA7AA\uA7AD\uA7B2\uA7B8\uA7B9\uA7C4\uA7C5\uA7C6\uA7C7\uA7C8\uA7C9\uA7CA\uAB31\uAB34\uAB37\uAB38\uAB39\uAB3A\uAB3B\uAB47\uAB49\uAB4E\uAB4F\uAB52\uAB56\uAB57\uAB58\uAB59\uAB5A\u{1DF09}\u{1DF11}\u{1DF13}\u{1DF16}\u{1DF1A}\u{1DF1B}\u{1DF1D}\u{1DF1E}\u{1DF25}\u{1DF26}\u{1DF27}\u{1DF28}\u{1DF29}\u{1DF2A}\u{1F10B}\u{1F10C}\u{1F150}\u{1F151}\u{1F152}\u{1F153}\u{1F154}\u{1F155}\u{1F156}\u{1F157}\u{1F158}\u{1F159}\u{1F15A}\u{1F15B}\u{1F15C}\u{1F15D}\u{1F15E}\u{1F15F}\u{1F160}\u{1F161}\u{1F162}\u{1F163}\u{1F164}\u{1F165}\u{1F166}\u{1F167}\u{1F168}\u{1F169}\u{1F170}\u{1F171}\u{1F172}\u{1F173}\u{1F174}\u{1F175}\u{1F176}\u{1F177}\u{1F178}\u{1F179}\u{1F17A}\u{1F17B}\u{1F17C}\u{1F17D}\u{1F17E}\u{1F17F}\u{1F180}\u{1F181}\u{1F182}\u{1F183}\u{1F184}\u{1F185}\u{1F186}\u{1F187}\u{1F188}\u{1F189}\u{1F18A}\u{1F1A5}\u0190\u025B';
+const LATIN_V = 'OODDHHLLTTBBBBCCDDDFFGIKKLNNOPPTTTTVYYZZGGOONDZZLNTACCLTSZBUEEJJQRRYYBCDDGHILLLMNNRRRSTUVZZJQAEIOUCDHMRTVXWBDFMNPRRSTZIPUBDFGKLMNPRSVXZADEIURCGKLNRSZBFLOPUWAOUYY1234567890123456789123456789123456789LLLPRATHHKKZZMVWWVEOSZKKKKKKLLOOOOPPPPPPQQQQRRVVLNNCCCHBBFFGGKKNNRRSSHLJUUCSZDDSSAELLLMNRRUUUXXXXYTLLRIOCSDLNRST00ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZPDEE';
 const LATIN_MAP = (() => {
   const m = {};
   const ks = [...LATIN_K], vs = [...LATIN_V];
@@ -1219,8 +1219,27 @@ async function extractFrames(file, budget, onProg, strips = STRIPS) {
   }));
   if (scan.lanes) scan.lanes.forEach(v => v.remove());
   const frames = shots.flat();
+  // when in the video each image was taken, for going back to a stretch that came up short
+  frames.times = shots.flatMap((sh, i) => sh.map(() => chosen[i]));
+  frames.duration = dur;
   URL.revokeObjectURL(video.src);
   return frames;
+}
+// Fresh images from given moments of the video, cropped and cut exactly as the run's own were.
+async function grabStrips(file, times, strips = STRIPS) {
+  const video = await openVideo(file);
+  const W = Math.min(video.videoWidth || 720, 1080);
+  const H = Math.round(W * video.videoHeight / video.videoWidth);
+  const cv = Object.assign(document.createElement('canvas'), { width: W, height: H });
+  const cx = cv.getContext('2d', { willReadFrequently: true });
+  const out = [];
+  for (const t of times) {
+    await seek(video, Math.max(0, Math.min(t, video.duration - 0.05)));
+    cx.drawImage(video, 0, 0, W, H);
+    out.push(sliceStrips(cropFrame(cv, W, H, lastCropBox), strips));
+  }
+  URL.revokeObjectURL(video.src);
+  return out;
 }
 
 // A picture of the roster, for the names that words cannot describe.
@@ -1460,11 +1479,11 @@ async function callModel(frames) {
     done++; setProg(0.5 + 0.5 * done / batches.length);
     log(`read ${done} of ${batches.length} batches…`
         + (switched.size ? `  (fell back to ${[...switched].join(', ')})` : ''));
-    // Which of the run's frames each row was read from, for the second look. The model counts
-    // the reference sheet as image 1 when it is sent, so that is taken off first.
-    // Where the model leaves the number out, which it often does, the row's place in its reply
-    // stands in for it: rows come back in image order, so that places a row within a frame or
-    // two, and the second look sends its neighbours too.
+    // Which of the run's frames each row was read from, so the gap fill knows where in the video
+    // each rank was. The model counts the reference sheet as image 1 when it is sent, so that is
+    // taken off first. Where it leaves the number out, which it often does, the row's place in
+    // its reply stands in: rows come back in image order, which places a row within a frame or
+    // two, close enough for a stretch of video that is padded either side anyway.
     rows.forEach((r, i) => {
       let k = typeof r.img === 'number' ? r.img - 1 - (sheet ? 1 : 0) : -1;
       if (!(k >= 0 && k < b.length))
@@ -1541,6 +1560,20 @@ async function withFallback(call, chain, note, paced) {
 
 // Same request the direct Gemini path sends, aimed at the team Worker instead. No key
 // travels with it; the Worker holds that and adds it upstream.
+const RANKING_SCHEMA = {
+  type: 'ARRAY',
+  items: {
+    type: 'OBJECT',
+    properties: {
+      rank:        { type: 'STRING' },
+      roster_name: { type: 'STRING' },
+      seen:        { type: 'STRING' },
+      points:      { type: 'STRING' },
+      img:         { type: 'STRING' },
+    },
+    required: ['rank', 'seen', 'points'],
+  },
+};
 // `spec` lets another tab ask its own question through the same path: { prompt, schema, parse }.
 async function callProxy(batch, model, base, spec = null) {
   const r = await fetch(base + '/' + encodeURIComponent(model), {
@@ -1570,20 +1603,7 @@ async function callProxy(batch, model, base, spec = null) {
         // Everything is a string: models will happily emit "1,234" or "#4" for a number and
         // then the whole response is rejected, so take text and convert here.
         responseMimeType: 'application/json',
-        responseSchema: spec ? spec.schema : {
-          type: 'ARRAY',
-          items: {
-            type: 'OBJECT',
-            properties: {
-              rank:        { type: 'STRING' },
-              roster_name: { type: 'STRING' },
-              seen:        { type: 'STRING' },
-              points:      { type: 'STRING' },
-              img:         { type: 'STRING' },
-            },
-            required: ['rank', 'seen', 'points'],
-          },
-        },
+        responseSchema: spec ? spec.schema : RANKING_SCHEMA,
       }
     })
   });
@@ -1808,93 +1828,74 @@ function makeMatcher(index, skipIndex, aliases) {
   };
 }
 
-/* ---------------- second look ---------------- */
-// For the rows nothing could name. The main pass reads every row of every frame with thinking
-// kept to a minimum, which is what keeps a run to seconds and under budget; a few stylised names
-// do not survive that. ŊŲƁĮ reads as "DUBI" at any size — 0.75 similar to Nubi, just short of
-// the matcher's bar — and it took a whole run's worth of thinking (104k tokens, 76 s) to settle.
+/* ---------------- gap fill ---------------- */
+// Ranks the run never captured. A rank goes missing in one of two ways: no sampled frame showed
+// its row whole — the list moved past between two samples, or the row sat cut off at an edge in
+// every frame it was in — or a frame did show it and the model, reading a long batch, left it
+// out. Either way the page knows exactly which ranks are absent, and roughly where: between the
+// frames that showed the rank above and the rank below.
 //
-// So those rows alone get a second, harder look. Each goes in its own small request: the frames
-// it was actually read in, at full detail, with thinking on, and a closed question — which of
-// these similar roster players is this row, or none. The answer is held to that list by the
-// response schema, so the model can decline but cannot invent. A match made this way is badged
-// "second look" in the table so it can be checked at a glance.
-const SECOND_LOOK_MAX = 12, SECOND_LOOK_FRAMES = 3, SECOND_LOOK_SHORTLIST = 15;
-function secondLookShortlist(r, roster, taken) {
-  const reads = [...new Set([...(r.obs || []), r.name, r.plain].filter(Boolean))];
-  const score = e => {
-    let best = 0;
-    for (const o of reads) {
-      const fo = fold(o);
-      for (const f of [e.search, e.ingame].filter(Boolean)) {
-        const ff = fold(f);
-        if (fo && ff) best = Math.max(best, sim(fo, ff));
-        else if (!fo && !usableFold(f)) best = Math.max(best, 0.5);   // symbols against symbols
-      }
+// So each gap gets its own small request, and only when there is a gap: fresh frames taken from
+// that stretch of the video, and the usual question narrowed to just those ranks. A run with no
+// gaps costs nothing extra. Measured, a missed rank is most often a single row, and the ask for it
+// comes to roughly 15,000 tokens.
+const GAP_MAX = 8, GAP_MOMENTS = 5, GAP_REACH = 3;
+async function fillGaps(sightings, frames, file) {
+  if (!frames.times) return { asked: 0, found: 0, rows: [] };
+  const at = s => s.frame != null ? frames.times[s.frame] : null;
+  const when = new Map();                  // rank -> times it was seen
+  for (const s of sightings) {
+    if (!(s.rank > 0)) continue;
+    if (!when.has(s.rank)) when.set(s.rank, []);
+    const t = at(s);
+    if (t != null) when.get(s.rank).push(t);
+  }
+  if (!when.size) return { asked: 0, found: 0, rows: [] };
+  const top = Math.max(...when.keys());
+  const ranges = [];
+  for (let k = 1; k <= top; k++) {
+    if (when.has(k)) continue;
+    const last = ranges[ranges.length - 1];
+    if (last && last[1] === k - 1) last[1] = k; else ranges.push([k, k]);
+  }
+  if (!ranges.length) return { asked: 0, found: 0, rows: [] };
+  const todo = ranges.slice(0, GAP_MAX);
+  const missing = todo.reduce((n, [a, b]) => n + b - a + 1, 0);
+  log(`filling ${missing} missing rank${missing > 1 ? 's' : ''}…`);
+
+  // the stretch of video between the nearest ranks either side that were seen
+  const seenNear = (from, step) => {
+    for (let k = from, i = 0; i < GAP_REACH; k += step, i++) {
+      const ts = when.get(k);
+      if (ts && ts.length) return step < 0 ? Math.max(...ts) : Math.min(...ts);
     }
-    if ((r.claims || []).includes(e.search)) best += 1;              // the model's own guess
-    return best;
+    return null;
   };
-  return roster.filter(e => e.search && !taken.has(e.search))
-    .map(e => ({ e, s: score(e) })).sort((a, b) => b.s - a.s)
-    .slice(0, SECOND_LOOK_SHORTLIST).map(x => x.e);
-}
-// `what` says which card to look at; it defaults to the Ranking row. The Base CP tab passes its
-// own, for a member card, and its own model.
-const rankingCard = r => `These images are from a mobile game leaderboard called "Ranking". Look at the row
-ranked ${r.rank ?? r.seenRank} with ${r.points} points.`;
-async function secondLook(rows, frames, roster, what = rankingCard, models = modelChain()) {
-  const open = rows.filter(r => !r.match && !r.skipped && !r.dropped && r.frames && r.frames.length)
-                   .slice(0, SECOND_LOOK_MAX);
-  if (!open.length) return { asked: 0, found: 0 };
-  log(`taking a second look at ${open.length} name${open.length > 1 ? 's' : ''}…`);
-  // a player already on the board cannot be this row as well
-  const taken = new Set(rows.filter(r => r.match).map(r => r.match.search));
+  const moments = todo.map(([a, b]) => {
+    let t0 = seenNear(a - 1, -1) ?? 0, t1 = seenNear(b + 1, 1) ?? frames.duration;
+    if (t1 < t0) [t0, t1] = [t1, t0];
+    t0 = Math.max(0, t0 - 0.3); t1 = Math.min(frames.duration, t1 + 0.3);
+    return Array.from({ length: GAP_MOMENTS }, (_, i) => t0 + (t1 - t0) * i / (GAP_MOMENTS - 1));
+  });
+  const shots = await grabStrips(file, moments.flat());
   let found = 0;
-  const ask = async r => {
-    const list = secondLookShortlist(r, roster, taken);
-    if (!list.length) return null;
-    const bySearch = new Map(list.map(e => [e.search, e]));
+  const rows = (await Promise.all(todo.map(async ([a, b], gi) => {
+    const imgs = shots.slice(gi * GAP_MOMENTS, (gi + 1) * GAP_MOMENTS).flat();
     const spec = {
-      prompt: `${what(r)} Its name was first read as "${r.name}",
-which may be wrong — the name is stylised and hard to read.
+      prompt: buildPrompt(false) + `
 
-Which of these players is it? Each is written as "name = how the name is drawn in the
-game" where the two differ. Compare the drawn form against the image, glyph by glyph.
-${list.map(e => (e.ingame && e.ingame !== e.search) ? `${e.search} = ${e.ingame}` : e.search).join('\n')}
-
-Answer with the left-hand name exactly, or NONE if it is clearly none of them.`,
-      schema: { type: 'OBJECT', properties: { roster_name: { type: 'STRING',
-                enum: [...list.map(e => e.search), 'NONE'] } }, required: ['roster_name'] },
-      parse: t => { try { return JSON.parse(t).roster_name; }
-                    catch { return (t.match(/"roster_name"\s*:\s*"([^"]*)"/) || [])[1]; } },
-      // full detail and real thinking: this is the one place either is worth paying for
-      config: { thinkingConfig: { thinkingLevel: 'low' } },
+These images were taken to find rows the first reading missed. Report ONLY the rows ranked
+${a === b ? a : `${a} to ${b}`}, and nothing else.`,
+      schema: RANKING_SCHEMA, parse: parseJSON, config: KARTZ.config,
     };
     try {
-      // its own frames, and when there are fewer than asked for, their neighbours
-      const idx = [...new Set(r.frames.flatMap(i => [i, i - 1, i + 1]))]
-        .filter(i => frames[i]).slice(0, SECOND_LOOK_FRAMES);
-      const imgs = idx.map(i => frames[i]);
-      const ans = await withFallback(m => callProxy(imgs, m, MODEL_BASE, spec), models, () => {}, true);
-      return bySearch.get(ans) || null;
-    } catch { return null; }   // a failed second look leaves the row for you, as it was
-  };
-  await Promise.all(open.map(async r => {
-    // Rows are looked at side by side, so two can name the same player — two Killuas both came
-    // back as Killua Central. The first keeps it, and the other is asked again without it.
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const e = await ask(r);
-      if (!e) return;
-      if (!taken.has(e.search)) {
-        taken.add(e.search);
-        Object.assign(r, { match: e, pick: e.ingame || e.search, score: 1, second: true, via: 'second look' });
-        found++;
-        return;
-      }
-    }
-  }));
-  return { asked: open.length, found };
+      const got = await withFallback(m => callProxy(imgs, m, MODEL_BASE, spec), modelChain(), () => {}, true);
+      const hit = got.filter(r => r.rank >= a && r.rank <= b);
+      found += new Set(hit.map(r => r.rank)).size;
+      return hit;
+    } catch { return []; }                 // a failed fill leaves the gap reported, as before
+  }))).flat();
+  return { asked: missing, found, rows };
 }
 
 /* ---------------- run ---------------- */
@@ -1920,6 +1921,8 @@ $('go').onclick = async () => {
     const frameCount = frames.length;
 
     sightings = dropForeignRows(sightings);
+    const fill = await fillGaps(sightings, frames, videoFile);
+    sightings = sightings.concat(fill.rows);
     const base = consolidate(sightings, frameCount);
     rows = base.map(makeMatcher(index, skipIndex, aliases));
     // Two rows resolving to one player means at least one of them is wrong, and neither the
@@ -1956,11 +1959,10 @@ $('go').onclick = async () => {
       r.rank = r.seenRank > 0 ? r.seenRank : ++n;
       if (r.rank > n) n = r.rank;
     }
-    const second = await secondLook(rows, frames, roster);
     render(roster);
     const spent = (callProxy.spent || 0) - spentBefore;
     log(`done — ${sightings.length} readings → ${rows.length} players · `
-        + (second.asked ? `second look matched ${second.found} of ${second.asked} · ` : '')
+        + (fill.asked ? `gap fill found ${fill.found} of ${fill.asked} · ` : '')
         + `${Math.round(spent / 1000)}k tokens · slowest answer ${Math.round(callModel.slowest / 1000)}s`
         + (spent > 250000 ? ' (over the 250k budget)' : ''));
     setProg(1);
@@ -2059,8 +2061,7 @@ function render(roster) {
         <td>${alli ? esc(alli) : '<span class="note">—</span>'}</td>
         <td>${r.points}</td>
         <td>${r.skipped ? '<span class="pill p-new">excluded</span>'
-            : r.match ? `<span class="pill p-ok"${r.second ? ` title="matched on a second look — worth a glance"` : ''}>`
-                        + `${r.second ? 'second look' : r.near1 ? '1 char' : 'exact'}</span>`
+            : r.match ? `<span class="pill p-ok">${r.near1 ? '1 char' : 'exact'}</span>`
             : r.confirmed ? '<span class="pill p-ok">confirmed</span>'
                       : '<span class="pill p-new">confirm</span>'}</td>
         <td><button class="ghost rowdrop" data-i="${i}"
