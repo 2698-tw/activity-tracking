@@ -228,7 +228,7 @@ const $ = id => document.getElementById(id);
 // Shown on the page. Several people run this from their own phones and a browser can sit on
 // an open tab for days, so "it is still happening" and "it is fixed" are easy to say about
 // different builds. Bump it with any change worth telling apart from the one before.
-const BUILD = '2026-09-29-fast-sampling-2';
+const BUILD = '2026-09-29-second-look';
 // Gemini, through the Worker's /api/gemini route where the key lives — the same paid key the
 // Base CP tab uses (4,000 requests and 4M tokens a minute). It was Ollama's gemma4:31b; that
 // route is still in the Worker, and switching back is this line and MODEL_BASE below.
@@ -1359,7 +1359,7 @@ ${names.join(', ')}
 ${symbolNote}${sheetNote}
 
 Return every row you can read ${scope} as a single JSON array, one object per row:
-{"rank": <int or null>, "roster_name": "<a name copied exactly from the ROSTER, or null>", "seen": "<the name as actually drawn on screen>", "points": <int>}
+{"rank": <int or null>, "roster_name": "<a name copied exactly from the ROSTER, or null>", "seen": "<the name as actually drawn on screen>", "points": <int>, "img": <int>}
 
 Rules:
 - "roster_name" MUST be copied character-for-character from the list above, or be null if
@@ -1367,6 +1367,7 @@ Rules:
 - Prefer a known player whenever the drawn name plausibly corresponds to one, allowing for
   stylised glyphs, emoji, accents and lookalike characters.
 - "seen" is the raw on-screen name, so a person can check the match.
+- "img" is which image the row was read from, counting every image in this request from 1.
 - Some players have no letters in their name at all — just emoji, symbols or non-Latin
   characters. Reproduce those exactly, character for character, in "seen"; do not substitute
   a similar-looking emoji. A polar bear is not a panda. The roster lists these names in the
@@ -1446,7 +1447,7 @@ async function callModel(frames) {
   let done = 0;
   const switched = new Set();
   callModel.slowest = 0;
-  const one = async b => {
+  const one = async (b, bi) => {
     // No rate gate: on the paid key a run is a few dozen requests against 4,000 a minute.
     const rows = await withFallback(async m => {
                                       const t0 = Date.now();
@@ -1459,6 +1460,17 @@ async function callModel(frames) {
     done++; setProg(0.5 + 0.5 * done / batches.length);
     log(`read ${done} of ${batches.length} batches…`
         + (switched.size ? `  (fell back to ${[...switched].join(', ')})` : ''));
+    // Which of the run's frames each row was read from, for the second look. The model counts
+    // the reference sheet as image 1 when it is sent, so that is taken off first.
+    // Where the model leaves the number out, which it often does, the row's place in its reply
+    // stands in for it: rows come back in image order, so that places a row within a frame or
+    // two, and the second look sends its neighbours too.
+    rows.forEach((r, i) => {
+      let k = typeof r.img === 'number' ? r.img - 1 - (sheet ? 1 : 0) : -1;
+      if (!(k >= 0 && k < b.length))
+        k = Math.round(rows.length > 1 ? i / (rows.length - 1) * (b.length - 1) : 0);
+      r.frame = bi * B + k;
+    });
     return rows;
   };
   // every batch at once: a run takes as long as its slowest answer
@@ -1567,6 +1579,7 @@ async function callProxy(batch, model, base, spec = null) {
               roster_name: { type: 'STRING' },
               seen:        { type: 'STRING' },
               points:      { type: 'STRING' },
+              img:         { type: 'STRING' },
             },
             required: ['rank', 'seen', 'points'],
           },
@@ -1616,6 +1629,7 @@ function parseJSON(text) {
       };
       r.points = num(r.points);
       r.rank   = num(r.rank);
+      r.img    = num(r.img);
       if (typeof r.points === 'number' && (r.name || r.plain)) rows.push(r);
     } catch { /* a half-written object at the cut: skip it */ }
   }
@@ -1708,6 +1722,9 @@ function consolidate(sightings, frameCount) {
       rank:   rank > 0 ? rank : null,
       seenRank: rank > 0 ? rank : 0,
       seen:   g.length,
+      // the frames this rank was read in, most-read first
+      frames: Object.entries(g.reduce((c, x) => (x.frame != null && (c[x.frame] = (c[x.frame] || 0) + 1), c), {}))
+                .sort((a, b) => b[1] - a[1]).map(([f]) => +f),
     });
   }
   return out.sort((a, b) => b.points - a.points || (a.seenRank || 9999) - (b.seenRank || 9999));
@@ -1791,6 +1808,95 @@ function makeMatcher(index, skipIndex, aliases) {
   };
 }
 
+/* ---------------- second look ---------------- */
+// For the rows nothing could name. The main pass reads every row of every frame with thinking
+// kept to a minimum, which is what keeps a run to seconds and under budget; a few stylised names
+// do not survive that. ŊŲƁĮ reads as "DUBI" at any size — 0.75 similar to Nubi, just short of
+// the matcher's bar — and it took a whole run's worth of thinking (104k tokens, 76 s) to settle.
+//
+// So those rows alone get a second, harder look. Each goes in its own small request: the frames
+// it was actually read in, at full detail, with thinking on, and a closed question — which of
+// these similar roster players is this row, or none. The answer is held to that list by the
+// response schema, so the model can decline but cannot invent. A match made this way is badged
+// "second look" in the table so it can be checked at a glance.
+const SECOND_LOOK_MAX = 12, SECOND_LOOK_FRAMES = 3, SECOND_LOOK_SHORTLIST = 15;
+function secondLookShortlist(r, roster, taken) {
+  const reads = [...new Set([...(r.obs || []), r.name, r.plain].filter(Boolean))];
+  const score = e => {
+    let best = 0;
+    for (const o of reads) {
+      const fo = fold(o);
+      for (const f of [e.search, e.ingame].filter(Boolean)) {
+        const ff = fold(f);
+        if (fo && ff) best = Math.max(best, sim(fo, ff));
+        else if (!fo && !usableFold(f)) best = Math.max(best, 0.5);   // symbols against symbols
+      }
+    }
+    if ((r.claims || []).includes(e.search)) best += 1;              // the model's own guess
+    return best;
+  };
+  return roster.filter(e => e.search && !taken.has(e.search))
+    .map(e => ({ e, s: score(e) })).sort((a, b) => b.s - a.s)
+    .slice(0, SECOND_LOOK_SHORTLIST).map(x => x.e);
+}
+// `what` says which card to look at; it defaults to the Ranking row. The Base CP tab passes its
+// own, for a member card, and its own model.
+const rankingCard = r => `These images are from a mobile game leaderboard called "Ranking". Look at the row
+ranked ${r.rank ?? r.seenRank} with ${r.points} points.`;
+async function secondLook(rows, frames, roster, what = rankingCard, models = modelChain()) {
+  const open = rows.filter(r => !r.match && !r.skipped && !r.dropped && r.frames && r.frames.length)
+                   .slice(0, SECOND_LOOK_MAX);
+  if (!open.length) return { asked: 0, found: 0 };
+  log(`taking a second look at ${open.length} name${open.length > 1 ? 's' : ''}…`);
+  // a player already on the board cannot be this row as well
+  const taken = new Set(rows.filter(r => r.match).map(r => r.match.search));
+  let found = 0;
+  const ask = async r => {
+    const list = secondLookShortlist(r, roster, taken);
+    if (!list.length) return null;
+    const bySearch = new Map(list.map(e => [e.search, e]));
+    const spec = {
+      prompt: `${what(r)} Its name was first read as "${r.name}",
+which may be wrong — the name is stylised and hard to read.
+
+Which of these players is it? Each is written as "name = how the name is drawn in the
+game" where the two differ. Compare the drawn form against the image, glyph by glyph.
+${list.map(e => (e.ingame && e.ingame !== e.search) ? `${e.search} = ${e.ingame}` : e.search).join('\n')}
+
+Answer with the left-hand name exactly, or NONE if it is clearly none of them.`,
+      schema: { type: 'OBJECT', properties: { roster_name: { type: 'STRING',
+                enum: [...list.map(e => e.search), 'NONE'] } }, required: ['roster_name'] },
+      parse: t => { try { return JSON.parse(t).roster_name; }
+                    catch { return (t.match(/"roster_name"\s*:\s*"([^"]*)"/) || [])[1]; } },
+      // full detail and real thinking: this is the one place either is worth paying for
+      config: { thinkingConfig: { thinkingLevel: 'low' } },
+    };
+    try {
+      // its own frames, and when there are fewer than asked for, their neighbours
+      const idx = [...new Set(r.frames.flatMap(i => [i, i - 1, i + 1]))]
+        .filter(i => frames[i]).slice(0, SECOND_LOOK_FRAMES);
+      const imgs = idx.map(i => frames[i]);
+      const ans = await withFallback(m => callProxy(imgs, m, MODEL_BASE, spec), models, () => {}, true);
+      return bySearch.get(ans) || null;
+    } catch { return null; }   // a failed second look leaves the row for you, as it was
+  };
+  await Promise.all(open.map(async r => {
+    // Rows are looked at side by side, so two can name the same player — two Killuas both came
+    // back as Killua Central. The first keeps it, and the other is asked again without it.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const e = await ask(r);
+      if (!e) return;
+      if (!taken.has(e.search)) {
+        taken.add(e.search);
+        Object.assign(r, { match: e, pick: e.ingame || e.search, score: 1, second: true, via: 'second look' });
+        found++;
+        return;
+      }
+    }
+  }));
+  return { asked: open.length, found };
+}
+
 /* ---------------- run ---------------- */
 let rows = [], index = [], skipIndex = [], aliases = {};
 $('go').onclick = async () => {
@@ -1850,9 +1956,11 @@ $('go').onclick = async () => {
       r.rank = r.seenRank > 0 ? r.seenRank : ++n;
       if (r.rank > n) n = r.rank;
     }
+    const second = await secondLook(rows, frames, roster);
     render(roster);
     const spent = (callProxy.spent || 0) - spentBefore;
     log(`done — ${sightings.length} readings → ${rows.length} players · `
+        + (second.asked ? `second look matched ${second.found} of ${second.asked} · ` : '')
         + `${Math.round(spent / 1000)}k tokens · slowest answer ${Math.round(callModel.slowest / 1000)}s`
         + (spent > 250000 ? ' (over the 250k budget)' : ''));
     setProg(1);
@@ -1951,7 +2059,8 @@ function render(roster) {
         <td>${alli ? esc(alli) : '<span class="note">—</span>'}</td>
         <td>${r.points}</td>
         <td>${r.skipped ? '<span class="pill p-new">excluded</span>'
-            : r.match ? `<span class="pill p-ok">${r.near1 ? '1 char' : 'exact'}</span>`
+            : r.match ? `<span class="pill p-ok"${r.second ? ` title="matched on a second look — worth a glance"` : ''}>`
+                        + `${r.second ? 'second look' : r.near1 ? '1 char' : 'exact'}</span>`
             : r.confirmed ? '<span class="pill p-ok">confirmed</span>'
                       : '<span class="pill p-new">confirm</span>'}</td>
         <td><button class="ghost rowdrop" data-i="${i}"

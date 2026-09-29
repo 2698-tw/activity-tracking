@@ -73,13 +73,14 @@ ${names.join(', ')}
 
 Return every member card you can read across ALL the images as a single JSON array, one object
 per card:
-{"roster_name": "<a name copied exactly from the ROSTER, or null>", "seen": "<the name as drawn>", "cp": "<the text after CP:, e.g. 98.4M>"}
+{"roster_name": "<a name copied exactly from the ROSTER, or null>", "seen": "<the name as drawn>", "cp": "<the text after CP:, e.g. 98.4M>", "img": <int>}
 
 Rules:
 - "roster_name" MUST be copied character-for-character from the list above, or be null if you
   are genuinely confident this player is not on it. Never invent a spelling.
 - "seen" is the name exactly as drawn, including emoji, symbols and decorations that are part
   of the name (a ⚒ or 💯 beside the letters belongs to the name). Leave out the ♂/♀ symbol.
+- "img" is which image the card was read from, counting the images in this request from 1.
 - "cp" is copied exactly, including its decimal point and unit letter: "56.3M", "103M". Most
   CP values have one digit after a small decimal point — look for it, and never drop it:
   "56.3M" written as "563M" is wrong by ten times.
@@ -98,6 +99,7 @@ const CP_SCHEMA = {
       roster_name: { type: 'STRING' },
       seen:        { type: 'STRING' },
       cp:          { type: 'STRING' },
+      img:         { type: 'STRING' },
     },
     required: ['seen', 'cp'],
   },
@@ -158,7 +160,12 @@ async function cpCallModel(frames) {
     done++; setProg(0.5 + 0.5 * done / batches.length);
     log(`read ${done} of ${batches.length} batches…`);
     // the batch number keeps the list order: batches finish in any order, frames do not
-    return got.map((s, i) => ({ ...s, order: bi * 1e4 + i }));
+    // and which of the run's frames each card was read from, for the second look
+    // Where the model leaves the number out, which it often does, the card's place in its reply
+    // stands in: cards come back in image order, and the second look sends neighbours too.
+    return got.map((s, i) => ({ ...s, order: bi * 1e4 + i,
+      frame: bi * CP_BATCH + (s.img >= 1 && s.img <= b.length ? s.img - 1
+             : Math.round(got.length > 1 ? i / (got.length - 1) * (b.length - 1) : 0)) }));
   };
   return (await inTurn(batches, one, batches.length)).flat();
 }
@@ -191,7 +198,8 @@ function cpParse(text) {
       const cp = cpValue(r.cp);
       // a name that decoded to nothing but replacement characters is not a reading
       if (seen && /[^�\s?]/.test(seen) && cp !== null && cp > 0)
-        out.push({ seen, claim: cpDecode(r.roster_name).trim(), cp });
+        out.push({ seen, claim: cpDecode(r.roster_name).trim(), cp,
+                   img: parseInt(String(r.img ?? '').replace(/\D/g, ''), 10) || null });
     } catch { /* half-written object at the cut */ }
   }
   if (!out.length && !objs.length && !/^\s*[\[{]/.test(text.trim()))
@@ -245,6 +253,9 @@ function cpGroups(sightings) {
       cp: cpBest(items.map(x => x.cp)),
       seen: items.length,
       order: Math.min(...items.map(x => x.order)),
+      // the frames this card was read in, most-read first
+      frames: Object.entries(items.reduce((c, x) => (x.frame != null && (c[x.frame] = (c[x.frame] || 0) + 1), c), {}))
+                .sort((a, b) => b[1] - a[1]).map(([f]) => +f),
     };
   });
 }
@@ -296,6 +307,7 @@ $('cpGo').onclick = async () => {
     const roster = currentRoster();
     if (!roster.length) throw new Error('No roster loaded — press Pull / Update Alliance Roster.');
     log('decoding video…'); setProg(0);
+    const spentBefore = callProxy.spent || 0;
     const frames = await extractFrames(cpFile, +$('sens').value,
       (p, n) => { setProg(p * 0.5); log(`sampling video — ${n} frames kept`); });
     if (!frames.length) throw new Error('no frames captured');
@@ -304,9 +316,15 @@ $('cpGo').onclick = async () => {
     log(`${frames.length} frames — sending…`);
     const sightings = await cpCallModel(frames);
     cpRows = cpIdentify(cpGroups(sightings), roster);
+    // The cards nothing could name get the same second look as the Ranking tab's rows: their own
+    // frames at full detail, thinking on, and a shortlist to choose from.
+    const second = await secondLook(cpRows, frames, roster,
+      r => `These images are from a mobile game's alliance member list. Look at the member card whose
+CP reads ${r.cp}M.`, [CP_MODEL]);
     cpRender();
-    const t = cpCallModel.tokens;
+    const t = (callProxy.spent || 0) - spentBefore;     // the second look included
     log(`done — ${sightings.length} readings → ${cpRows.length} members · `
+        + (second.asked ? `second look matched ${second.found} of ${second.asked} · ` : '')
         + `${Math.round(t / 1000)}k tokens · slowest answer ${Math.round(cpCallModel.slowest / 1000)}s`
         + (t > CP_RUN_BUDGET ? ' (over the 250k budget)' : ''));
     setProg(1);
@@ -345,7 +363,8 @@ function cpRender() {
                         value="${esc(outName(r))}" spellcheck="false">`}</td>
         <td>${r.cp}${r.cpRead ? ` <span class="note" title="the decimal point was missed">`
               + `read ${r.cpRead}</span>` : ''}</td>
-        <td>${r.match ? `<span class="pill p-ok">${r.near1 ? '1 char' : 'exact'}</span>`
+        <td>${r.match ? `<span class="pill p-ok"${r.second ? ` title="matched on a second look — worth a glance"` : ''}>`
+                        + `${r.second ? 'second look' : r.near1 ? '1 char' : 'exact'}</span>`
             : r.confirmed || r.pick ? '<span class="pill p-ok">confirmed</span>'
                                     : '<span class="pill p-new">confirm</span>'}</td>
         <td><button class="ghost cpdrop" data-i="${i}"
