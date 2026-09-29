@@ -1387,6 +1387,8 @@ async function callProxy(batch, model, base, spec = null) {
         // much as the fix: a fault you can reproduce is a fault you can chase.
         seed: 7,
         thinkingConfig: { thinkingLevel: 'low' },
+        // a tab on another model can swap settings that model does not take (see cp.js)
+        ...(spec && spec.config),
         // Ask the API to enforce the shape rather than hoping the model returns clean JSON.
         // Everything is a string: models will happily emit "1,234" or "#4" for a number and
         // then the whole response is rejected, so take text and convert here.

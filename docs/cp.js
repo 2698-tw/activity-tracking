@@ -116,48 +116,36 @@ function cpValue(s) {
 }
 
 // This tab runs on Gemini, through the Worker's /api/gemini route, where the key lives; the
-// Ranking tab stays on Ollama. Gemini's allowance is 15 requests and 250,000 tokens a minute.
-// The key's daily cap, if it has one, is not metered here: withFallback reports it when hit.
+// Ranking tab stays on Ollama. The key is on the paid tier (4,000 requests and 4M tokens a
+// minute), so there is no pacing any more: a run goes out at once and is done in seconds.
 //
-// 16 images a request. At 24 the small print suffered — CP decimal points went missing, 56.3M
-// coming back as 563 — and a shorter batch is read more carefully. Every request also carries
-// the whole roster, so a run is about 12 requests and, as Google counts, ~350,000 tokens: more
-// than one minute's allowance, however it is sent.
+// What is watched instead is the run's total, which should stay under 250,000 tokens. On
+// Gemini 2.5 an image costs a flat ~258 tokens per 768-pixel tile rather than the ~1,100 the
+// 3.x models charged, so the 192 images of a typical run are a small part of it; the roster,
+// which goes with every request, is the larger part. The total is logged after each run.
 //
-// So the run is paced, not bursted. Requests used to go out as fast as a rolling budget allowed
-// and stop when it filled — and whenever Google counted a little more than the estimate, the
-// last few were refused. Now each request starts a fixed gap after the one before, the gap
-// sized so that a minute of them stays well inside both limits: at ~30,000 tokens a request and
-// 170,000 a minute, about one every 11 seconds, and a run takes about two minutes with nothing
-// ever refused or waiting on the allowance.
-const CP_MODEL = 'gemini-3.1-flash-lite';
-const CP_BATCH = 16, CP_PARALLEL = 3;
-const CP_RPM = 10, CP_TPM = 170000;          // two thirds of 15 / 250k: a margin, not a target
-// What Google counts, as a multiple of the page's estimate, learned from each reply. It only
-// rises. It starts at what was measured rather than at 1, so the first gaps are right too.
-let cpScale = 1.25;
-let cpNextStart = 0;
-async function cpPace(tokens) {
-  const gap = Math.max(60000 / CP_RPM, 60000 * tokens / CP_TPM);
-  const at = Math.max(Date.now(), cpNextStart);
-  cpNextStart = at + gap;
-  if (at > Date.now()) await new Promise(r => setTimeout(r, at - Date.now()));
-}
+// 12 images a request. Shorter batches are read more carefully — at 24 the CP decimal points
+// went missing — and the cheaper images leave room for it: 16 requests of ~12 images plus the
+// roster come to roughly 140,000–190,000 tokens.
+//
+// Thinking is off. 2.5 does not take the thinkingLevel the Ranking tab sends, and reading a
+// name and a number off a card gains nothing from it while every thought is an output token.
+const CP_MODEL = 'gemini-2.5-flash-lite';
+const CP_BATCH = 12, CP_PARALLEL = 8;
+const CP_CONFIG = { thinkingConfig: { thinkingBudget: 0 } };
+const CP_RUN_BUDGET = 250000;
 
 async function cpCallModel(frames) {
-  const B = CP_BATCH;
   const batches = [];
-  for (let i = 0; i < frames.length; i += B) batches.push(frames.slice(i, i + B));
-  const spec = { prompt: cpPrompt(), schema: CP_SCHEMA, parse: cpParse };
-  const promptTokens = Math.ceil(spec.prompt.length / CHARS_PER_TOKEN);
+  for (let i = 0; i < frames.length; i += CP_BATCH) batches.push(frames.slice(i, i + CP_BATCH));
+  const spec = { prompt: cpPrompt(), schema: CP_SCHEMA, parse: cpParse, config: CP_CONFIG };
   let done = 0;
+  cpCallModel.tokens = 0;
   const one = async (b, bi) => {
     const got = await withFallback(async m => {
-      const est = b.length * IMG_TOKENS + promptTokens;
-      await cpPace(Math.ceil(est * cpScale));
       const call = { ...spec };          // its own, so its usage is not another request's
       const got = await callProxy(b, m, API_BASE + '/gemini', call);
-      if (call.usage > 0) cpScale = Math.max(cpScale, call.usage / est);
+      cpCallModel.tokens += call.usage || 0;
       return got;
     }, [CP_MODEL], () => {}, true);
     done++; setProg(0.5 + 0.5 * done / batches.length);
@@ -310,7 +298,9 @@ $('cpGo').onclick = async () => {
     const sightings = await cpCallModel(frames);
     cpRows = cpIdentify(cpGroups(sightings), roster);
     cpRender();
-    log(`done — ${sightings.length} readings → ${cpRows.length} members`);
+    const t = cpCallModel.tokens;
+    log(`done — ${sightings.length} readings → ${cpRows.length} members · `
+        + `${Math.round(t / 1000)}k tokens` + (t > CP_RUN_BUDGET ? ' (over the 250k budget)' : ''));
     setProg(1);
   } catch (e) { log('✗ ' + e.message); }
   logEl = 'log'; progEl = 'prog';
