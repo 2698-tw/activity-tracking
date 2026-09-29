@@ -182,7 +182,7 @@ async function appendRows(env, values) {
   // table's first column, and column A of this tab is filled with lookup formulas — so rows
   // aimed at B:J landed in A:I. Instead: find the last row with anything in B:J, and write the
   // new rows into B:J directly below it. Columns A and Q:T are never touched.
-  const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(tab + '!B:J')}`
+  const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(tab + '!C:K')}`
     + '?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE');
   // Trailing empty rows are not returned, but a formula showing "" still counts as a value,
   // so walk back past any row whose cells are all blank.
@@ -191,7 +191,7 @@ async function appendRows(env, values) {
   while (filled > 0 && !(seen[filled - 1] || []).some(v => v !== '' && v != null)) filled--;
   const first = filled + 1;
   const last = first + values.length - 1;
-  const range = `${tab}!B${first}:J${last}`;
+  const range = `${tab}!C${first}:K${last}`;
 
   const out = await sheetsCall(token, 'PUT',
     `/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
