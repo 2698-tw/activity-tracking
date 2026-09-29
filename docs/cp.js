@@ -4,7 +4,7 @@
 // "Level: 100" and "CP: 98.4M". The output is two columns — In-game Name and Base CP.
 //
 // Loaded after the main script and built out of its parts: the same frame sampler, the same
-// Worker, rate gate and retry, the same roster and the same matcher (makeMatcher) deciding who
+// Worker and retry (on Gemini rather than Ollama — see cpCallModel), the same roster and the same matcher (makeMatcher) deciding who
 // each card is. Only the question put to the model and the table differ, so the two tabs
 // cannot drift apart in how they read a recording or name a player.
 
@@ -108,8 +108,38 @@ function cpValue(s) {
   return +(n * scale).toFixed(3);
 }
 
+// This tab runs on Gemini, through the Worker's /api/gemini route, where the key lives; the
+// Ranking tab stays on Ollama. Gemini's allowance is 15 requests and 250,000 tokens a minute,
+// both rolling, so the gate below meters both and a request waits until the minute has room.
+// The key's daily cap, if it has one, is not metered here: withFallback reports it when hit.
+//
+// 24 images a request. Every request carries the whole roster (~6,500 tokens), so fewer, larger
+// batches keep that repetition down: 192 images come to 8 requests and about 265,000 tokens,
+// which is one minute's allowance and a few seconds of the next. Smaller batches read a little
+// more carefully but spend the minute on roster text instead of pictures.
+const CP_MODEL = 'gemini-3.5-flash-lite';
+const CP_BATCH = 24, CP_PARALLEL = 4, CP_RPM = 14, CP_TPM = 240000;  // a little under 15 / 250k
+const cpGate = (() => {
+  const win = [];                      // { t, tokens } for the last minute
+  return async tokens => {
+    for (;;) {
+      const now = Date.now();
+      while (win.length && now - win[0].t > 60000) win.shift();
+      const used = win.reduce((n, e) => n + e.tokens, 0);
+      if (!win.length || (win.length < CP_RPM && used + tokens <= CP_TPM)) {
+        const entry = { t: now, tokens };
+        win.push(entry);
+        // a refused request gives back its tokens but still counts as a request
+        return { settle: a => { if (a > 0) entry.tokens = a; }, refund: () => { entry.tokens = 0; } };
+      }
+      log(`waiting for Gemini's per-minute allowance…`);
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  };
+})();
+
 async function cpCallModel(frames) {
-  const B = batchSize(frames.length);
+  const B = CP_BATCH;
   const batches = [];
   for (let i = 0; i < frames.length; i += B) batches.push(frames.slice(i, i + B));
   const spec = { prompt: cpPrompt(), schema: CP_SCHEMA, parse: cpParse };
@@ -117,19 +147,19 @@ async function cpCallModel(frames) {
   let done = 0;
   const one = async (b, bi) => {
     const got = await withFallback(async m => {
-      const lease = await rateGate(b.length * IMG_TOKENS + promptTokens);
+      const lease = await cpGate(b.length * IMG_TOKENS + promptTokens);
       try {
-        const got = await callProxy(b, m, API_BASE, spec);
+        const got = await callProxy(b, m, API_BASE + '/gemini', spec);
         lease.settle(callProxy.lastUsage);
         return got;
       } catch (e) { lease.refund(); throw e; }
-    }, modelChain(), () => {}, true);
+    }, [CP_MODEL], () => {}, true);
     done++; setProg(0.5 + 0.5 * done / batches.length);
     log(`read ${done} of ${batches.length} batches…`);
     // the batch number keeps the list order: batches finish in any order, frames do not
     return got.map((s, i) => ({ ...s, order: bi * 1e4 + i }));
   };
-  return (await Promise.all(batches.map(one))).flat();
+  return (await inTurn(batches, one, CP_PARALLEL)).flat();
 }
 
 // Row objects one at a time, as on the Ranking tab, so a reply cut off mid-array keeps

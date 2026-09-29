@@ -9,6 +9,9 @@
  *   wrangler secret put OLLAMA_API_KEY
  *
  * The model is fixed to gemma4:31b by the page. The key is stored only in Cloudflare.
+ *
+ * The Base CP tab uses Gemini instead, through /api/gemini/<model>:
+ *   wrangler secret put GEMINI_API_KEY
  */
 
 // Extra origins allowed to call this when the page is hosted somewhere else.
@@ -266,6 +269,29 @@ export default {
         const status = e.status || (e instanceof SyntaxError ? 400 : 502);
         return reply({ error: { code: status, message: String(e && e.message || e) } }, status);
       }
+    }
+
+    // /api/gemini/<model>: the Base CP tab, on Gemini instead of Ollama. The page already
+    // speaks Gemini's own request shape, so this adds the key and forwards it untouched.
+    const gem = url.pathname.replace(/^\/+/, '').match(/^api\/gemini\/([a-zA-Z0-9._\-]{1,80})$/);
+    if (gem) {
+      if (!env.GEMINI_API_KEY)
+        return reply({ error: { code: 500, message: 'Worker has no GEMINI_API_KEY secret set.' } }, 500);
+      const body = await request.text();
+      if (body.length > 25 * 1024 * 1024)
+        return reply({ error: { code: 413, message: 'Request too large.' } }, 413);
+      const upstream = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${gem[1]}:generateContent`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+          body,
+        });
+      // Gemini's status passes through, so the page still sees a 429 as a 429 and waits it out
+      // with the delay Gemini asks for.
+      return new Response(await upstream.text(), {
+        status: upstream.status,
+        headers: { ...cors, 'content-type': 'application/json' },
+      });
     }
 
     // Path is /<model>, or /api/<model>.
