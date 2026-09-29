@@ -56,7 +56,7 @@ table{border-collapse:collapse;width:100%;font-size:13px;min-width:600px}
 th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
   color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
 td{padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
-tr.ok td:nth-child(3){color:var(--ok)}
+#tbl tr.ok td:nth-child(3),#tbl tr.ok td:nth-child(4),#cpTbl tr.ok td:nth-child(3){color:var(--ok)}
 tr.new{background:var(--warnbg)}
 .pill{font-size:11px;padding:2px 7px;border-radius:20px;font-weight:600;white-space:nowrap}
 .p-ok{background:var(--okbg);color:var(--ok)}
@@ -130,8 +130,32 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   <input id="file" type="file" accept="video/*" class="hide">
   <div class="row" style="margin-top:12px">
     <div>
-      <label for="datestr">Date</label>
+      <label for="datestr">Load date</label>
       <input id="datestr" type="date">
+    </div>
+    <!-- These four are what Input-RawData wants besides the extracted rows. Remembered per
+         device, because the same person usually submits the same alliance run after run. -->
+    <div>
+      <label for="submitter">Submitter</label>
+      <select id="submitter">
+        <option value="">Choose…</option>
+        <option>star</option><option>glitter</option><option>cein</option>
+        <option>peach</option><option>artu</option><option>mimi</option>
+      </select>
+    </div>
+    <div>
+      <label for="alliance">Alliance</label>
+      <select id="alliance">
+        <option value="">Choose…</option>
+        <option>698S</option><option>698N</option><option>698W</option><option>698C</option>
+      </select>
+    </div>
+    <div>
+      <label for="kday">Day</label>
+      <select id="kday">
+        <option value="">Choose…</option>
+        <option>Day 1</option><option>Day 4</option><option>Day 7</option>
+      </select>
     </div>
     <!-- Settled rather than offered. Both of these were controls, and neither was a real
          choice: the reference picture earns its place on every run, and the frame count has
@@ -156,8 +180,10 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   <h2>3 &middot; Results</h2>
   <div id="verdict"></div>
   <div class="tablewrap"><table id="tbl"></table></div>
-  <div class="row" style="margin-top:12px">
-    <button id="copy">Copy for sheet</button>
+  <div class="note" id="sendNote"></div>
+  <button id="send" style="margin-top:8px">Send to sheet</button>
+  <div class="row" style="margin-top:10px">
+    <button class="ghost" id="copy">Copy for sheet</button>
     <button class="ghost" id="csv">Download CSV</button>
     <button class="ghost" id="learn">Remember my fixes</button>
   </div>
@@ -206,7 +232,7 @@ const $ = id => document.getElementById(id);
 // Shown on the page. Several people run this from their own phones and a browser can sit on
 // an open tab for days, so "it is still happening" and "it is fixed" are easy to say about
 // different builds. Bump it with any change worth telling apart from the one before.
-const BUILD = '2026-09-28-ollama';
+const BUILD = '2026-09-29-sheet-append';
 const MODEL = 'gemma4:31b-cloud';
 const FALLBACKS = [];        // one model, deliberately: a run either works or says why
 // This copy may be served from GitHub Pages, so its requests are
@@ -251,7 +277,9 @@ const MAIN_ALLIANCES = ['698W', '698S', '698N', '698C'];
 
 const store = {
   get: k => { try { return JSON.parse(localStorage.getItem('kartz.' + k)); } catch { return null; } },
-  set: (k, v) => localStorage.setItem('kartz.' + k, JSON.stringify(v)),
+  // private windows and some embedded views refuse storage; losing the memory is fine, throwing
+  // out of a change handler before it re-renders is not
+  set: (k, v) => { try { localStorage.setItem('kartz.' + k, JSON.stringify(v)); } catch {} },
 };
 
 function loadSetup() {
@@ -261,8 +289,18 @@ function loadSetup() {
   if (rosterCache && !rosterCache.all)
     rosterCache = { all: [...(rosterCache.active || []), ...(rosterCache.skipped || [])] };
   $('datestr').value = store.get('datestr')  || new Date().toLocaleDateString('en-CA');
+  for (const id of RUN_FIELDS) $(id).value = store.get(id) || '';
   refreshRosterList(); refreshState();
 }
+// Kept per device and saved as they change, so a phone that always submits for one person and
+// one alliance only ever needs the day picking.
+const RUN_FIELDS = ['submitter', 'alliance', 'kday'];
+for (const id of [...RUN_FIELDS, 'datestr'])
+  $(id).addEventListener('change', () => {
+    store.set(id, $(id).value);
+    // the table's Alliance column follows the run's alliance, and Send's readiness all four
+    if (rows.length) render(lastRoster);
+  });
 function refreshState() {
   const names = currentRoster().length;
   // one badge per tab, both saying the same thing about the one roster
@@ -896,11 +934,12 @@ const SHARP_MAX = 0.2, SHARP_STEPS = 3;
 // turns up in more of them. That matters more than the seams: 56 of 153 ranks were being seen
 // exactly once in a run, with no second reading to fall back on if the first went wrong.
 const STRIPS = 3, STRIP_OVERLAP = 0.25;
-function sliceStrips(src) {
+// `strips` is per tab: 1 sends the frame whole, for screens whose text is already large.
+function sliceStrips(src, strips = STRIPS) {
   const w = src.width, h = src.height;
-  const band = h / STRIPS, pad = band * STRIP_OVERLAP;
+  const band = h / strips, pad = strips > 1 ? band * STRIP_OVERLAP : 0;
   const out = [];
-  for (let i = 0; i < STRIPS; i++) {
+  for (let i = 0; i < strips; i++) {
     const y0 = Math.max(0, Math.round(i * band - pad));
     const y1 = Math.min(h, Math.round((i + 1) * band + pad));
     const c = Object.assign(document.createElement('canvas'), { width: w, height: y1 - y0 });
@@ -923,7 +962,7 @@ function sharpness(canvas) {
     }
   return n ? acc / n : 0;
 }
-async function extractFrames(file, budget, onProg) {
+async function extractFrames(file, budget, onProg, strips = STRIPS) {
   const video = await openVideo(file);
   const dur = video.duration;
   // Keep the recording's own resolution. 560 was chosen when the worry was payload size,
@@ -987,7 +1026,7 @@ async function extractFrames(file, budget, onProg) {
     if (bestT !== null) {
       await seek(video, bestT);
       cx.drawImage(video, 0, 0, W, H);
-      for (const strip of sliceStrips(cropFrame(cv, W, H, box))) frames.push(strip);
+      for (const strip of sliceStrips(cropFrame(cv, W, H, box), strips)) frames.push(strip);
     }
     onProg(0.6 + 0.4 * (i + 1) / picks.length, frames.length);
   }
@@ -1351,6 +1390,8 @@ async function callProxy(batch, model, base, spec = null) {
   // estimate, and an estimate that drifts low would walk the run straight back into a 429.
   if (j.usageMetadata) {
     callProxy.lastUsage = j.usageMetadata.totalTokenCount || 0;
+    // per request too: with several in flight, lastUsage belongs to whichever finished last
+    if (spec) spec.usage = callProxy.lastUsage;
     callProxy.spent = (callProxy.spent || 0) + callProxy.lastUsage;
     callProxy.calls = (callProxy.calls || 0) + 1;
   }
@@ -1633,14 +1674,23 @@ $('go').onclick = async () => {
 };
 
 let lastRoster = [];
-// One alliance for the whole run, chosen once at the head of the column. A recording is of a
-// single alliance's board, so setting it per row was thirteen dozen answers to one question.
-// Empty means "leave each row as it stands", which is how the run starts: a matched player
-// shows the alliance the roster has for them, and only choosing here overrides that.
+// One alliance for the whole run, chosen in the Alliance field above the recording. A recording
+// is of a single alliance's board, so setting it per row was thirteen dozen answers to one
+// question. Empty means "leave each row as it stands": a matched player shows the alliance the
+// roster has for them. Send refuses to go without one, since Input-RawData needs it on every row.
 let allianceAll = '';
-const ALLIANCES = MAIN_ALLIANCES;
 function render(roster) {
   lastRoster = roster;
+  // Written onto each row rather than only displayed, because Remember my fixes files the
+  // alliance with the name, and a new player is worth nothing next month without knowing whose
+  // they are. Going back to empty removes the choice rather than setting it to nothing: an empty
+  // alliancePick is still an answer, and would blank every row instead of restoring the roster's.
+  // Applied on every render, not only on a change, so a fresh run's rows pick it up too.
+  allianceAll = $('alliance').value;
+  for (const r of rows) {
+    if (allianceAll) r.alliancePick = allianceAll;
+    else delete r.alliancePick;
+  }
   const dropped = rows.filter(r => r.skipped).length;
   const need = rows.filter(r => !r.match && !r.skipped && !r.confirmed
                                  && !r.dropped && !r.pick).length;
@@ -1675,12 +1725,8 @@ function render(roster) {
         + `slowly if you want the gap filled.</div>` : '');
   refreshRosterList();
   $('tbl').innerHTML =
-    '<thead><tr><th>Rank</th><th>Name in video</th><th>Game Name</th>'
-    + `<th>Alliance<br><select id="alliall" class="allipick">`
-    + ['', ...ALLIANCES].map(a => `<option value="${esc(a)}"`
-        + `${a === allianceAll ? ' selected' : ''}>${esc(a) || 'as found'}</option>`).join('')
-    + '</select></th>'
-    + '<th>Kartz Points</th><th></th><th></th></tr></thead><tbody>'
+    '<thead><tr><th>Rank</th><th>Name in video</th><th>Search Name</th><th>IGN Name</th>'
+    + '<th>Alliance</th><th>Kartz Points</th><th></th><th></th></tr></thead><tbody>'
     + rows.map((r, i) => {
         // Settled means the name needs nothing from you: matched to the roster, ticked off by
         // hand, or an excluded player whose identity is already known. Everything else — an
@@ -1699,6 +1745,7 @@ function render(roster) {
         return `<tr class="${green || r.pick ? 'ok' : 'new'}${r.dropped ? ' drop' : ''}">
         <td>${r.skipped ? (r.seenRank || '—') : r.rank}</td>
         <td>${esc(r.name)}</td>
+        <td>${settled ? esc(outPlayer(r).search) : '<span class="note">—</span>'}</td>
         <td>${settled
               ? `<span class="${green ? 'named' : 'asdrawn'}">${esc(shown)}</span>`
                 + `<button class="pencil" data-i="${i}" title="change this name">✎</button>`
@@ -1777,30 +1824,13 @@ function render(roster) {
     };
     document.addEventListener('mousedown', escape, true);
   });
-  // A row that could not be matched is usually somebody new. Recording which alliance they
-  // belong to here means the answer is kept with the name, so the pair can go into the sheet
-  // and the player is recognised from the next run on.
-  // Choosing at the head of the column answers for every row. The value is written onto each
-  // one rather than only being displayed, because Remember my fixes files the alliance with
-  // the name, and a new player is worth nothing next month without knowing whose they are.
-  const allSel = $('alliall');
-  if (allSel) allSel.onchange = () => {
-    allianceAll = allSel.value;
-    // Going back to "as found" has to remove the choice, not set it to nothing: an empty
-    // alliancePick is still an answer, and it left every row blank rather than returning them
-    // to the alliance the roster had for them.
-    for (const r of rows) {
-      if (allianceAll) r.alliancePick = allianceAll;
-      else delete r.alliancePick;
-    }
-    render(lastRoster);
-  };
   $('tbl').querySelectorAll('.rowdrop').forEach(b => b.onclick = () => {
     const r = rows[+b.dataset.i];
     r.dropped = !r.dropped;              // leaves r.pick, and any name you chose, untouched
     if (r.dropped) r.editing = false;
     render(lastRoster);
   });
+  refreshSend();
   $('out').classList.remove('hide');
 }
 // A search box with a list we control the size of.
@@ -1926,36 +1956,106 @@ function refreshRosterList() { closeMenu(); }
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 
 /* ---------------- output ---------------- */
-// The sheet wants the name as it is written in the game — column B of the roster — not the
-// searchable name in column A. The dropdown still offers column A, because that is the
-// readable one to pick from, so a chosen name is translated back here.
-function outName(r) {
-  if (r.match) return r.match.ingame || r.match.search;
+// Input-RawData takes both roster names: column A (search) and column B (as written in the
+// game). The dropdown hands back column B, and a typed-in name may be either form, so a chosen
+// name is looked up again here to recover its pair.
+function outPlayer(r) {
+  if (r.match) {
+    const ingame = r.match.ingame || r.match.search;
+    return { search: r.match.search || ingame, ingame };
+  }
   if (r.pick) {
-    // the dropdown hands back column B already; a typed-in name may be either form
     const all = fullRoster();
     const hit = all.find(x => (x.ingame || x.search) === r.pick)
              || all.find(x => x.search === r.pick)
              || all.find(x => fold(x.search) === fold(r.pick) && fold(r.pick));
-    return hit ? (hit.ingame || hit.search) : r.pick;      // genuinely new player
+    if (hit) return { search: hit.search || hit.ingame, ingame: hit.ingame || hit.search };
+    return { search: r.pick, ingame: r.pick };          // genuinely new player
   }
   // Nothing matched, so the name is whatever the video showed. r.name first, not r.plain:
   // r.name is the reading the sightings voted for and the one printed in the "Name in video"
-  // column, so taking it here keeps the copied name and the displayed name the same string.
-  return r.name || r.plain;
+  // column, so taking it here keeps the sent name and the displayed name the same string.
+  const n = r.name || r.plain;
+  return { search: n, ingame: n };
+}
+const outName = r => outPlayer(r).ingame;
+
+// Input-RawData, columns B to J, in the sheet's own formats: the load stamp as 9/28/2026 14:46:46
+// and the date alone as 2026-09-30.
+const OUT_HEADERS = ['kartz_load_date', 'kartz_submitter', 'kartz_search_name', 'kartz_ign_name',
+  'kartz_alliance', 'kartz_month', 'kartz_day', 'kartz_rank', 'kartz_score'];
+function loadStamp(ymd, at = new Date()) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const p = n => String(n).padStart(2, '0');
+  return `${m}/${d}/${y} ${p(at.getHours())}:${p(at.getMinutes())}:${p(at.getSeconds())}`;
 }
 // The game's own rank, not this row's position in the list. They agree only when every
 // player was captured, and when they disagree it is the position that is wrong: one player
 // missed near the top used to shift every rank beneath them, which is how sixty correct names
 // went into the sheet against ranks that were three too small.
-const outRows = () => rows.filter(r => !r.dropped && !r.skipped)
-  .map(r => [$('datestr').value || '', r.rank, outName(r), r.points]);
-const OUT_HEADERS = ['Date', 'Rank', 'Game Name', 'Kartz Points'];
+function outRows() {
+  const date = $('datestr').value, stamp = date ? loadStamp(date) : '';
+  return rows.filter(r => !r.dropped && !r.skipped).map(r => {
+    const p = outPlayer(r);
+    return [stamp, $('submitter').value, p.search, p.ingame, $('alliance').value,
+            date, $('kday').value, r.rank, r.points];
+  });
+}
+
+// What still stands between this run and the sheet, or nothing when it can go. Sending half-
+// decided rows is how a wrong name gets into a tracker nobody re-reads, so every open row and
+// every run field has to be settled first.
+function sendBlockers() {
+  const out = [];
+  const open = rows.filter(r => !r.dropped && (r.editing
+    || (!r.match && !r.skipped && !r.confirmed && !r.pick))).length;
+  if (open) out.push(`${open} row${open > 1 ? 's' : ''} to confirm`);
+  const missing = [['datestr', 'load date'], ['submitter', 'submitter'],
+                   ['alliance', 'alliance'], ['kday', 'day']]
+    .filter(([id]) => !$(id).value).map(([, name]) => name);
+  if (missing.length) out.push('choose a ' + missing.join(', '));
+  if (!outRows().length) out.push('no rows to send');
+  return out;
+}
+function refreshSend() {
+  const why = sendBlockers();
+  const n = rows.filter(r => !r.dropped && !r.skipped).length;
+  $('send').disabled = why.length > 0 || sending;
+  if (!sending) $('send').textContent = `Send ${n} row${n === 1 ? '' : 's'} to sheet`;
+  $('sendNote').textContent = why.length ? 'Before sending: ' + why.join(' · ') : '';
+}
+let sending = false;
+// The same run sent twice doubles every player's score in the tracker, and pressing a button
+// again because the phone seemed slow is the easiest way to do it. The stamp is left out of the
+// comparison, since it moves with the clock.
+let lastSent = '';
+$('send').onclick = async () => {
+  if (sendBlockers().length) return refreshSend();
+  const values = outRows();
+  const key = JSON.stringify(values.map(v => v.slice(1)));
+  if (key === lastSent
+      && !confirm('These exact rows were already sent to the sheet. Send them again?')) return;
+  sending = true; $('send').disabled = true; $('send').textContent = 'Sending…';
+  let ok = false;
+  try {
+    const r = await fetch(API_BASE + '/append', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ values }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j?.error?.message || `sheet refused the rows (${r.status})`);
+    log(`appended ${values.length} rows to Input-RawData${j.range ? ' at ' + j.range : ''}`);
+    ok = true; lastSent = key;
+  } catch (e) { log('✗ ' + e.message); }
+  sending = false;
+  refreshSend();
+  if (ok) flash($('send'), `Sent ${values.length} rows ✓`, 2400);
+};
+
 $('copy').onclick = async () => {
   const tsv = outRows().map(r => r.join('\t')).join('\n');
   try {
     await navigator.clipboard.writeText(tsv);
-    log('copied — paste into the sheet');
+    log('copied — paste into Input-RawData at column B');
     flash($('copy'), `Copied ${outRows().length} rows ✓`);
   } catch { prompt('Copy these rows:', tsv); }
 };

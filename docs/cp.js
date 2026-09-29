@@ -125,7 +125,13 @@ function cpValue(s) {
 // the whole roster (~6,500 tokens), so 192 images come to 12 requests and about 290,000 tokens:
 // a little over one minute's allowance, which makes a run take a little over a minute.
 const CP_MODEL = 'gemini-3.5-flash-lite';
-const CP_BATCH = 16, CP_PARALLEL = 4, CP_RPM = 14, CP_TPM = 240000;  // a little under 15 / 250k
+// Budgeted at 200k and 12, not 250k and 15. Google counts a little more than the estimate below,
+// and a run that spills into a second minute was being refused at batch ten or so; the margin
+// makes it wait instead. Two in flight rather than four, so the spill is gradual.
+const CP_BATCH = 16, CP_PARALLEL = 2, CP_RPM = 12, CP_TPM = 200000;
+// What Google actually counts, as a multiple of the estimate, learned from each reply. It only
+// ever rises, so a run that starts under-estimating corrects itself after the first batch.
+let cpScale = 1;
 const cpGate = (() => {
   const win = [];                      // { t, tokens } for the last minute
   return async tokens => {
@@ -154,10 +160,16 @@ async function cpCallModel(frames) {
   let done = 0;
   const one = async (b, bi) => {
     const got = await withFallback(async m => {
-      const lease = await cpGate(b.length * IMG_TOKENS + promptTokens);
+      const est = b.length * IMG_TOKENS + promptTokens;
+      const lease = await cpGate(Math.ceil(est * cpScale));
+      const call = { ...spec };          // its own, so its usage is not another request's
       try {
-        const got = await callProxy(b, m, API_BASE + '/gemini', spec);
-        lease.settle(callProxy.lastUsage);
+        const got = await callProxy(b, m, API_BASE + '/gemini', call);
+        if (call.usage > 0) {
+          cpScale = Math.max(cpScale, call.usage / est);
+          // charge what was really spent, but never less than was reserved
+          lease.settle(Math.max(call.usage, Math.ceil(est * cpScale)));
+        }
         return got;
       } catch (e) { lease.refund(); throw e; }
     }, [CP_MODEL], () => {}, true);
