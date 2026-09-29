@@ -2004,7 +2004,7 @@ function outPlayer(r) {
 const outName = r => outPlayer(r).ingame;
 
 // Input-RawData, columns B to J. Both dates come from the clock when the rows go out, not from a
-// picker: the load stamp as 9/28/2026 14:46:46, and the month as Sep26.
+// picker: the load stamp as 9/28/2026 14:46:46, and the month as Sep26 (see monthTag).
 const OUT_HEADERS = ['kartz_load_date', 'kartz_submitter', 'kartz_search_name', 'kartz_ign_name',
   'kartz_alliance', 'kartz_month', 'kartz_day', 'kartz_rank', 'kartz_score'];
 function loadStamp(at = new Date()) {
@@ -2013,7 +2013,13 @@ function loadStamp(at = new Date()) {
        + `${p(at.getHours())}:${p(at.getMinutes())}:${p(at.getSeconds())}`;
 }
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const monthTag = (at = new Date()) => MONTHS[at.getMonth()] + String(at.getFullYear()).slice(-2);
+// The event's month, not the upload's: a Kartz event can finish in the first days of the next
+// month, so a Day 7 recording sent on 3 October belongs to September. A week back from the send
+// date always lands inside the event's own month.
+const monthTag = (at = new Date()) => {
+  const d = new Date(at.getFullYear(), at.getMonth(), at.getDate() - 7);
+  return MONTHS[d.getMonth()] + String(d.getFullYear()).slice(-2);
+};
 // The game's own rank, not this row's position in the list. They agree only when every
 // player was captured, and when they disagree it is the position that is wrong: one player
 // missed near the top used to shift every rank beneath them, which is how sixty correct names
