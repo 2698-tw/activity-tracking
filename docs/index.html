@@ -204,6 +204,31 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
     <span id="cpFileName">the alliance member list, scrolled from top to bottom</span>
   </div>
   <input id="cpFile" type="file" accept="video/*" class="hide">
+  <!-- What Alliance Rosters wants besides the extracted rows. Submitter and Alliance are the
+       Kartz tab's own, kept in step between the tabs; the CP type starts empty on every visit. -->
+  <div class="row" style="margin-top:12px">
+    <div>
+      <label for="cpSubmitter">Submitter</label>
+      <input id="cpSubmitter" type="text" placeholder="Type or choose…" autocomplete="off"
+             spellcheck="false">
+    </div>
+    <div>
+      <label for="cpAlliance">Alliance</label>
+      <select id="cpAlliance">
+        <option value="">Choose…</option>
+        <option>698S</option><option>698N</option><option>698W</option><option>698C</option>
+        <option>Other</option>
+      </select>
+    </div>
+    <div>
+      <label for="cpType">CP type</label>
+      <select id="cpType">
+        <option value="">Choose…</option>
+        <option value="0">Base CP</option><option value="1">March 1 CP</option>
+        <option value="2">March 2 CP</option><option value="3">March 3 CP</option>
+      </select>
+    </div>
+  </div>
   <button id="cpGo" style="margin-top:12px" disabled>Extract</button>
   <div class="bar"><i id="cpProg"></i></div>
   <div class="log" id="cpLog"></div>
@@ -214,8 +239,12 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   <h2>3 &middot; Results</h2>
   <div id="cpVerdict"></div>
   <div class="tablewrap"><table id="cpTbl"></table></div>
-  <div class="row" style="margin-top:12px">
-    <button id="cpCopy">Copy for sheet</button>
+  <div class="note" id="cpSendNote"></div>
+  <button id="cpSend" style="margin-top:8px">Send to sheet</button>
+  <a id="cpSheetLink" class="hide" target="_blank" rel="noopener"
+     style="display:block;text-align:center;font-size:13px;color:var(--accent);margin-top:6px">Open in Google Sheets ↗</a>
+  <div class="row" style="margin-top:10px">
+    <button class="ghost" id="cpCopy">Copy for sheet</button>
     <button class="ghost" id="cpCsv">Download CSV</button>
     <button class="ghost" id="cpLearn">Remember my fixes</button>
   </div>
@@ -230,7 +259,7 @@ const $ = id => document.getElementById(id);
 // Shown on the page. Several people run this from their own phones and a browser can sit on
 // an open tab for days, so "it is still happening" and "it is fixed" are easy to say about
 // different builds. Bump it with any change worth telling apart from the one before.
-const BUILD = '2026-09-29-gap-fill';
+const BUILD = '2026-10-01-cp-send';
 // Gemini, through the Worker's /api/gemini route where the key lives — the same paid key the
 // Base CP tab uses (4,000 requests and 4M tokens a minute). It was Ollama's gemma4:31b; that
 // route is still in the Worker, and switching back is this line and MODEL_BASE below.
@@ -327,8 +356,9 @@ for (const id of RUN_FIELDS)
 // The submitter box: typed freely, but focusing or clicking it drops down the usual names,
 // filtered by what is typed. Drawn with the same menu as the roster search in the results table.
 const SUBMITTERS = ['star', 'glitter', 'cein', 'peach', 'artu', 'mimi'];
-function openSubmitters() {
-  const inp = $('submitter');
+// Any submitter box: the Kartz tab's, and the Base CP tab's (see cp.js).
+function openSubmitters(inp = $('submitter')) {
+  if (!(inp instanceof HTMLInputElement)) inp = $('submitter');
   closeMenu();
   const q = inp.value.trim().toLowerCase();
   // a box already holding one of the names shows them all, so it can be changed with one click
@@ -347,10 +377,13 @@ function openSubmitters() {
   menuOwner = inp;
   placeMenu(inp);
 }
-$('submitter').onfocus = openSubmitters;
-$('submitter').onclick = () => { if (!menuEl) openSubmitters(); };
-$('submitter').addEventListener('input', openSubmitters);
-$('submitter').onkeydown = e => { if (e.key === 'Escape' || e.key === 'Enter') closeMenu(); };
+function wireSubmitter(inp) {
+  inp.onfocus = () => openSubmitters(inp);
+  inp.onclick = () => { if (!menuEl) openSubmitters(inp); };
+  inp.addEventListener('input', () => openSubmitters(inp));
+  inp.onkeydown = e => { if (e.key === 'Escape' || e.key === 'Enter') closeMenu(); };
+}
+wireSubmitter($('submitter'));
 function refreshState() {
   const names = currentRoster().length;
   // one badge per tab, both saying the same thing about the one roster
@@ -2365,7 +2398,8 @@ $('send').onclick = async () => {
       method: 'POST', headers: { 'content-type': 'application/json' },
       // Sheets would read "Sep26" as the 26th of September; the leading apostrophe keeps it the
       // text it is, and is not itself stored
-      body: JSON.stringify({ values: values.map(r => r.map((v, i) => i === 5 ? "'" + v : v)) }) });
+      body: JSON.stringify({ target: 'kartz',
+                             values: values.map(r => r.map((v, i) => i === 5 ? "'" + v : v)) }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j?.error?.message || `sheet refused the rows (${r.status})`);
     log(`appended ${values.length} rows to Input-RawData${j.range ? ' at ' + j.range : ''}`);
