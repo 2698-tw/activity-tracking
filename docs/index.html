@@ -178,6 +178,8 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   <div class="tablewrap"><table id="tbl"></table></div>
   <div class="note" id="sendNote"></div>
   <button id="send" style="margin-top:8px">Send to sheet</button>
+  <a id="sheetLink" class="hide" target="_blank" rel="noopener"
+     style="display:block;text-align:center;font-size:13px;color:var(--accent);margin-top:6px">Open in Google Sheets ↗</a>
   <div class="row" style="margin-top:10px">
     <button class="ghost" id="copy">Copy for sheet</button>
     <button class="ghost" id="csv">Download CSV</button>
@@ -288,6 +290,9 @@ const batchSize = () => KARTZ.batch;
 // chance to paste the wrong link for something that has only ever had one right answer.
 const ROSTER_SHEET =
   'https://docs.google.com/spreadsheets/d/1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE/edit?gid=767166123';
+// Where Send to sheet writes: the same spreadsheet, the Input-RawData tab. Only used to link to it.
+const RAWDATA_TAB =
+  'https://docs.google.com/spreadsheets/d/1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE/edit#gid=1243524383';
 // The four alliances the sheet is actually organised around. Anything else in its Alliance
 // column — z3.?, z1.Transferred, a stray 698E — is a candidate for filtering out.
 const MAIN_ALLIANCES = ['698W', '698S', '698N', '698C'];
@@ -2332,9 +2337,17 @@ function refreshSend() {
   const why = sendBlockers();
   const n = rows.filter(r => !r.dropped && !r.skipped).length;
   $('send').disabled = why.length > 0 || sending;
-  if (!sending) $('send').textContent = `Send ${n} row${n === 1 ? '' : 's'} to sheet`;
+  // Once sent, the button says where the rows went and stays that way — the confirmation, so
+  // nobody has to leave the page to check. Any change to the rows makes them unsent again.
+  const sent = !sending && lastSent && sendKey() === lastSent;
+  if (!sending) $('send').textContent = sent ? sentLabel : `Send ${n} row${n === 1 ? '' : 's'} to sheet`;
+  $('send').classList.toggle('done', !!sent);
+  $('sheetLink').classList.toggle('hide', !sent);
   $('sendNote').textContent = why.length ? 'Before sending: ' + why.join(' · ') : '';
 }
+// what identifies a send: every cell but the stamp, which moves with the clock
+const sendKey = (values = outRows()) => JSON.stringify(values.map(v => v.slice(1)));
+let sentLabel = '';
 let sending = false;
 // The same run sent twice doubles every player's score in the tracker, and pressing a button
 // again because the phone seemed slow is the easiest way to do it. The stamp is left out of the
@@ -2343,11 +2356,10 @@ let lastSent = '';
 $('send').onclick = async () => {
   if (sendBlockers().length) return refreshSend();
   const values = outRows();
-  const key = JSON.stringify(values.map(v => v.slice(1)));
+  const key = sendKey(values);
   if (key === lastSent
       && !confirm('These exact rows were already sent to the sheet. Send them again?')) return;
   sending = true; $('send').disabled = true; $('send').textContent = 'Sending…';
-  let ok = false;
   try {
     const r = await fetch(API_BASE + '/append', {
       method: 'POST', headers: { 'content-type': 'application/json' },
@@ -2357,11 +2369,15 @@ $('send').onclick = async () => {
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j?.error?.message || `sheet refused the rows (${r.status})`);
     log(`appended ${values.length} rows to Input-RawData${j.range ? ' at ' + j.range : ''}`);
-    ok = true; lastSent = key;
+    lastSent = key;
+    sentLabel = `Sent ${values.length} row${values.length === 1 ? '' : 's'} to Kartz Tracker → Input-RawData`;
+    // straight to the rows just written: the Worker reports them as 'Input-RawData'!C548:K700
+    // as written, colon and all: Sheets reads the range straight out of the link's #fragment
+    const cells = (j.range || '').replace(/^.*!/, '');
+    $('sheetLink').href = RAWDATA_TAB + (/^[A-Z]+\d+(:[A-Z]+\d+)?$/.test(cells) ? '&range=' + cells : '');
   } catch (e) { log('✗ ' + e.message); }
   sending = false;
   refreshSend();
-  if (ok) flash($('send'), `Sent ${values.length} rows ✓`, 2400);
 };
 
 $('copy').onclick = async () => {
