@@ -106,15 +106,23 @@ async function runOllama(env, model, body) {
 }
 
 /* ---------------- Google Sheets append ---------------- */
-// Rows go to Input-RawData, columns B to J, of the Kartz Tracker. The Worker signs in as a
-// service account, so the sheet must be shared with that account's email as an Editor.
+// Two places rows can go, one per tab of the page. The page names a target; the spreadsheet,
+// tab and columns behind each name are fixed here, so no caller can point the Worker anywhere
+// else. Each tab is found by its gid, the number in its link, so renaming it breaks nothing.
+// The Worker signs in as a service account, so every spreadsheet here must be shared with that
+// account's email as an Editor.
 //
 // Required Cloudflare secret — the service account's JSON key, pasted whole:
 //   wrangler secret put GOOGLE_SA_KEY
-const SHEET_ID = '1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE';
-// The tab is found by its gid, the number in the link, so renaming it breaks nothing.
-const SHEET_GID = 1243524383;
-const SHEET_COLS = 9;
+const TARGETS = {
+  // the Kartz tab: Input-RawData of the Kartz Tracker, C to K (B was given to another column)
+  kartz: { id: '1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE', gid: 1243524383,
+           from: 'C', to: 'K', book: 'Kartz Tracker' },
+  // the Base CP tab: Alliance Rosters, A to I
+  cp:    { id: '1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8', gid: 237521468,
+           from: 'A', to: 'I', book: 'Alliance Rosters' },
+};
+const SHEET_COLS = 9;                   // both targets take nine columns
 const MAX_ROWS = 1000;
 
 const b64url = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)))
@@ -165,7 +173,9 @@ async function googleToken(env) {
 // leading apostrophe Sheets uses to mean "this is text".
 const asCell = v => typeof v === 'string' && /^[=+\-@]/.test(v) ? "'" + v : v;
 
-async function appendRows(env, values) {
+async function appendRows(env, values, name = 'kartz') {
+  const target = TARGETS[name];
+  if (!target) throw Object.assign(new Error(`Unknown target "${name}".`), { status: 400 });
   if (!Array.isArray(values) || !values.length)
     throw Object.assign(new Error('No rows to append.'), { status: 400 });
   if (values.length > MAX_ROWS)
@@ -176,14 +186,17 @@ async function appendRows(env, values) {
                         { status: 400 });
 
   const token = await googleToken(env);
-  const tab = `'${(await tabTitle(token)).replace(/'/g, "''")}'`;
+  const title = await tabTitle(token, target);
+  const tab = `'${title.replace(/'/g, "''")}'`;
+  const { from, to } = target;
 
   // Not values:append. Append looks for the "table" the range touches and writes from that
-  // table's first column, and column A of this tab is filled with lookup formulas — so rows
-  // aimed at B:J landed in A:I. Instead: find the last row with anything in B:J, and write the
-  // new rows into B:J directly below it. Columns A and Q:T are never touched.
-  const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(tab + '!C:K')}`
-    + '?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE');
+  // table's first column, and column A of the Kartz tab is filled with lookup formulas — so rows
+  // aimed at its data columns landed one column early. Instead: find the last row with anything
+  // in the target's columns, and write the new rows into those columns directly below it. Nothing
+  // outside them is ever touched.
+  const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(`${tab}!${from}:${to}`)}`
+    + '?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', null, target);
   // Trailing empty rows are not returned, but a formula showing "" still counts as a value,
   // so walk back past any row whose cells are all blank.
   const seen = got.values || [];
@@ -191,16 +204,18 @@ async function appendRows(env, values) {
   while (filled > 0 && !(seen[filled - 1] || []).some(v => v !== '' && v != null)) filled--;
   const first = filled + 1;
   const last = first + values.length - 1;
-  const range = `${tab}!C${first}:K${last}`;
+  const range = `${tab}!${from}${first}:${to}${last}`;
 
   const out = await sheetsCall(token, 'PUT',
     `/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
-    { range, majorDimension: 'ROWS', values: values.map(row => row.map(asCell)) });
-  return { range: out.updatedRange || range, rows: out.updatedRows || values.length };
+    { range, majorDimension: 'ROWS', values: values.map(row => row.map(asCell)) }, target);
+  // where the rows went, by name as well as cells, for the page's confirmation and its link
+  return { range: out.updatedRange || range, rows: out.updatedRows || values.length,
+           book: target.book, tab: title, id: target.id, gid: target.gid };
 }
 
-async function sheetsCall(token, method, path, body) {
-  const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}${path}`, {
+async function sheetsCall(token, method, path, body, target) {
+  const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${target.id}${path}`, {
     method,
     headers: { 'content-type': 'application/json', 'authorization': `Bearer ${token}` },
     body: body ? JSON.stringify(body) : undefined,
@@ -215,13 +230,14 @@ async function sheetsCall(token, method, path, body) {
   return out;
 }
 
-let cachedTab = null;
-async function tabTitle(token) {
-  if (cachedTab) return cachedTab;
-  const out = await sheetsCall(token, 'GET', '?fields=sheets.properties(sheetId,title)');
-  const hit = (out.sheets || []).find(t => t.properties?.sheetId === SHEET_GID);
-  if (!hit) throw new Error(`No tab with gid ${SHEET_GID} in the Kartz Tracker.`);
-  return (cachedTab = hit.properties.title);
+const cachedTabs = new Map();
+async function tabTitle(token, target) {
+  if (cachedTabs.has(target)) return cachedTabs.get(target);
+  const out = await sheetsCall(token, 'GET', '?fields=sheets.properties(sheetId,title)', null, target);
+  const hit = (out.sheets || []).find(t => t.properties?.sheetId === target.gid);
+  if (!hit) throw new Error(`No tab with gid ${target.gid} in ${target.book}.`);
+  cachedTabs.set(target, hit.properties.title);
+  return hit.properties.title;
 }
 
 export default {
@@ -263,8 +279,8 @@ export default {
       if (body.length > 1024 * 1024)
         return reply({ error: { code: 413, message: 'Request too large.' } }, 413);
       try {
-        const { values } = JSON.parse(body);
-        return reply(await appendRows(env, values), 200);
+        const { values, target } = JSON.parse(body);
+        return reply(await appendRows(env, values, target), 200);
       } catch (e) {
         const status = e.status || (e instanceof SyntaxError ? 400 : 502);
         return reply({ error: { code: status, message: String(e && e.message || e) } }, status);

@@ -482,6 +482,7 @@ function cpRender() {
     cpRender();
   });
   $('cpOut').classList.remove('hide');
+  cpRefreshSend();
 }
 
 const CP_HEADERS = ['In-game Name', 'Base CP'];
@@ -519,4 +520,90 @@ $('cpLearn').onclick = () => {
         : 'nothing new to remember');
   logEl = 'log';
   flash($('cpLearn'), n ? `Remembered ${n} ✓` : 'Nothing new');
+};
+
+/* ---------------- send to sheet ---------------- */
+// Alliance Rosters, columns A to I: cp_load_date, cp_submitter, cp_search_name, cp_ign_name,
+// cp_alliance, then four CP columns — base, march 1, march 2, march 3. A recording is of one of
+// those, so the CP type says which column the run's numbers go in and the other three are left
+// empty. The Worker holds where Alliance Rosters is; the page only names the target.
+const CP_ROSTERS_TAB =
+  'https://docs.google.com/spreadsheets/d/1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8/edit#gid=237521468';
+
+// Submitter and Alliance are the Kartz tab's own, kept in step both ways: whoever is sending
+// is the same person on either tab, and the device remembers them once. The CP type is not
+// remembered — it starts empty on every visit, so a run cannot go to last time's column by habit.
+for (const [mine, theirs] of [['cpSubmitter', 'submitter'], ['cpAlliance', 'alliance']]) {
+  $(mine).value = $(theirs).value;
+  for (const ev of ['change', 'input']) {
+    $(mine).addEventListener(ev, () => {
+      $(theirs).value = $(mine).value;
+      store.set(theirs, $(mine).value);
+      if (rows.length) render(lastRoster);
+      cpRefreshSend();
+    });
+    $(theirs).addEventListener(ev, () => { $(mine).value = $(theirs).value; cpRefreshSend(); });
+  }
+}
+wireSubmitter($('cpSubmitter'));
+$('cpType').addEventListener('change', () => cpRefreshSend());
+
+function cpSheetRows() {
+  const stamp = loadStamp(new Date()), col = $('cpType').value;
+  return cpRows.filter(r => !r.dropped).map(r => {
+    const p = outPlayer(r), cps = ['', '', '', ''];
+    if (col !== '') cps[+col] = r.cp;
+    return [stamp, $('cpSubmitter').value.trim(), p.search, p.ingame, $('cpAlliance').value, ...cps];
+  });
+}
+// Same rule as the Kartz tab: nothing goes while a name is undecided or a field is empty.
+function cpSendBlockers() {
+  const out = [];
+  const open = cpRows.filter(cpOpen).length;
+  if (open) out.push(`${open} row${open > 1 ? 's' : ''} to confirm`);
+  const missing = [['cpSubmitter', 'submitter'], ['cpAlliance', 'alliance'], ['cpType', 'CP type']]
+    .filter(([id]) => !$(id).value.trim()).map(([, name]) => name);
+  if (missing.length) out.push('choose a ' + missing.join(', '));
+  if (!cpRows.some(r => !r.dropped)) out.push('no rows to send');
+  return out;
+}
+// what identifies a send: every cell but the stamp, which moves with the clock
+const cpSendKey = (values = cpSheetRows()) => JSON.stringify(values.map(v => v.slice(1)));
+let cpSending = false, cpLastSent = '', cpSentLabel = '';
+function cpRefreshSend() {
+  const why = cpSendBlockers();
+  const n = cpRows.filter(r => !r.dropped).length;
+  $('cpSend').disabled = why.length > 0 || cpSending;
+  // once sent, the button says where the rows went, until the rows change
+  const sent = !cpSending && cpLastSent && cpSendKey() === cpLastSent;
+  if (!cpSending) $('cpSend').textContent = sent ? cpSentLabel : `Send ${n} row${n === 1 ? '' : 's'} to sheet`;
+  $('cpSend').classList.toggle('done', !!sent);
+  $('cpSheetLink').classList.toggle('hide', !sent);
+  $('cpSendNote').textContent = why.length ? 'Before sending: ' + why.join(' · ') : '';
+}
+$('cpSend').onclick = async () => {
+  if (cpSendBlockers().length) return cpRefreshSend();
+  const values = cpSheetRows();
+  const key = cpSendKey(values);
+  if (key === cpLastSent
+      && !confirm('These exact rows were already sent to the sheet. Send them again?')) return;
+  cpSending = true; $('cpSend').disabled = true; $('cpSend').textContent = 'Sending…';
+  logEl = 'cpLog';
+  try {
+    const r = await fetch(API_BASE + '/append', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ target: 'cp', values }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j?.error?.message || `sheet refused the rows (${r.status})`);
+    log(`appended ${values.length} rows to ${j.book || 'Alliance Rosters'}${j.range ? ' at ' + j.range : ''}`);
+    cpLastSent = key;
+    cpSentLabel = `Sent ${values.length} row${values.length === 1 ? '' : 's'} to `
+                + `${j.book || 'Alliance Rosters'} → ${j.tab || 'sheet'}`;
+    // straight to the rows just written, colon and all: Sheets reads it from the #fragment
+    const cells = (j.range || '').replace(/^.*!/, '');
+    $('cpSheetLink').href = CP_ROSTERS_TAB + (/^[A-Z]+\d+(:[A-Z]+\d+)?$/.test(cells) ? '&range=' + cells : '');
+  } catch (e) { log('✗ ' + e.message); }
+  logEl = 'log';
+  cpSending = false;
+  cpRefreshSend();
 };
