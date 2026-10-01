@@ -3,24 +3,60 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Kartz Extractor</title>
+<title>2698 Data Extractor</title>
+<!-- the Server 2698 badge: browser tab, Home Screen, and beside the title -->
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
+<script>
+// The saved theme, applied before the first paint so the page never flashes the other one.
+try { const t = JSON.parse(localStorage.getItem('kartz.theme'));
+      if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
+</script>
 <style>
+/* Light by default, dark when the device prefers it — unless the toggle by the title has chosen,
+   which sets data-theme on <html> and is remembered per device. */
 :root{
   --bg:#f4f5f8; --panel:#fff; --ink:#15181f; --muted:#666e7d; --line:#dfe3ea;
   --accent:#3b5bdb; --ok:#2b8a3e; --warn:#c26a00; --bad:#c92a2a;
   --okbg:#e9f7ed; --warnbg:#fff4e2; --badbg:#fdecec;
+  color-scheme:light;
 }
-@media (prefers-color-scheme:dark){:root{
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#12141a; --panel:#1a1d25; --ink:#e8eaef; --muted:#98a0b0; --line:#2b303c;
   --accent:#748ffc; --ok:#69db7c; --warn:#ffc078; --bad:#ff8787;
   --okbg:#17301e; --warnbg:#33270f; --badbg:#361a1a;
+  color-scheme:dark;
 }}
+:root[data-theme="dark"]{
+  --bg:#12141a; --panel:#1a1d25; --ink:#e8eaef; --muted:#98a0b0; --line:#2b303c;
+  --accent:#748ffc; --ok:#69db7c; --warn:#ffc078; --bad:#ff8787;
+  --okbg:#17301e; --warnbg:#33270f; --badbg:#361a1a;
+  color-scheme:dark;
+}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
   font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   padding:16px;padding-bottom:64px}
 .wrap{max-width:960px;margin:0 auto}
 h1{font-size:19px;margin:0 0 2px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
+.top h1{margin:0}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand img{width:36px;height:36px;border-radius:9px;flex:none}
+/* on a narrow phone the title gives way, not the icon or the toggle */
+.brand h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+button.themebtn{width:auto;flex:none;padding:7px;line-height:0;background:transparent;color:var(--ink);
+  border:1px solid var(--line);border-radius:999px}
+.themebtn svg{width:18px;height:18px}
+/* Jump to top / bottom: bottom left, small, and only while the page is being scrolled — they fade
+   out after a moment's stillness, so on a phone they never sit over the rows being read. */
+.jump{position:fixed;z-index:40;left:max(12px, env(safe-area-inset-left));
+  bottom:max(12px, env(safe-area-inset-bottom));display:flex;gap:6px;
+  opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .2s ease, transform .2s ease}
+.jump.on{opacity:1;transform:none;pointer-events:auto}
+.jump button{width:auto;padding:6px 12px;font-size:12px;font-weight:500;border-radius:999px;
+  background:var(--panel);color:var(--ink);border:1px solid var(--line);box-shadow:0 2px 10px rgba(0,0,0,.18)}
+.jump button[hidden]{display:none}
 .sub{color:var(--muted);font-size:13px;margin:0 0 18px}
 section{background:var(--panel);border:1px solid var(--line);border-radius:12px;
   padding:14px 16px;margin-bottom:12px}
@@ -93,6 +129,10 @@ td select{padding:4px 6px;font-size:12px;min-width:150px}
   font-size:13px;margin-top:10px}
 details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .hide{display:none}
+/* the link under Send: only after a send. Styled here, not inline, so .hide can still hide it —
+   an inline display:block outranked the class and showed the link before anything was sent. */
+.sheetlink{display:block;text-align:center;font-size:13px;color:var(--accent);margin-top:6px}
+.sheetlink.hide{display:none}
 .tabs{display:flex;gap:2px;margin:0 0 12px;border-bottom:1px solid var(--line)}
 .tabs .tab{width:auto;background:transparent;color:var(--muted);border-radius:8px 8px 0 0;
   padding:8px 14px;border-bottom:2px solid transparent;margin-bottom:-1px}
@@ -101,7 +141,13 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 </head>
 <body>
 <div class="wrap">
-<h1>Kartz Extractor</h1>
+<header class="top">
+  <div class="brand">
+    <img src="icon.png" alt="" width="36" height="36">
+    <h1>2698 Data Extractor</h1>
+  </div>
+  <button type="button" class="themebtn" id="theme"></button>
+</header>
 
 <nav class="tabs" role="tablist">
   <button class="tab on" data-tab="kartz" role="tab">Kartz Extractor</button>
@@ -178,8 +224,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   <div class="tablewrap"><table id="tbl"></table></div>
   <div class="note" id="sendNote"></div>
   <button id="send" style="margin-top:8px">Send to sheet</button>
-  <a id="sheetLink" class="hide" target="_blank" rel="noopener"
-     style="display:block;text-align:center;font-size:13px;color:var(--accent);margin-top:6px">Open in Google Sheets ↗</a>
+  <a id="sheetLink" class="sheetlink hide" target="_blank" rel="noopener">Open in Google Sheets ↗</a>
   <div class="row" style="margin-top:10px">
     <button class="ghost" id="copy">Copy for sheet</button>
     <button class="ghost" id="csv">Download CSV</button>
@@ -241,8 +286,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   <div class="tablewrap"><table id="cpTbl"></table></div>
   <div class="note" id="cpSendNote"></div>
   <button id="cpSend" style="margin-top:8px">Send to sheet</button>
-  <a id="cpSheetLink" class="hide" target="_blank" rel="noopener"
-     style="display:block;text-align:center;font-size:13px;color:var(--accent);margin-top:6px">Open in Google Sheets ↗</a>
+  <a id="cpSheetLink" class="sheetlink hide" target="_blank" rel="noopener">Open in Google Sheets ↗</a>
   <div class="row" style="margin-top:10px">
     <button class="ghost" id="cpCopy">Copy for sheet</button>
     <button class="ghost" id="cpCsv">Download CSV</button>
@@ -250,6 +294,11 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   </div>
 </section>
 </div>
+</div>
+
+<div class="jump" id="jump">
+  <button type="button" id="toTop">↑ Top</button>
+  <button type="button" id="toBottom">↓ Bottom</button>
 </div>
 
 <script>
@@ -2447,6 +2496,42 @@ $('learn').onclick = () => {
 };
 
 
+
+/* ---------------- theme and jump buttons ---------------- */
+const SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+const MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+const prefersDark = matchMedia('(prefers-color-scheme: dark)');
+const isDark = () => document.documentElement.dataset.theme
+  ? document.documentElement.dataset.theme === 'dark' : prefersDark.matches;
+// the button shows where it goes, not where it is: a sun in dark mode, a moon in light
+function paintTheme() {
+  const dark = isDark();
+  $('theme').innerHTML = dark ? SUN : MOON;
+  $('theme').title = dark ? 'Switch to light mode' : 'Switch to dark mode';
+  $('theme').setAttribute('aria-label', $('theme').title);
+}
+$('theme').onclick = () => {
+  const next = isDark() ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  store.set('theme', next);
+  paintTheme();
+};
+prefersDark.addEventListener('change', paintTheme);
+paintTheme();
+
+let jumpIdle = null;
+function showJump() {
+  const max = document.documentElement.scrollHeight - innerHeight;
+  if (max < 60) return $('jump').classList.remove('on');       // nothing to jump across
+  $('toTop').hidden = scrollY < 80;
+  $('toBottom').hidden = scrollY > max - 80;
+  $('jump').classList.add('on');
+  clearTimeout(jumpIdle);
+  jumpIdle = setTimeout(() => $('jump').classList.remove('on'), 2500);
+}
+addEventListener('scroll', showJump, { passive: true });
+$('toTop').onclick = () => scrollTo({ top: 0, behavior: 'smooth' });
+$('toBottom').onclick = () => scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
 
 loadSetup();
 </script>
