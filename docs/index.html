@@ -57,6 +57,7 @@ button.themebtn{width:auto;flex:none;padding:7px;line-height:0;background:transp
 .jump button{width:auto;padding:6px 12px;font-size:12px;font-weight:500;border-radius:999px;
   background:var(--panel);color:var(--ink);border:1px solid var(--line);box-shadow:0 2px 10px rgba(0,0,0,.18)}
 .jump button[hidden]{display:none}
+.videonote{font-size:11px;color:var(--muted);opacity:.7;text-align:right;margin-top:14px;min-height:16px}
 .sub{color:var(--muted);font-size:13px;margin:0 0 18px}
 section{background:var(--panel);border:1px solid var(--line);border-radius:12px;
   padding:14px 16px;margin-bottom:12px}
@@ -294,6 +295,8 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   </div>
 </section>
 </div>
+<!-- Where the Kartz recording has got to — small and quiet, for checking it is safe to close. -->
+<footer class="videonote" id="videoNote" aria-live="polite"></footer>
 </div>
 
 <div class="jump" id="jump">
@@ -308,7 +311,7 @@ const $ = id => document.getElementById(id);
 // Shown on the page. Several people run this from their own phones and a browser can sit on
 // an open tab for days, so "it is still happening" and "it is fixed" are easy to say about
 // different builds. Bump it with any change worth telling apart from the one before.
-const BUILD = '2026-10-01-cp-send';
+const BUILD = '2026-10-05-r2-staging';
 // Gemini, through the Worker's /api/gemini route where the key lives — the same paid key the
 // Base CP tab uses (4,000 requests and 4M tokens a minute). It was Ollama's gemma4:31b; that
 // route is still in the Worker, and switching back is this line and MODEL_BASE below.
@@ -915,6 +918,10 @@ function pickFile(f) {
   videoFile = f;
   $('fileName').textContent = f.name + '  ·  ' + (f.size / 1e6).toFixed(0) + ' MB';
   refreshState();
+  // The recording starts uploading the moment it is chosen, so it has the whole run — fields,
+  // Extract, checking rows — to get there before Send. A recording swapped for another, or never
+  // sent, is cleared by the staging bucket's lifecycle rule.
+  startVideoUpload(f);
 }
 
 const once = (el, ev) => new Promise(res => el.addEventListener(ev, res, { once: true }));
@@ -1992,7 +1999,7 @@ $('go').onclick = async () => {
   try {
     const roster = currentRoster();
     if (!roster.length) throw new Error('No roster loaded — paste the sheet link and press Pull roster.');
-    startVideoUpload(videoFile);       // uploads while the run is read and checked; finished at Send
+    startVideoUpload(videoFile);       // normally already under way since the file was chosen
     index = buildIndex(roster);
     skipIndex = buildIndex(skippedRoster());
     aliases = store.get('aliases') || {};
@@ -2437,7 +2444,7 @@ let sending = false;
 // Worker hands out a one-time upload link (see apps-script/VideoUpload.gs) and the file goes
 // straight from here to Drive.
 //
-// The upload starts when Extract is pressed, not at Send. A page cannot keep uploading once it is
+// The upload starts when the file is chosen, not at Send. A page cannot keep uploading once it is
 // closed, so a video that only began at Send held the button on "Sending…" for as long as the
 // upload took. Instead the file goes up in pieces while the run is read and checked, all but its
 // last few hundred kilobytes; Drive does not create a file until its last piece arrives, so a run
@@ -2476,15 +2483,44 @@ async function videoPiece(url, f, from, to, signal) {
   return r;
 }
 
-// At Extract: everything but the tail, in the background.
+// The quiet line at the foot of the page, saying where the recording has got to.
+const videoNote = text => { const el = $('videoNote'); if (el) el.textContent = text ? 'video · ' + text : ''; };
+// From the moment the file is chosen, in the background. First choice: straight into the B2 staging bucket through a
+// signed link; the Worker takes it on to Drive after Send, so the page can then be closed at once.
+// If staging is not set up, the upload goes to Drive itself, all but its tail (below).
 function startVideoUpload(f) {
   if (!f || videoSaved === f || (early && early.file === f)) return;
-  // what is held back for Send: under 256 KB, and never nothing, so the file is not finished early
-  const held = Math.floor((f.size - 1) / VIDEO_QUANTUM) * VIDEO_QUANTUM;
-  const up = { file: f, url: null, sent: 0, held, failed: false };
+  const up = { file: f, mode: 'b2', key: null, failed: false };
   early = up;
   up.done = (async () => {
     try {
+      videoNote('uploading to Backblaze…');
+      const type = videoType(f);
+      const r = await fetch(API_BASE + '/video-stage', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ type, size: f.size }) });
+      if (r.status === 501) { if (early === up) startDriveUpload(f); return; }   // no B2: Drive
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.url) throw new Error(j?.error?.message || `no staging link (${r.status})`);
+      const put = await fetch(j.url, { method: 'PUT', headers: { 'content-type': type }, body: f });
+      if (!put.ok) throw new Error(`B2 refused the upload (${put.status})`);
+      up.key = j.key;
+      if (early === up) videoNote('Backblaze upload done');
+    } catch (e) {
+      up.failed = true; console.warn('staging upload stopped:', e);
+      if (early === up) videoNote('Backblaze upload failed — it will go to Drive from the page at Send');
+    }
+  })();
+}
+// The fallback when B2 is not set up: straight to Drive, everything but the tail.
+function startDriveUpload(f) {
+  // what is held back for Send: under 256 KB, and never nothing, so the file is not finished early
+  const held = Math.floor((f.size - 1) / VIDEO_QUANTUM) * VIDEO_QUANTUM;
+  const up = { file: f, mode: 'drive', url: null, sent: 0, held, failed: false };
+  early = up;
+  up.done = (async () => {
+    try {
+      videoNote('uploading to Drive…');
       up.url = await videoLink(`uploading — ${f.name}`, f);
       while (up.sent < held) {
         if (early !== up) return;        // another recording was chosen: let this one expire
@@ -2492,21 +2528,31 @@ function startVideoUpload(f) {
         await videoPiece(up.url, f, up.sent, to);
         up.sent = to;
       }
-    } catch (e) { up.failed = true; console.warn('early upload stopped:', e); }
+      if (early === up) videoNote('uploaded to Drive except the last piece, sent at Send');
+    } catch (e) { up.failed = true; console.warn('early upload stopped:', e); videoNote('Drive upload stopped'); }
   })();
 }
 
-// At Send: finish the early upload and name it, or failing that upload the whole file now.
+// At Send. Staged in B2: hand back where it is, for the Worker to copy to Drive once the rows are
+// in. Otherwise: finish the Drive upload and name it, or failing that upload the whole file now.
 async function saveVideo() {
   const f = videoFile;
-  if (!f || videoSaved === f) return;
+  if (!f || videoSaved === f) return null;
   const stop = new AbortController(), timer = setTimeout(() => stop.abort(), VIDEO_WAIT);
   const giveUp = new Promise(r => stop.signal.addEventListener('abort', r));
   try {
     const name = videoName(f);
-    const up = early && early.file === f ? early : null;
+    // started for B2 and switched to Drive (B2 not set up) shows up as the Drive upload by now
+    let up = early && early.file === f ? early : null;
     if (up) await Promise.race([up.done, giveUp]);
+    up = early && early.file === f ? early : null;
+    if (up && up.mode === 'drive' && up.done) await Promise.race([up.done, giveUp]);
     if (stop.signal.aborted) throw new Error('upload took too long');
+    if (up && up.mode === 'b2' && up.key) {
+      videoSaved = f; early = null;
+      return { key: up.key, name };
+    }
+    if (up && up.mode === 'b2') up = null;       // staging failed: send the whole file to Drive below
     if (up && !up.failed && up.url && up.sent === up.held) {
       const r = await videoPiece(up.url, f, up.held, f.size, stop.signal);
       const made = await r.json().catch(() => ({}));
@@ -2516,7 +2562,8 @@ async function saveVideo() {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ fileId: made.id, name }) });
       if (!rn.ok) console.warn('recording saved but not renamed:', await rn.text());
-      return;
+      videoNote('saved to Drive · safe to close');
+      return null;
     }
     // the fallback: the whole file, under its final name, in one go
     const url = await videoLink(name, f);
@@ -2524,9 +2571,12 @@ async function saveVideo() {
                                  body: f, signal: stop.signal });
     if (!r.ok) throw new Error(`Drive refused the upload (${r.status})`);
     videoSaved = f; early = null;
+    videoNote('saved to Drive · safe to close');
   } catch (e) {
     console.warn('recording not saved to Drive:', e);
+    videoNote('not saved to Drive');
   } finally { clearTimeout(timer); }
+  return null;
 }
 // The same run sent twice doubles every player's score in the tracker, and pressing a button
 // again because the phone seemed slow is the easiest way to do it. The stamp is left out of the
@@ -2539,18 +2589,19 @@ $('send').onclick = async () => {
   if (key === lastSent
       && !confirm('These exact rows were already sent to the sheet. Send them again?')) return;
   sending = true; $('send').disabled = true; $('send').textContent = 'Sending…';
-  // The recording first, then the rows. Alongside each other, a page closed as soon as the rows
-  // were in lost the video halfway up; this way the green button means both are done. The video
-  // never holds the rows back for good: a failed upload just moves on, and a stuck one is
-  // abandoned after VIDEO_WAIT.
-  await saveVideo();
+  // The rows first, and the button goes green the moment the sheet has them. The recording follows
+  // on its own (afterSend, below) — it never holds the rows back.
+  let sentOk = false;
   try {
+    // Sheets would read "Sep26" as the 26th of September; the leading apostrophe keeps it the
+    // text it is, and is not itself stored
+    const body = JSON.stringify({ target: 'kartz',
+                                  values: values.map(r => r.map((v, i) => i === 5 ? "'" + v : v)) });
+    // keepalive lets the request finish even if the page is closed straight after Send. Browsers
+    // allow it only for small bodies (64 KB); a run's rows are a fraction of that.
     const r = await fetch(API_BASE + '/append', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      // Sheets would read "Sep26" as the 26th of September; the leading apostrophe keeps it the
-      // text it is, and is not itself stored
-      body: JSON.stringify({ target: 'kartz',
-                             values: values.map(r => r.map((v, i) => i === 5 ? "'" + v : v)) }) });
+      method: 'POST', headers: { 'content-type': 'application/json' }, body,
+      keepalive: body.length < 60000 });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j?.error?.message || `sheet refused the rows (${r.status})`);
     log(`appended ${values.length} rows to Input-RawData${j.range ? ' at ' + j.range : ''}`);
@@ -2560,10 +2611,31 @@ $('send').onclick = async () => {
     // as written, colon and all: Sheets reads the range straight out of the link's #fragment
     const cells = (j.range || '').replace(/^.*!/, '');
     $('sheetLink').href = RAWDATA_TAB + (/^[A-Z]+\d+(:[A-Z]+\d+)?$/.test(cells) ? '&range=' + cells : '');
+    sentOk = true;
   } catch (e) { log('✗ ' + e.message); }
   sending = false;
   refreshSend();
+  if (sentOk) saveAfterSend();
 };
+// The recording, once the rows are in. Staged in B2 (normally already uploaded, since it started
+// when the file was chosen), it is handed to the Worker with one small request that survives the
+// page closing, and the Worker copies it to Drive by itself. Without B2 it goes to Drive from here,
+// which needs the page open until it is done. The only sign of either is the line at the foot of the page.
+async function saveAfterSend() {
+  const video = await saveVideo();
+  if (!video) return;
+  try {
+    const r = await fetch(API_BASE + '/video-commit', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(video), keepalive: true });
+    if (!r.ok) throw new Error(`the Worker refused the recording (${r.status})`);
+    videoNote('handed over for Drive · safe to close');
+  } catch (e) {
+    videoSaved = null;          // so a re-send of the run tries again
+    console.warn('recording not handed over for Drive:', e);
+    videoNote('not handed over for Drive');
+  }
+}
 
 $('copy').onclick = async () => {
   const tsv = outRows().map(r => r.join('\t')).join('\n');
