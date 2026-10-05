@@ -240,8 +240,91 @@ async function tabTitle(token, target) {
   return hit.properties.title;
 }
 
+/* ---------------- recordings: Apps Script link, B2 staging ---------------- */
+// The Apps Script (apps-script/VideoUpload.gs) runs as the Drive folder's owner and hands out
+// one-time Drive upload links, and renames finished files. Secrets pasted into the dashboard easily
+// pick up a trailing space or line break, which Google answers with a bare 404, so both are trimmed.
+const cleanSecret = v => String(v ?? '').trim().replace(/^["']+|["']+$/g, '').trim();
+async function videoScript(env, payload) {
+  const scriptUrl = cleanSecret(env.VIDEO_SCRIPT_URL), pass = cleanSecret(env.VIDEO_PASS);
+  if (!scriptUrl || !pass) throw new Error('Worker has no VIDEO_SCRIPT_URL / VIDEO_PASS secret set.');
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(scriptUrl))
+    throw new Error('VIDEO_SCRIPT_URL is not a web app URL — it should look like '
+      + 'https://script.google.com/macros/s/…/exec');
+  // Apps Script answers a POST with a redirect to the reply, which fetch follows
+  const r = await fetch(scriptUrl, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...payload, pass }),
+  });
+  const j = await r.json().catch(() => ({}));
+  // enough of the URL to tell which script was called, without printing all of it
+  if (j.error || (!j.url && !j.ok))
+    throw new Error(j.error || `upload script answered ${r.status} — VIDEO_SCRIPT_URL ends `
+      + `"…${scriptUrl.slice(-16)}" (${scriptUrl.length} characters)`);
+  return j;
+}
+
+// Staging in Backblaze B2. The browser uploads the recording straight into a B2 bucket while the
+// run is read and checked — through a short-lived signed link, so the bytes never pass through the
+// Worker and its 100 MB request limit does not apply. At Send the Worker copies it from B2 into
+// Drive by itself, after it has answered, so the page can be closed as soon as Send is done. A
+// recording that is never sent is removed by the bucket's lifecycle rule; one that is copied is
+// deleted straight away. B2 is reached through its S3-compatible API, with signed links for
+// everything — upload, read back, delete — so the Worker holds no B2 session of its own.
+//
+//   secrets   B2_ENDPOINT   the bucket's S3 endpoint, e.g. s3.us-east-005.backblazeb2.com
+//             B2_BUCKET     the bucket's name
+//             B2_KEY_ID, B2_APP_KEY   an application key limited to that bucket
+// Without them the page falls back to uploading to Drive itself.
+const b2Endpoint = env => cleanSecret(env.B2_ENDPOINT).replace(/^https?:\/\//, '').replace(/\/+$/, '');
+const stagingReady = env => /^s3\.[a-z0-9-]+\.backblazeb2\.com$/.test(b2Endpoint(env))
+  && !!(cleanSecret(env.B2_BUCKET) && cleanSecret(env.B2_KEY_ID) && cleanSecret(env.B2_APP_KEY));
+const te = new TextEncoder();
+const toHex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+const hmac = async (key, msg) => crypto.subtle.sign('HMAC',
+  await crypto.subtle.importKey('raw', typeof key === 'string' ? te.encode(key) : key,
+                                { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']), te.encode(msg));
+// A presigned link for B2's S3-compatible endpoint (AWS Signature Version 4, query-string form).
+// Only the host header is signed, so the browser is free to send the file's Content-Type.
+async function presignB2(env, method, key, seconds = 3600) {
+  const host = b2Endpoint(env);
+  const region = host.split('.')[1];                       // s3.<region>.backblazeb2.com
+  const id = cleanSecret(env.B2_KEY_ID), secret = cleanSecret(env.B2_APP_KEY);
+  const amzDate = new Date().toISOString().replace(/[-:]|\.\d{3}/g, '');   // 20261005T123456Z
+  const day = amzDate.slice(0, 8), scope = `${day}/${region}/s3/aws4_request`;
+  const path = `/${cleanSecret(env.B2_BUCKET)}/${key.split('/').map(encodeURIComponent).join('/')}`;
+  const params = {
+    'X-Amz-Algorithm': 'AWS4-HMAC-SHA256', 'X-Amz-Credential': `${id}/${scope}`,
+    'X-Amz-Date': amzDate, 'X-Amz-Expires': String(seconds), 'X-Amz-SignedHeaders': 'host',
+  };
+  const query = Object.keys(params).sort()
+    .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&');
+  const canonical = [method, path, query, `host:${host}\n`, 'host', 'UNSIGNED-PAYLOAD'].join('\n');
+  const toSign = ['AWS4-HMAC-SHA256', amzDate, scope,
+                  toHex(await crypto.subtle.digest('SHA-256', te.encode(canonical)))].join('\n');
+  let k = await hmac('AWS4' + secret, day);
+  for (const part of [region, 's3', 'aws4_request']) k = await hmac(k, part);
+  return `https://${host}${path}?${query}&X-Amz-Signature=${toHex(await hmac(k, toSign))}`;
+}
+// After a Send: B2 → Drive, under the run's name, then the staged copy goes.
+async function copyStagedToDrive(env, key, name) {
+  const got = await fetch(await presignB2(env, 'GET', key));
+  if (!got.ok) throw new Error(`no staged recording at ${key} (${got.status})`);
+  const size = +got.headers.get('content-length');
+  if (!(size > 0)) throw new Error('staged recording has no length');
+  const ct = got.headers.get('content-type') || '';
+  const type = /^video\//.test(ct) ? ct : 'video/quicktime';
+  const { url } = await videoScript(env, { name, type, size });
+  // Drive needs the length up front; a fixed-length stream carries it without buffering the file
+  const { readable, writable } = new FixedLengthStream(size);
+  got.body.pipeTo(writable);
+  const r = await fetch(url, { method: 'PUT', headers: { 'content-type': type }, body: readable });
+  if (!r.ok) throw new Error(`Drive refused the copy (${r.status}): ${(await r.text()).slice(0, 200)}`);
+  await fetch(await presignB2(env, 'DELETE', key), { method: 'DELETE' });
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
     // Anything that is not the API is the site itself.
@@ -279,8 +362,17 @@ export default {
       if (body.length > 1024 * 1024)
         return reply({ error: { code: 413, message: 'Request too large.' } }, 413);
       try {
-        const { values, target } = JSON.parse(body);
-        return reply(await appendRows(env, values, target), 200);
+        const { values, target, video } = JSON.parse(body);
+        const out = await appendRows(env, values, target);
+        // The Kartz recording, staged in B2 at Extract: copied to Drive after this reply, so the
+        // page need not stay open for it. Only keys this Worker hands out are accepted.
+        if (video && stagingReady(env) && /^kartz\/[\w.-]{1,120}$/.test(video.key || '')
+            && typeof video.name === 'string' && video.name.length <= 200) {
+          ctx.waitUntil(copyStagedToDrive(env, video.key, video.name)
+            .catch(e => console.error('recording not copied to Drive:', e && e.message || e)));
+          out.video = 'copying';
+        }
+        return reply(out, 200);
       } catch (e) {
         const status = e.status || (e instanceof SyntaxError ? 400 : 502);
         return reply({ error: { code: status, message: String(e && e.message || e) } }, status);
@@ -295,16 +387,23 @@ export default {
     //   wrangler secret put VIDEO_SCRIPT_URL
     //   wrangler secret put VIDEO_PASS
     const videoRoute = url.pathname.replace(/^\/+/, '');
+    // A signed link for uploading the recording straight into B2 (see "Staging in Backblaze B2").
+    if (videoRoute === 'api/video-stage') {
+      if (!stagingReady(env)) return reply({ error: { code: 501, message: 'B2 staging is not set up.' } }, 501);
+      try {
+        const { type, size } = JSON.parse(await request.text());
+        if (!/^video\//.test(type || '') || !(size > 0 && size < 5e9))
+          return reply({ error: { code: 400, message: 'Bad recording details.' } }, 400);
+        const ext = /mp4/.test(type) ? 'mp4' : /webm/.test(type) ? 'webm' : 'mov';
+        const key = `kartz/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
+        return reply({ key, url: await presignB2(env, 'PUT', key) }, 200);
+      } catch (e) {
+        return reply({ error: { code: 500, message: String(e && e.message || e) } }, 500);
+      }
+    }
+    // A one-time Drive upload link, or the renaming of a finished upload — used when B2 staging
+    // is not set up and the page uploads to Drive itself.
     if (videoRoute === 'api/video-session' || videoRoute === 'api/video-rename') {
-      if (!env.VIDEO_SCRIPT_URL || !env.VIDEO_PASS)
-        return reply({ error: { code: 500, message: 'Worker has no VIDEO_SCRIPT_URL / VIDEO_PASS secret set.' } }, 500);
-      // Secrets pasted into the dashboard easily pick up a trailing space or line break, and Google
-      // answers a script URL with one at the end with a bare 404 — so both are trimmed, quotes too.
-      const clean = v => String(v).trim().replace(/^["']+|["']+$/g, '').trim();
-      const scriptUrl = clean(env.VIDEO_SCRIPT_URL), videoPass = clean(env.VIDEO_PASS);
-      if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(scriptUrl))
-        return reply({ error: { code: 500, message: 'VIDEO_SCRIPT_URL is not a web app URL — it should '
-          + 'look like https://script.google.com/macros/s/…/exec' } }, 500);
       try {
         const { name, type, size, fileId } = JSON.parse(await request.text());
         const rename = videoRoute === 'api/video-rename';
@@ -312,23 +411,11 @@ export default {
             || (rename ? !/^[\w-]{10,200}$/.test(fileId || '')
                        : !/^video\//.test(type || '') || !(size > 0 && size < 2e9)))
           return reply({ error: { code: 400, message: 'Bad recording details.' } }, 400);
-        // Apps Script answers a POST with a redirect to the reply, which fetch follows
-        const r = await fetch(scriptUrl, {
-          method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(rename ? { pass: videoPass, action: 'rename', fileId, name }
-                                      : { pass: videoPass, name, type, size, origin }),
-        });
-        const j = await r.json().catch(() => ({}));
-        if (rename) return j.ok ? reply({ ok: true }, 200)
-          : reply({ error: { code: 502, message: j.error || `upload script answered ${r.status}` } }, 502);
-        // Enough of the URL to tell which script was called, without printing all of it: a 404 means
-        // the secret holds a different URL from the deployed one, and the tail shows which.
-        if (!j.url) return reply({ error: { code: 502, message: j.error
-          || `upload script answered ${r.status} — VIDEO_SCRIPT_URL ends "…${scriptUrl.slice(-16)}"`
-           + ` (${scriptUrl.length} characters)` } }, 502);
-        return reply({ url: j.url }, 200);
+        const j = await videoScript(env, rename ? { action: 'rename', fileId, name }
+                                                : { name, type, size, origin });
+        return reply(rename ? { ok: true } : { url: j.url }, 200);
       } catch (e) {
-        return reply({ error: { code: 400, message: String(e && e.message || e) } }, 400);
+        return reply({ error: { code: 502, message: String(e && e.message || e) } }, 502);
       }
     }
 
