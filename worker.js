@@ -245,7 +245,7 @@ async function tabTitle(token, target) {
 // one-time Drive upload links, and renames finished files. Secrets pasted into the dashboard easily
 // pick up a trailing space or line break, which Google answers with a bare 404, so both are trimmed.
 const cleanSecret = v => String(v ?? '').trim().replace(/^["']+|["']+$/g, '').trim();
-async function videoScript(env, payload) {
+async function videoScript(env, payload, signal) {
   const scriptUrl = cleanSecret(env.VIDEO_SCRIPT_URL), pass = cleanSecret(env.VIDEO_PASS);
   if (!scriptUrl || !pass) throw new Error('Worker has no VIDEO_SCRIPT_URL / VIDEO_PASS secret set.');
   if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(scriptUrl))
@@ -254,7 +254,7 @@ async function videoScript(env, payload) {
   // Apps Script answers a POST with a redirect to the reply, which fetch follows
   const r = await fetch(scriptUrl, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ ...payload, pass }),
+    body: JSON.stringify({ ...payload, pass }), signal,
   });
   const j = await r.json().catch(() => ({}));
   // enough of the URL to tell which script was called, without printing all of it
@@ -314,12 +314,26 @@ async function presignB2(env, method, key, seconds = 3600) {
 // Cloudflare's limit on background work after a reply — about 30 seconds — and recordings were cut
 // off mid-copy with "Network connection lost". A script run has six minutes and finishes even if
 // this stops waiting for it, so the links it gets are signed for two hours.
+//
+// So the Worker waits only COPY_WAIT for the script's answer. A short recording is done by then and
+// any failure is logged as before; a long one is left to finish in the script, which outlives the
+// wait. Waiting the full copy out instead just had Cloudflare cancel the wait at its 30-second mark,
+// with a warning on every large recording. The script's own Executions page shows how those ended.
+const COPY_WAIT = 20 * 1000;
 async function copyStagedToDrive(env, key, name) {
-  await videoScript(env, {
-    action: 'copy', name, type: 'video/quicktime',
-    from: await presignB2(env, 'GET', key, 7200),
-    del: await presignB2(env, 'DELETE', key, 7200),
-  });
+  try {
+    await videoScript(env, {
+      action: 'copy', name, type: 'video/quicktime',
+      from: await presignB2(env, 'GET', key, 7200),
+      del: await presignB2(env, 'DELETE', key, 7200),
+    }, AbortSignal.timeout(COPY_WAIT));
+  } catch (e) {
+    if (e && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+      console.log(`recording still copying in Apps Script after ${COPY_WAIT / 1000}s: "${name}"`);
+      return;
+    }
+    throw e;
+  }
 }
 
 export default {
