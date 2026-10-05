@@ -297,15 +297,22 @@ export default {
     if (url.pathname.replace(/^\/+/, '') === 'api/video-session') {
       if (!env.VIDEO_SCRIPT_URL || !env.VIDEO_PASS)
         return reply({ error: { code: 500, message: 'Worker has no VIDEO_SCRIPT_URL / VIDEO_PASS secret set.' } }, 500);
+      // Secrets pasted into the dashboard easily pick up a trailing space or line break, and Google
+      // answers a script URL with one at the end with a bare 404 — so both are trimmed, quotes too.
+      const clean = v => String(v).trim().replace(/^["']+|["']+$/g, '').trim();
+      const scriptUrl = clean(env.VIDEO_SCRIPT_URL), videoPass = clean(env.VIDEO_PASS);
+      if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(scriptUrl))
+        return reply({ error: { code: 500, message: 'VIDEO_SCRIPT_URL is not a web app URL — it should '
+          + 'look like https://script.google.com/macros/s/…/exec' } }, 500);
       try {
         const { name, type, size } = JSON.parse(await request.text());
         if (typeof name !== 'string' || !name || name.length > 200 || !/^video\//.test(type || '')
             || !(size > 0 && size < 2e9))
           return reply({ error: { code: 400, message: 'Bad recording details.' } }, 400);
         // Apps Script answers a POST with a redirect to the reply, which fetch follows
-        const r = await fetch(env.VIDEO_SCRIPT_URL, {
+        const r = await fetch(scriptUrl, {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ pass: env.VIDEO_PASS, name, type, size, origin }),
+          body: JSON.stringify({ pass: videoPass, name, type, size, origin }),
         });
         const j = await r.json().catch(() => ({}));
         if (!j.url) return reply({ error: { code: 502, message: j.error || `upload script answered ${r.status}` } }, 502);
