@@ -1992,6 +1992,7 @@ $('go').onclick = async () => {
   try {
     const roster = currentRoster();
     if (!roster.length) throw new Error('No roster loaded — paste the sheet link and press Pull roster.');
+    startVideoUpload(videoFile);       // uploads while the run is read and checked; finished at Send
     index = buildIndex(roster);
     skipIndex = buildIndex(skippedRoster());
     aliases = store.get('aliases') || {};
@@ -2431,39 +2432,101 @@ function refreshSend() {
 const sendKey = (values = outRows()) => JSON.stringify(values.map(v => v.slice(1)));
 let sentLabel = '';
 let sending = false;
-// The recording goes to the Kartz recordings folder on Google Drive, just before the rows go to the
-// sheet, while the button says Sending…. It is silent by design: no message, no retry — the sheet
-// is what matters, and the video is a record kept alongside it. The Worker hands out a one-time upload link (see
-// apps-script/VideoUpload.gs) and the file goes straight from here to Drive. A recording already
-// saved this visit is not saved again when the same run is re-sent.
+// The recording goes to the Kartz recordings folder on Google Drive. It is silent by design: no
+// message, no retry — the sheet is what matters, and the video is a record kept alongside it. The
+// Worker hands out a one-time upload link (see apps-script/VideoUpload.gs) and the file goes
+// straight from here to Drive.
+//
+// The upload starts when Extract is pressed, not at Send. A page cannot keep uploading once it is
+// closed, so a video that only began at Send held the button on "Sending…" for as long as the
+// upload took. Instead the file goes up in pieces while the run is read and checked, all but its
+// last few hundred kilobytes; Drive does not create a file until its last piece arrives, so a run
+// that is never sent leaves nothing in the folder — the unfinished upload simply expires. Send then
+// only has that last piece to deliver, names the file after the run, and sends the rows.
+//
+// If the early upload went wrong, Send falls back to uploading the whole file there and then.
+// A recording already saved this visit is not saved again when the same run is re-sent.
 let videoSaved = null;
 const VIDEO_WAIT = 5 * 60 * 1000;      // a recording still uploading after this is given up on
+const VIDEO_PIECE = 8 * 1024 * 1024;   // per request while uploading early
+const VIDEO_QUANTUM = 256 * 1024;      // Drive takes pieces in multiples of this, but for the last
+let early = null;                      // the early upload under way: { file, url, sent, held, done }
+
+const videoType = f => /^video\//.test(f.type) ? f.type : 'video/quicktime';
+// 2026-10-05 Day 4 · 698W · peach.mov — sorts by date in the folder
+function videoName(f) {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  const ext = (f.name.match(/\.[a-z0-9]{2,5}$/i) || ['.mov'])[0];
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${$('kday').value}`
+       + ` · ${$('alliance').value} · ${$('submitter').value.trim()}${ext}`;
+}
+async function videoLink(name, f) {
+  const r = await fetch(API_BASE + '/video-session', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name, type: videoType(f), size: f.size }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.url) throw new Error(j?.error?.message || `no upload link (${r.status})`);
+  return j.url;
+}
+// one piece of a resumable upload; Drive answers 308 for "more to come", 200/201 for the last
+async function videoPiece(url, f, from, to, signal) {
+  const r = await fetch(url, { method: 'PUT', signal, body: f.slice(from, to),
+    headers: { 'content-range': `bytes ${from}-${to - 1}/${f.size}` } });
+  if (r.status !== 308 && !r.ok) throw new Error(`Drive refused part of the upload (${r.status})`);
+  return r;
+}
+
+// At Extract: everything but the tail, in the background.
+function startVideoUpload(f) {
+  if (!f || videoSaved === f || (early && early.file === f)) return;
+  // what is held back for Send: under 256 KB, and never nothing, so the file is not finished early
+  const held = Math.floor((f.size - 1) / VIDEO_QUANTUM) * VIDEO_QUANTUM;
+  const up = { file: f, url: null, sent: 0, held, failed: false };
+  early = up;
+  up.done = (async () => {
+    try {
+      up.url = await videoLink(`uploading — ${f.name}`, f);
+      while (up.sent < held) {
+        if (early !== up) return;        // another recording was chosen: let this one expire
+        const to = Math.min(up.sent + VIDEO_PIECE, held);
+        await videoPiece(up.url, f, up.sent, to);
+        up.sent = to;
+      }
+    } catch (e) { up.failed = true; console.warn('early upload stopped:', e); }
+  })();
+}
+
+// At Send: finish the early upload and name it, or failing that upload the whole file now.
 async function saveVideo() {
   const f = videoFile;
   if (!f || videoSaved === f) return;
-  videoSaved = f;
+  const stop = new AbortController(), timer = setTimeout(() => stop.abort(), VIDEO_WAIT);
+  const giveUp = new Promise(r => stop.signal.addEventListener('abort', r));
   try {
-    const d = new Date(), p = n => String(n).padStart(2, '0');
-    const ext = (f.name.match(/\.[a-z0-9]{2,5}$/i) || ['.mov'])[0];
-    // 2026-10-05 Day 4 · 698W · peach.mov — sorts by date in the folder
-    const name = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${$('kday').value}`
-               + ` · ${$('alliance').value} · ${$('submitter').value.trim()}${ext}`;
-    const type = /^video\//.test(f.type) ? f.type : 'video/quicktime';
-    const r = await fetch(API_BASE + '/video-session', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name, type, size: f.size }) });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j.url) throw new Error(j?.error?.message || `no upload link (${r.status})`);
-    const stop = new AbortController(), timer = setTimeout(() => stop.abort(), VIDEO_WAIT);
-    try {
-      const up = await fetch(j.url, { method: 'PUT', headers: { 'content-type': type }, body: f,
-                                      signal: stop.signal });
-      if (!up.ok) throw new Error(`Drive refused the upload (${up.status})`);
-    } finally { clearTimeout(timer); }
+    const name = videoName(f);
+    const up = early && early.file === f ? early : null;
+    if (up) await Promise.race([up.done, giveUp]);
+    if (stop.signal.aborted) throw new Error('upload took too long');
+    if (up && !up.failed && up.url && up.sent === up.held) {
+      const r = await videoPiece(up.url, f, up.held, f.size, stop.signal);
+      const made = await r.json().catch(() => ({}));
+      videoSaved = f; early = null;
+      // the file exists now, under its placeholder name; a failed rename leaves just that
+      const rn = await fetch(API_BASE + '/video-rename', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ fileId: made.id, name }) });
+      if (!rn.ok) console.warn('recording saved but not renamed:', await rn.text());
+      return;
+    }
+    // the fallback: the whole file, under its final name, in one go
+    const url = await videoLink(name, f);
+    const r = await fetch(url, { method: 'PUT', headers: { 'content-type': videoType(f) },
+                                 body: f, signal: stop.signal });
+    if (!r.ok) throw new Error(`Drive refused the upload (${r.status})`);
+    videoSaved = f; early = null;
   } catch (e) {
-    videoSaved = null;          // so a later send tries again
     console.warn('recording not saved to Drive:', e);
-  }
+  } finally { clearTimeout(timer); }
 }
 // The same run sent twice doubles every player's score in the tracker, and pressing a button
 // again because the phone seemed slow is the easiest way to do it. The stamp is left out of the
