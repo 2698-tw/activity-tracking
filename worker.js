@@ -287,6 +287,34 @@ export default {
       }
     }
 
+    // /api/video-session: a one-time upload link for the recording, into the Kartz recordings folder
+    // on Google Drive. It comes from an Apps Script that runs as the folder's owner (see
+    // apps-script/VideoUpload.gs) — the service account has no Drive storage to upload with. The
+    // Worker only fetches the link, adding the passphrase; the video itself goes straight from the
+    // browser to Drive.
+    //   wrangler secret put VIDEO_SCRIPT_URL
+    //   wrangler secret put VIDEO_PASS
+    if (url.pathname.replace(/^\/+/, '') === 'api/video-session') {
+      if (!env.VIDEO_SCRIPT_URL || !env.VIDEO_PASS)
+        return reply({ error: { code: 500, message: 'Worker has no VIDEO_SCRIPT_URL / VIDEO_PASS secret set.' } }, 500);
+      try {
+        const { name, type, size } = JSON.parse(await request.text());
+        if (typeof name !== 'string' || !name || name.length > 200 || !/^video\//.test(type || '')
+            || !(size > 0 && size < 2e9))
+          return reply({ error: { code: 400, message: 'Bad recording details.' } }, 400);
+        // Apps Script answers a POST with a redirect to the reply, which fetch follows
+        const r = await fetch(env.VIDEO_SCRIPT_URL, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ pass: env.VIDEO_PASS, name, type, size, origin }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!j.url) return reply({ error: { code: 502, message: j.error || `upload script answered ${r.status}` } }, 502);
+        return reply({ url: j.url }, 200);
+      } catch (e) {
+        return reply({ error: { code: 400, message: String(e && e.message || e) } }, 400);
+      }
+    }
+
     // /api/gemini/<model>: the Base CP tab, on Gemini instead of Ollama. The page already
     // speaks Gemini's own request shape, so this adds the key and forwards it untouched.
     const gem = url.pathname.replace(/^\/+/, '').match(/^api\/gemini\/([a-zA-Z0-9._\-]{1,80})$/);
