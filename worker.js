@@ -258,9 +258,12 @@ async function videoScript(env, payload) {
   });
   const j = await r.json().catch(() => ({}));
   // enough of the URL to tell which script was called, without printing all of it
-  if (j.error || (!j.url && !j.ok))
+  if (j.error || (!j.url && !j.ok)) {
+    // a fingerprint of the whole URL: one different character anywhere gives a different one
+    const print = toHex(await crypto.subtle.digest('SHA-256', te.encode(scriptUrl))).slice(0, 10);
     throw new Error(j.error || `upload script answered ${r.status} — VIDEO_SCRIPT_URL ends `
-      + `"…${scriptUrl.slice(-16)}" (${scriptUrl.length} characters)`);
+      + `"…${scriptUrl.slice(-16)}" (${scriptUrl.length} characters, fingerprint ${print})`);
+  }
   return j;
 }
 
@@ -387,6 +390,21 @@ export default {
     //   wrangler secret put VIDEO_SCRIPT_URL
     //   wrangler secret put VIDEO_PASS
     const videoRoute = url.pathname.replace(/^\/+/, '');
+    // A staged recording handed over after its rows were sent: copied to Drive after this reply, so
+    // the page need not stay open for it. Only keys this Worker hands out are accepted.
+    if (videoRoute === 'api/video-commit') {
+      if (!stagingReady(env)) return reply({ error: { code: 501, message: 'B2 staging is not set up.' } }, 501);
+      try {
+        const { key, name } = JSON.parse(await request.text());
+        if (!/^kartz\/[\w.-]{1,120}$/.test(key || '') || typeof name !== 'string' || !name || name.length > 200)
+          return reply({ error: { code: 400, message: 'Bad recording details.' } }, 400);
+        ctx.waitUntil(copyStagedToDrive(env, key, name)
+          .catch(e => console.error('recording not copied to Drive:', e && e.message || e)));
+        return reply({ ok: true }, 202);
+      } catch (e) {
+        return reply({ error: { code: 400, message: String(e && e.message || e) } }, 400);
+      }
+    }
     // A signed link for uploading the recording straight into B2 (see "Staging in Backblaze B2").
     if (videoRoute === 'api/video-stage') {
       if (!stagingReady(env)) return reply({ error: { code: 501, message: 'B2 staging is not set up.' } }, 501);
