@@ -315,7 +315,11 @@ export default {
           body: JSON.stringify({ pass: videoPass, name, type, size, origin }),
         });
         const j = await r.json().catch(() => ({}));
-        if (!j.url) return reply({ error: { code: 502, message: j.error || `upload script answered ${r.status}` } }, 502);
+        // Enough of the URL to tell which script was called, without printing all of it: a 404 means
+        // the secret holds a different URL from the deployed one, and the tail shows which.
+        if (!j.url) return reply({ error: { code: 502, message: j.error
+          || `upload script answered ${r.status} — VIDEO_SCRIPT_URL ends "…${scriptUrl.slice(-16)}"`
+           + ` (${scriptUrl.length} characters)` } }, 502);
         return reply({ url: j.url }, 200);
       } catch (e) {
         return reply({ error: { code: 400, message: String(e && e.message || e) } }, 400);
