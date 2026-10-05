@@ -2431,6 +2431,35 @@ function refreshSend() {
 const sendKey = (values = outRows()) => JSON.stringify(values.map(v => v.slice(1)));
 let sentLabel = '';
 let sending = false;
+// The recording goes to the Kartz recordings folder on Google Drive while the rows go to the sheet.
+// It is silent by design: no message, no retry — the sheet is what matters, and the video is a
+// record kept alongside it. The Worker hands out a one-time upload link (see
+// apps-script/VideoUpload.gs) and the file goes straight from here to Drive. A recording already
+// saved this visit is not saved again when the same run is re-sent.
+let videoSaved = null;
+async function saveVideo() {
+  const f = videoFile;
+  if (!f || videoSaved === f) return;
+  videoSaved = f;
+  try {
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    const ext = (f.name.match(/\.[a-z0-9]{2,5}$/i) || ['.mov'])[0];
+    // 2026-10-05 Day 4 · 698W · peach.mov — sorts by date in the folder
+    const name = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${$('kday').value}`
+               + ` · ${$('alliance').value} · ${$('submitter').value.trim()}${ext}`;
+    const type = /^video\//.test(f.type) ? f.type : 'video/quicktime';
+    const r = await fetch(API_BASE + '/video-session', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, type, size: f.size }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.url) throw new Error(j?.error?.message || `no upload link (${r.status})`);
+    const up = await fetch(j.url, { method: 'PUT', headers: { 'content-type': type }, body: f });
+    if (!up.ok) throw new Error(`Drive refused the upload (${up.status})`);
+  } catch (e) {
+    videoSaved = null;          // so a later send tries again
+    console.warn('recording not saved to Drive:', e);
+  }
+}
 // The same run sent twice doubles every player's score in the tracker, and pressing a button
 // again because the phone seemed slow is the easiest way to do it. The stamp is left out of the
 // comparison, since it moves with the clock.
@@ -2442,6 +2471,7 @@ $('send').onclick = async () => {
   if (key === lastSent
       && !confirm('These exact rows were already sent to the sheet. Send them again?')) return;
   sending = true; $('send').disabled = true; $('send').textContent = 'Sending…';
+  saveVideo();                // alongside the rows, not after them; it reports nothing
   try {
     const r = await fetch(API_BASE + '/append', {
       method: 'POST', headers: { 'content-type': 'application/json' },
