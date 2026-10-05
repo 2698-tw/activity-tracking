@@ -12,3 +12,11 @@ binding = "ASSETS"
 # Lets the Worker call Cloudflare's own models as env.AI, with no token in the browser.
 [ai]
 binding = "AI"
+
+# Workers Logs: keeps the Worker's console output (e.g. "recording not copied to Drive: …") so it
+# can be read in the dashboard under Logs, not only while watching live. Here rather than only in
+# the dashboard, where a deploy without it could switch it off again.
+[observability.logs]
+enabled = true
+invocation_logs = false
+persist = true
