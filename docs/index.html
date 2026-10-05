@@ -57,7 +57,6 @@ button.themebtn{width:auto;flex:none;padding:7px;line-height:0;background:transp
 .jump button{width:auto;padding:6px 12px;font-size:12px;font-weight:500;border-radius:999px;
   background:var(--panel);color:var(--ink);border:1px solid var(--line);box-shadow:0 2px 10px rgba(0,0,0,.18)}
 .jump button[hidden]{display:none}
-.videonote{font-size:11px;color:var(--muted);opacity:.7;text-align:right;margin-top:14px;min-height:16px}
 .sub{color:var(--muted);font-size:13px;margin:0 0 18px}
 section{background:var(--panel);border:1px solid var(--line);border-radius:12px;
   padding:14px 16px;margin-bottom:12px}
@@ -295,8 +294,6 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   </div>
 </section>
 </div>
-<!-- Where the Kartz recording has got to — small and quiet, for checking it is safe to close. -->
-<footer class="videonote" id="videoNote" aria-live="polite"></footer>
 </div>
 
 <div class="jump" id="jump">
@@ -2483,8 +2480,6 @@ async function videoPiece(url, f, from, to, signal) {
   return r;
 }
 
-// The quiet line at the foot of the page, saying where the recording has got to.
-const videoNote = text => { const el = $('videoNote'); if (el) el.textContent = text ? 'video · ' + text : ''; };
 // From the moment the file is chosen, in the background. First choice: straight into the B2 staging bucket through a
 // signed link; the Worker takes it on to Drive after Send, so the page can then be closed at once.
 // If staging is not set up, the upload goes to Drive itself, all but its tail (below).
@@ -2494,7 +2489,6 @@ function startVideoUpload(f) {
   early = up;
   up.done = (async () => {
     try {
-      videoNote('uploading to Backblaze…');
       const type = videoType(f);
       const r = await fetch(API_BASE + '/video-stage', {
         method: 'POST', headers: { 'content-type': 'application/json' },
@@ -2505,11 +2499,7 @@ function startVideoUpload(f) {
       const put = await fetch(j.url, { method: 'PUT', headers: { 'content-type': type }, body: f });
       if (!put.ok) throw new Error(`B2 refused the upload (${put.status})`);
       up.key = j.key;
-      if (early === up) videoNote('Backblaze upload done');
-    } catch (e) {
-      up.failed = true; console.warn('staging upload stopped:', e);
-      if (early === up) videoNote('Backblaze upload failed — it will go to Drive from the page at Send');
-    }
+    } catch (e) { up.failed = true; console.warn('staging upload stopped:', e); }
   })();
 }
 // The fallback when B2 is not set up: straight to Drive, everything but the tail.
@@ -2520,7 +2510,6 @@ function startDriveUpload(f) {
   early = up;
   up.done = (async () => {
     try {
-      videoNote('uploading to Drive…');
       up.url = await videoLink(`uploading — ${f.name}`, f);
       while (up.sent < held) {
         if (early !== up) return;        // another recording was chosen: let this one expire
@@ -2528,8 +2517,7 @@ function startDriveUpload(f) {
         await videoPiece(up.url, f, up.sent, to);
         up.sent = to;
       }
-      if (early === up) videoNote('uploaded to Drive except the last piece, sent at Send');
-    } catch (e) { up.failed = true; console.warn('early upload stopped:', e); videoNote('Drive upload stopped'); }
+    } catch (e) { up.failed = true; console.warn('early upload stopped:', e); }
   })();
 }
 
@@ -2562,7 +2550,6 @@ async function saveVideo() {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ fileId: made.id, name }) });
       if (!rn.ok) console.warn('recording saved but not renamed:', await rn.text());
-      videoNote('saved to Drive · safe to close');
       return null;
     }
     // the fallback: the whole file, under its final name, in one go
@@ -2571,10 +2558,8 @@ async function saveVideo() {
                                  body: f, signal: stop.signal });
     if (!r.ok) throw new Error(`Drive refused the upload (${r.status})`);
     videoSaved = f; early = null;
-    videoNote('saved to Drive · safe to close');
   } catch (e) {
     console.warn('recording not saved to Drive:', e);
-    videoNote('not saved to Drive');
   } finally { clearTimeout(timer); }
   return null;
 }
@@ -2620,7 +2605,7 @@ $('send').onclick = async () => {
 // The recording, once the rows are in. Staged in B2 (normally already uploaded, since it started
 // when the file was chosen), it is handed to the Worker with one small request that survives the
 // page closing, and the Worker copies it to Drive by itself. Without B2 it goes to Drive from here,
-// which needs the page open until it is done. The only sign of either is the line at the foot of the page.
+// which needs the page open until it is done. Silent either way.
 async function saveAfterSend() {
   const video = await saveVideo();
   if (!video) return;
@@ -2629,11 +2614,9 @@ async function saveAfterSend() {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify(video), keepalive: true });
     if (!r.ok) throw new Error(`the Worker refused the recording (${r.status})`);
-    videoNote('handed over for Drive · safe to close');
   } catch (e) {
     videoSaved = null;          // so a re-send of the run tries again
     console.warn('recording not handed over for Drive:', e);
-    videoNote('not handed over for Drive');
   }
 }
 
