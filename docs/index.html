@@ -2431,12 +2431,13 @@ function refreshSend() {
 const sendKey = (values = outRows()) => JSON.stringify(values.map(v => v.slice(1)));
 let sentLabel = '';
 let sending = false;
-// The recording goes to the Kartz recordings folder on Google Drive while the rows go to the sheet.
-// It is silent by design: no message, no retry — the sheet is what matters, and the video is a
-// record kept alongside it. The Worker hands out a one-time upload link (see
+// The recording goes to the Kartz recordings folder on Google Drive, just before the rows go to the
+// sheet, while the button says Sending…. It is silent by design: no message, no retry — the sheet
+// is what matters, and the video is a record kept alongside it. The Worker hands out a one-time upload link (see
 // apps-script/VideoUpload.gs) and the file goes straight from here to Drive. A recording already
 // saved this visit is not saved again when the same run is re-sent.
 let videoSaved = null;
+const VIDEO_WAIT = 5 * 60 * 1000;      // a recording still uploading after this is given up on
 async function saveVideo() {
   const f = videoFile;
   if (!f || videoSaved === f) return;
@@ -2453,8 +2454,12 @@ async function saveVideo() {
       body: JSON.stringify({ name, type, size: f.size }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.url) throw new Error(j?.error?.message || `no upload link (${r.status})`);
-    const up = await fetch(j.url, { method: 'PUT', headers: { 'content-type': type }, body: f });
-    if (!up.ok) throw new Error(`Drive refused the upload (${up.status})`);
+    const stop = new AbortController(), timer = setTimeout(() => stop.abort(), VIDEO_WAIT);
+    try {
+      const up = await fetch(j.url, { method: 'PUT', headers: { 'content-type': type }, body: f,
+                                      signal: stop.signal });
+      if (!up.ok) throw new Error(`Drive refused the upload (${up.status})`);
+    } finally { clearTimeout(timer); }
   } catch (e) {
     videoSaved = null;          // so a later send tries again
     console.warn('recording not saved to Drive:', e);
@@ -2471,7 +2476,11 @@ $('send').onclick = async () => {
   if (key === lastSent
       && !confirm('These exact rows were already sent to the sheet. Send them again?')) return;
   sending = true; $('send').disabled = true; $('send').textContent = 'Sending…';
-  saveVideo();                // alongside the rows, not after them; it reports nothing
+  // The recording first, then the rows. Alongside each other, a page closed as soon as the rows
+  // were in lost the video halfway up; this way the green button means both are done. The video
+  // never holds the rows back for good: a failed upload just moves on, and a stuck one is
+  // abandoned after VIDEO_WAIT.
+  await saveVideo();
   try {
     const r = await fetch(API_BASE + '/append', {
       method: 'POST', headers: { 'content-type': 'application/json' },
