@@ -294,7 +294,8 @@ export default {
     // browser to Drive.
     //   wrangler secret put VIDEO_SCRIPT_URL
     //   wrangler secret put VIDEO_PASS
-    if (url.pathname.replace(/^\/+/, '') === 'api/video-session') {
+    const videoRoute = url.pathname.replace(/^\/+/, '');
+    if (videoRoute === 'api/video-session' || videoRoute === 'api/video-rename') {
       if (!env.VIDEO_SCRIPT_URL || !env.VIDEO_PASS)
         return reply({ error: { code: 500, message: 'Worker has no VIDEO_SCRIPT_URL / VIDEO_PASS secret set.' } }, 500);
       // Secrets pasted into the dashboard easily pick up a trailing space or line break, and Google
@@ -305,16 +306,21 @@ export default {
         return reply({ error: { code: 500, message: 'VIDEO_SCRIPT_URL is not a web app URL — it should '
           + 'look like https://script.google.com/macros/s/…/exec' } }, 500);
       try {
-        const { name, type, size } = JSON.parse(await request.text());
-        if (typeof name !== 'string' || !name || name.length > 200 || !/^video\//.test(type || '')
-            || !(size > 0 && size < 2e9))
+        const { name, type, size, fileId } = JSON.parse(await request.text());
+        const rename = videoRoute === 'api/video-rename';
+        if (typeof name !== 'string' || !name || name.length > 200
+            || (rename ? !/^[\w-]{10,200}$/.test(fileId || '')
+                       : !/^video\//.test(type || '') || !(size > 0 && size < 2e9)))
           return reply({ error: { code: 400, message: 'Bad recording details.' } }, 400);
         // Apps Script answers a POST with a redirect to the reply, which fetch follows
         const r = await fetch(scriptUrl, {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ pass: videoPass, name, type, size, origin }),
+          body: JSON.stringify(rename ? { pass: videoPass, action: 'rename', fileId, name }
+                                      : { pass: videoPass, name, type, size, origin }),
         });
         const j = await r.json().catch(() => ({}));
+        if (rename) return j.ok ? reply({ ok: true }, 200)
+          : reply({ error: { code: 502, message: j.error || `upload script answered ${r.status}` } }, 502);
         // Enough of the URL to tell which script was called, without printing all of it: a 404 means
         // the secret holds a different URL from the deployed one, and the tail shows which.
         if (!j.url) return reply({ error: { code: 502, message: j.error
