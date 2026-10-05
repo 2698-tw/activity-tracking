@@ -309,21 +309,17 @@ async function presignB2(env, method, key, seconds = 3600) {
   for (const part of [region, 's3', 'aws4_request']) k = await hmac(k, part);
   return `https://${host}${path}?${query}&X-Amz-Signature=${toHex(await hmac(k, toSign))}`;
 }
-// After a Send: B2 → Drive, under the run's name, then the staged copy goes.
+// After a Send: B2 → Drive, under the run's name, then the staged copy goes. The Apps Script does
+// the copying (see "copy" in apps-script/VideoUpload.gs). Streaming it through here ran into
+// Cloudflare's limit on background work after a reply — about 30 seconds — and recordings were cut
+// off mid-copy with "Network connection lost". A script run has six minutes and finishes even if
+// this stops waiting for it, so the links it gets are signed for two hours.
 async function copyStagedToDrive(env, key, name) {
-  const got = await fetch(await presignB2(env, 'GET', key));
-  if (!got.ok) throw new Error(`no staged recording at ${key} (${got.status})`);
-  const size = +got.headers.get('content-length');
-  if (!(size > 0)) throw new Error('staged recording has no length');
-  const ct = got.headers.get('content-type') || '';
-  const type = /^video\//.test(ct) ? ct : 'video/quicktime';
-  const { url } = await videoScript(env, { name, type, size });
-  // Drive needs the length up front; a fixed-length stream carries it without buffering the file
-  const { readable, writable } = new FixedLengthStream(size);
-  got.body.pipeTo(writable);
-  const r = await fetch(url, { method: 'PUT', headers: { 'content-type': type }, body: readable });
-  if (!r.ok) throw new Error(`Drive refused the copy (${r.status}): ${(await r.text()).slice(0, 200)}`);
-  await fetch(await presignB2(env, 'DELETE', key), { method: 'DELETE' });
+  await videoScript(env, {
+    action: 'copy', name, type: 'video/quicktime',
+    from: await presignB2(env, 'GET', key, 7200),
+    del: await presignB2(env, 'DELETE', key, 7200),
+  });
 }
 
 export default {
