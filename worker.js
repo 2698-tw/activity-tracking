@@ -17,8 +17,8 @@
 // Extra origins allowed to call this when the page is hosted somewhere else.
 const ALLOWED_ORIGINS = [
   'http://localhost:8731',
-  'https://kartz-tracking.github.io',
-  'https://data-extractor.jk06nm04.workers.dev',
+  'https://2698-tw.github.io',
+  'https://data-collection.jk06nm04.workers.dev/',
 ];
 
 // Ollama Cloud API. Authentication is supplied through the Authorization header below.
