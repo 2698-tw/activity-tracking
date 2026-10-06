@@ -1,20 +1,3 @@
-/**
- * Kartz key holder — a Cloudflare Worker that keeps the Ollama Cloud key off the page.
- *
- * The static page sends its existing vision request to this Worker. The Worker translates
- * that request into Ollama's native /api/chat format, adds the OLLAMA_API_KEY secret, and
- * forwards it to Ollama Cloud. The browser never receives the API key.
- *
- * Required Cloudflare secret:
- *   wrangler secret put OLLAMA_API_KEY
- *
- * The model is fixed to gemma4:31b by the page. The key is stored only in Cloudflare.
- *
- * The Base CP tab uses Gemini instead, through /api/gemini/<model>:
- *   wrangler secret put GEMINI_API_KEY
- */
-
-// Extra origins allowed to call this when the page is hosted somewhere else.
 const ALLOWED_ORIGINS = [
   'http://localhost:8731',
   'https://2698-tw.github.io',
