@@ -9,22 +9,33 @@
 // cannot drift apart in how they read a recording or name a player.
 
 let cpFile = null, cpRows = [], cpHeaders = [];
+// where the rows on screen came from: 'video' (a recording) or 'list' (the Global CP list)
+let cpSource = '';
 
-/* tabs */
+/* views */
+// Three views on one page: the home page (the address with no #), Kartz (#kartz) and Base CP (#cp).
+// The address carries the view, so a link, a reload or the phone's back button lands on the right one.
 function showTab(name) {
-  document.querySelectorAll('.tabs .tab').forEach(b => {
-    const on = b.dataset.tab === name;
-    b.classList.toggle('on', on);
-    b.setAttribute('aria-selected', on);
-  });
+  $('home').classList.toggle('hide', name !== 'home');
+  $('app').classList.toggle('hide', name === 'home');
   $('tab-kartz').classList.toggle('hide', name !== 'kartz');
   $('tab-cp').classList.toggle('hide', name !== 'cp');
+  document.documentElement.classList.remove('athome');
   closeMenu();
-  // in the address, so a link or a reload lands on the same tab
-  history.replaceState(null, '', name === 'cp' ? '#cp' : location.pathname + location.search);
 }
-document.querySelectorAll('.tabs .tab').forEach(b => b.onclick = () => showTab(b.dataset.tab));
-showTab(location.hash === '#cp' ? 'cp' : 'kartz');
+const viewFromAddress = () => location.hash === '#cp' ? 'cp' : location.hash === '#kartz' ? 'kartz' : 'home';
+function goTo(name) {
+  if (name === viewFromAddress()) return;
+  if (name === 'home') history.pushState(null, '', location.pathname + location.search);
+  else history.pushState(null, '', '#' + name);
+  showTab(name);
+  scrollTo(0, 0);
+}
+$('homeLink').onclick = e => { e.preventDefault(); goTo('home'); };
+// the home cards are plain #kartz / #cp links; this catches them and the back button
+addEventListener('popstate', () => showTab(viewFromAddress()));
+addEventListener('hashchange', () => { showTab(viewFromAddress()); scrollTo(0, 0); });
+showTab(viewFromAddress());
 
 /* setup and file */
 $('cpPull').onclick = () => pullNow($('cpPull'), 'cpLog');
@@ -364,6 +375,7 @@ $('cpGo').onclick = async () => {
     cpHeaders = sightings.filter(s => s.header);
     const cards = sightings.filter(s => !s.header);
     cpRows = cpIdentify(cpGroups(cards), roster);
+    cpSource = 'video';
     cpRender();
     const t = (callProxy.spent || 0) - spentBefore;
     const short = cpCount().list.reduce((n, g) => n + Math.max(0, (g.total || 0) - g.found), 0);
@@ -377,8 +389,76 @@ $('cpGo').onclick = async () => {
   refreshState();
 };
 
+/* Base CP from the Global CP list */
+// Base CP needs no recording: topwarfandom.com keeps every player's power, all servers in one
+// list (about 130,000 players, 28 MB, refreshed every ten minutes, nobody under 25M). The site
+// does not let other pages read it, so the Worker fetches it (/api/global-cp) and hands it over
+// unchanged — on the free plan a Worker has too little time to sort through 28 MB itself — and
+// the page keeps server 2698 and the chosen alliance. The names are sent as the list has them,
+// not matched to the roster. March CP is not in the list and still comes from a recording.
+const CP_SERVER = '2698';
+const cpUsesList = () => $('cpType').value === '0';
+function cpMode() {
+  const list = cpUsesList(), ally = $('cpAlliance').value;
+  $('cpVid').classList.toggle('hide', list);
+  $('cpApi').classList.toggle('hide', !list);
+  // the roster is only for March CP's recordings; without its Setup step the steps lose their numbers
+  const march = /^[123]$/.test($('cpType').value);
+  $('cpSetup').classList.toggle('hide', !march);
+  document.querySelectorAll('#tab-cp .cpnum').forEach(n => n.classList.toggle('hide', !march));
+  if (!cpBusy) {
+    $('cpFetch').disabled = !ally;
+    $('cpFetch').textContent = ally ? `Fetch ${ally} members` : 'Choose an alliance first';
+  }
+  // rows from the other source, or for another alliance, are not this choice's rows
+  if (cpRows.length && ((cpSource === 'list') !== list || (cpSource === 'list' && cpFetched !== ally))) {
+    cpRows = []; cpHeaders = []; cpSource = '';
+    $('cpOut').classList.add('hide');
+  }
+}
+let cpBusy = false, cpFetched = '';
+$('cpType').addEventListener('change', cpMode);
+$('cpAlliance').addEventListener('change', cpMode);
+$('cpFetch').onclick = async () => {
+  const ally = $('cpAlliance').value;
+  if (!ally) return;
+  cpBusy = true; $('cpFetch').disabled = true; $('cpFetch').textContent = 'Fetching…';
+  $('cpOut').classList.add('hide');
+  logEl = 'cpLog';
+  try {
+    log('fetching the Global CP list…');
+    const r = await fetch(API_BASE + '/global-cp', { method: 'POST' });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      throw new Error(j.error || `the Global CP list could not be fetched (${r.status})`);
+    }
+    log('reading the list…');
+    const all = await r.json();
+    const tag = p => (String(p['Alliance Name & Tag'] || '').match(/\[([^\]]+)\]\s*$/) || [])[1] || '';
+    const mine = all.filter(p => String(p.Server) === CP_SERVER
+      && (ally === 'Other' ? !MAIN_ALLIANCES.includes(tag(p)) : tag(p) === ally));
+    if (!mine.length) throw new Error(`nobody from ${ally} on server ${CP_SERVER} in the list`);
+    // In the list's order (highest power first), CP in millions to one decimal, as the member
+    // cards show it. Not matched to the roster: the list's names are the game's own, and they go
+    // to the sheet as they are, in both the search-name and in-game-name columns (outPlayer).
+    cpRows = mine.map((p, i) => {
+      const name = String(p.Name || '').trim();
+      return { name, plain: name, listName: name, order: i, match: null, pick: '', confirmed: true,
+               cp: +(Number(String(p.Power).replace(/[^\d]/g, '')) / 1e6).toFixed(1) };
+    });
+    cpHeaders = [];
+    cpSource = 'list'; cpFetched = ally;
+    cpRender();
+    log(`done — ${cpRows.length} players from ${ally} on server ${CP_SERVER}`);
+  } catch (e) { log('✗ ' + e.message); }
+  logEl = 'log';
+  cpBusy = false;
+  cpMode();
+};
+cpMode();
+
 /* output */
-// The same row controls as the Ranking tab: a matched name can be changed with ✎, an
+// The same row controls as the Ranking tab: a matched name can be changed with ✎ Edit, an
 // unmatched one either ticked as right as drawn or searched for in the roster, and any row
 // thrown out with ✕. The name that goes out is outName's — the roster's in-game form.
 const cpOpen = r => !r.dropped && (r.editing || (!r.match && !r.confirmed && !r.pick));
@@ -406,8 +486,70 @@ function cpCount() {
   }
   return { list, above };
 }
+// The Global CP list's rows: its own names, not matched to the roster. ✎ Edit turns a name into a
+// text box for a fix; Enter or tapping away keeps it, Esc undoes it, and the fixed name is the one
+// sent. ✕ leaves a player out.
+// A name being edited holds up Send, the way an unconfirmed row does (cpOpen).
+function cpRenderList() {
+  $('cpTbl').innerHTML = '<thead><tr><th>#</th><th>In-game name</th><th>CP</th><th></th></tr></thead><tbody>'
+    + cpRows.map((r, i) => `<tr class="ok${r.dropped ? ' drop' : ''}">
+        <td>${i + 1}</td><td class="nm" data-i="${i}"></td><td>${r.cp}</td>
+        <td><button class="ghost cpdrop" data-i="${i}"
+                    title="${r.dropped ? 'bring this row back' : 'leave this player out'}"
+                    style="width:auto;padding:4px 9px">${r.dropped ? '↺' : '✕'}</button></td>
+      </tr>`).join('') + '</tbody>';
+  const tbl = $('cpTbl');
+  tbl.querySelectorAll('td.nm').forEach(td => cpListName(td, +td.dataset.i));
+  tbl.querySelectorAll('.cpdrop').forEach(b => b.onclick = () => {
+    const r = cpRows[+b.dataset.i];
+    r.dropped = !r.dropped;
+    if (r.dropped) r.editing = false;
+    cpRender();
+  });
+  cpListVerdict();
+  $('cpOut').classList.remove('hide');
+}
+function cpListVerdict() {
+  const kept = cpRows.filter(r => !r.dropped).length;
+  const open = cpRows.filter(r => !r.dropped && r.editing).length;
+  $('cpVerdict').innerHTML = `<div class="${open ? 'warnbox' : 'okbox'}">${kept} players from the Global CP list`
+    + (open ? ` &middot; <strong>finish editing ${open} name${open > 1 ? 's' : ''}</strong>` : '') + '</div>';
+  cpRefreshSend();
+}
+// One name cell, drawn and wired on its own: finishing an edit redraws only this cell, so a tap
+// on another row's ✎ Edit or ✕ — which is what finishes it — still lands on its button.
+function cpListName(td, i) {
+  const r = cpRows[i];
+  if (!r.editing) {
+    td.innerHTML = `${esc(r.name)}<button class="pencil" title="change this name">✎ Edit</button>`
+      + (r.name !== r.listName ? `<span class="pill p-ok edited" title="in the list as ${esc(r.listName)}">edited</span>` : '');
+    td.querySelector('.pencil').onclick = () => {
+      r.editing = true;
+      cpListName(td, i);
+      cpListVerdict();
+      const box = td.querySelector('input');
+      box.focus(); box.select();
+    };
+    return;
+  }
+  td.innerHTML = `<input class="pickbox" value="${esc(r.name)}" spellcheck="false" title="Enter to keep, Esc to undo">`;
+  const box = td.querySelector('input');
+  box.onkeydown = e => {
+    if (e.key === 'Enter') box.blur();
+    if (e.key === 'Escape') { box.value = r.name; box.blur(); }
+  };
+  // leaving the box keeps what is in it: there is no separate button to press
+  box.onblur = () => {
+    if (!r.editing) return;
+    r.name = r.plain = box.value.trim() || r.listName;
+    r.editing = false;
+    cpListName(td, i);
+    cpListVerdict();
+  };
+}
 function cpRender() {
   closeMenu();
+  if (cpSource === 'list') return cpRenderList();
   const kept = cpRows.filter(r => !r.dropped).length;
   const need = cpRows.filter(cpOpen).length;
   const matched = cpRows.filter(r => !r.dropped && r.match).length;
@@ -426,7 +568,7 @@ function cpRender() {
             .join(', ')} — probably a card read twice under two names; look for a near-duplicate.` : '')
         + '</div>' : '');
   $('cpTbl').innerHTML = '<thead><tr><th>#</th><th>Name in video</th><th>In-game Name</th>'
-    + '<th>Base CP</th><th></th><th></th></tr></thead><tbody>'
+    + '<th>CP</th><th></th><th></th></tr></thead><tbody>'
     + cpRows.map((r, i) => {
         const green = r.match || r.confirmed;
         return `<tr class="${green || r.pick ? 'ok' : 'new'}${r.dropped ? ' drop' : ''}">
@@ -434,7 +576,7 @@ function cpRender() {
         <td>${esc(r.name)}</td>
         <td>${!r.editing
               ? `<span class="${green || r.pick ? 'named' : 'asdrawn'}">${esc(outName(r))}</span>`
-                + `<button class="pencil" data-i="${i}" title="change this name">✎</button>`
+                + `<button class="pencil" data-i="${i}" title="change this name">✎ Edit</button>`
                 + (!green && !r.pick ? `<button class="ghost tickok" data-i="${i}"`
                     + ` title="this name is right as it is"`
                     + ` style="width:auto;padding:4px 9px;margin-left:6px">✓</button>` : '')
@@ -547,6 +689,9 @@ for (const [mine, theirs] of [['cpSubmitter', 'submitter'], ['cpAlliance', 'alli
 }
 wireSubmitter($('cpSubmitter'));
 $('cpType').addEventListener('change', () => cpRefreshSend());
+// the alliance chosen on the Kartz tab is this tab's too, so the Fetch button follows it
+$('alliance').addEventListener('change', cpMode);
+cpMode();
 
 function cpSheetRows() {
   const stamp = loadStamp(new Date()), col = $('cpType').value;
