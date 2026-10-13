@@ -9,38 +9,22 @@
 // cannot drift apart in how they read a recording or name a player.
 
 let cpFile = null, cpRows = [], cpHeaders = [];
-// where the rows on screen came from: 'video' (a recording) or 'list' (the Global CP list)
-let cpSource = '';
 
 /* tabs */
-// Three views on one page: the home page (the address with no #), Kartz (#kartz) and Base CP (#cp).
-// The address carries the view, so a link, a reload or the phone's back button lands on the right one.
 function showTab(name) {
   document.querySelectorAll('.tabs .tab').forEach(b => {
     const on = b.dataset.tab === name;
     b.classList.toggle('on', on);
     b.setAttribute('aria-selected', on);
   });
-  $('home').classList.toggle('hide', name !== 'home');
-  $('app').classList.toggle('hide', name === 'home');
   $('tab-kartz').classList.toggle('hide', name !== 'kartz');
   $('tab-cp').classList.toggle('hide', name !== 'cp');
-  document.documentElement.classList.remove('athome');
   closeMenu();
+  // in the address, so a link or a reload lands on the same tab
+  history.replaceState(null, '', name === 'cp' ? '#cp' : location.pathname + location.search);
 }
-const viewFromAddress = () => location.hash === '#cp' ? 'cp' : location.hash === '#kartz' ? 'kartz' : 'home';
-function goTo(name) {
-  if (name === viewFromAddress()) return;
-  if (name === 'home') history.pushState(null, '', location.pathname + location.search);
-  else history.pushState(null, '', '#' + name);
-  showTab(name);
-  scrollTo(0, 0);
-}
-document.querySelectorAll('.tabs .tab').forEach(b => b.onclick = () => goTo(b.dataset.tab));
-// the home cards are plain #kartz / #cp links; this catches them and the back button
-addEventListener('popstate', () => showTab(viewFromAddress()));
-addEventListener('hashchange', () => { showTab(viewFromAddress()); scrollTo(0, 0); });
-showTab(viewFromAddress());
+document.querySelectorAll('.tabs .tab').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+showTab(location.hash === '#cp' ? 'cp' : 'kartz');
 
 /* setup and file */
 $('cpPull').onclick = () => pullNow($('cpPull'), 'cpLog');
@@ -304,7 +288,7 @@ function cpGroups(sightings) {
     };
   });
 }
-function cpIdentify(groups, roster, exact = false) {
+function cpIdentify(groups, roster) {
   const rows = groups.map(makeMatcher(buildIndex(roster), [], store.get('aliases') || {}));
   // Two cards resolving to one player. Where the CP agrees they are one card read two ways,
   // and become one row. Where it does not, at least one of them is wrong and nothing here can
@@ -352,8 +336,7 @@ function cpIdentify(groups, roster, exact = false) {
   // so it can be checked. Real CPs that far above an alliance's middle do not occur in practice.
   const cps = out.map(r => r.cp).filter(v => v > 0).sort((a, b) => a - b);
   const median = cps[cps.length >> 1] || 0;
-  // (Not for the Global CP list, whose numbers are exact.)
-  if (cps.length >= 8 && !exact)
+  if (cps.length >= 8)
     for (const r of out)
       if (Number.isInteger(r.cp) && r.cp >= 100 && r.cp > median * 3.5) {
         r.cpRead = r.cp;
@@ -381,7 +364,6 @@ $('cpGo').onclick = async () => {
     cpHeaders = sightings.filter(s => s.header);
     const cards = sightings.filter(s => !s.header);
     cpRows = cpIdentify(cpGroups(cards), roster);
-    cpSource = 'video';
     cpRender();
     const t = (callProxy.spent || 0) - spentBefore;
     const short = cpCount().list.reduce((n, g) => n + Math.max(0, (g.total || 0) - g.found), 0);
@@ -394,73 +376,6 @@ $('cpGo').onclick = async () => {
   logEl = 'log'; progEl = 'prog';
   refreshState();
 };
-
-/* Base CP from the Global CP list */
-// Base CP needs no recording: topwarfandom.com keeps every player's power, all servers in one
-// list (about 130,000 players, 28 MB, refreshed every ten minutes, nobody under 25M). The site
-// does not let other pages read it, so the Worker fetches it (/api/global-cp) and hands it over
-// unchanged — on the free plan a Worker has too little time to sort through 28 MB itself — and
-// the page keeps server 2698 and the chosen alliance. The names then go through the same roster
-// matching as a recording's, so the search-name column and the confirm rows work as before.
-// March CP is not in the list and still comes from a recording.
-const CP_SERVER = '2698';
-const cpUsesList = () => $('cpType').value === '0';
-function cpMode() {
-  const list = cpUsesList(), ally = $('cpAlliance').value;
-  $('cpVid').classList.toggle('hide', list);
-  $('cpApi').classList.toggle('hide', !list);
-  if (!cpBusy) {
-    $('cpFetch').disabled = !ally;
-    $('cpFetch').textContent = ally ? `Fetch ${ally} members` : 'Choose an alliance first';
-  }
-  // rows from the other source, or for another alliance, are not this choice's rows
-  if (cpRows.length && ((cpSource === 'list') !== list || (cpSource === 'list' && cpFetched !== ally))) {
-    cpRows = []; cpHeaders = []; cpSource = '';
-    $('cpOut').classList.add('hide');
-  }
-}
-let cpBusy = false, cpFetched = '';
-$('cpType').addEventListener('change', cpMode);
-$('cpAlliance').addEventListener('change', cpMode);
-$('cpFetch').onclick = async () => {
-  const ally = $('cpAlliance').value;
-  if (!ally) return;
-  cpBusy = true; $('cpFetch').disabled = true; $('cpFetch').textContent = 'Fetching…';
-  $('cpOut').classList.add('hide');
-  logEl = 'cpLog';
-  try {
-    const roster = currentRoster();
-    if (!roster.length) throw new Error('No roster loaded — press Pull / Update Alliance Roster.');
-    log('fetching the Global CP list…');
-    const r = await fetch(API_BASE + '/global-cp', { method: 'POST' });
-    if (!r.ok) {
-      const j = await r.json().catch(() => ({}));
-      throw new Error(j.error || `the Global CP list could not be fetched (${r.status})`);
-    }
-    log('reading the list…');
-    const all = await r.json();
-    const tag = p => (String(p['Alliance Name & Tag'] || '').match(/\[([^\]]+)\]\s*$/) || [])[1] || '';
-    const mine = all.filter(p => String(p.Server) === CP_SERVER
-      && (ally === 'Other' ? !MAIN_ALLIANCES.includes(tag(p)) : tag(p) === ally));
-    if (!mine.length) throw new Error(`nobody from ${ally} on server ${CP_SERVER} in the list`);
-    // shaped like cpGroups' rows, in the list's order (highest power first); CP in millions to
-    // one decimal, as the member cards show it and as the roster keeps it
-    const groups = mine.map((p, i) => {
-      const name = String(p.Name || '').trim();
-      return { name, plain: name, obs: [name], claims: [], pick_: '', seen: 1, order: i,
-               cp: +(Number(String(p.Power).replace(/[^\d]/g, '')) / 1e6).toFixed(1) };
-    });
-    cpHeaders = [];
-    cpRows = cpIdentify(groups, roster, true);
-    cpSource = 'list'; cpFetched = ally;
-    cpRender();
-    log(`done — ${cpRows.length} players from ${ally} on server ${CP_SERVER}`);
-  } catch (e) { log('✗ ' + e.message); }
-  logEl = 'log';
-  cpBusy = false;
-  cpMode();
-};
-cpMode();
 
 /* output */
 // The same row controls as the Ranking tab: a matched name can be changed with ✎, an
@@ -510,8 +425,8 @@ function cpRender() {
         + (over.length ? `<br>${over.map(g => `${esc(g.name)} has ${g.found - g.total} more than its header`)
             .join(', ')} — probably a card read twice under two names; look for a near-duplicate.` : '')
         + '</div>' : '');
-  $('cpTbl').innerHTML = `<thead><tr><th>#</th><th>Name in ${cpSource === 'list' ? 'list' : 'video'}</th><th>In-game Name</th>`
-    + '<th>CP</th><th></th><th></th></tr></thead><tbody>'
+  $('cpTbl').innerHTML = '<thead><tr><th>#</th><th>Name in video</th><th>In-game Name</th>'
+    + '<th>Base CP</th><th></th><th></th></tr></thead><tbody>'
     + cpRows.map((r, i) => {
         const green = r.match || r.confirmed;
         return `<tr class="${green || r.pick ? 'ok' : 'new'}${r.dropped ? ' drop' : ''}">
@@ -632,9 +547,6 @@ for (const [mine, theirs] of [['cpSubmitter', 'submitter'], ['cpAlliance', 'alli
 }
 wireSubmitter($('cpSubmitter'));
 $('cpType').addEventListener('change', () => cpRefreshSend());
-// the alliance chosen on the Kartz tab is this tab's too, so the Fetch button follows it
-$('alliance').addEventListener('change', cpMode);
-cpMode();
 
 function cpSheetRows() {
   const stamp = loadStamp(new Date()), col = $('cpType').value;
