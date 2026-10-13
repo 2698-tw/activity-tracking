@@ -7,10 +7,15 @@
 <!-- the Server 2698 badge: browser tab, Home Screen, and beside the title -->
 <link rel="icon" type="image/png" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&display=swap">
 <script>
 // The saved theme, applied before the first paint so the page never flashes the other one.
 try { const t = JSON.parse(localStorage.getItem('kartz.theme'));
       if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
+// No #kartz or #cp in the address: the home page, shown from the first paint (cp.js takes over).
+if (!/^#(kartz|cp)$/.test(location.hash)) document.documentElement.classList.add('athome');
 </script>
 <style>
 /* Light by default, dark when the device prefers it — unless the toggle by the title has chosen,
@@ -133,14 +138,76 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
    an inline display:block outranked the class and showed the link before anything was sent. */
 .sheetlink{display:block;text-align:center;font-size:13px;color:var(--accent);margin-top:6px}
 .sheetlink.hide{display:none}
+/* the Global CP credit; Nass's name in his site's heading font (Orbitron) */
+.source{margin:12px 0 0;font-size:13px;color:var(--muted)}
+.source a{color:var(--accent);text-decoration:none}
+.nass{font-family:Orbitron,sans-serif;font-weight:600;letter-spacing:.06em;color:var(--ink)}
 .tabs{display:flex;gap:2px;margin:0 0 12px;border-bottom:1px solid var(--line)}
 .tabs .tab{width:auto;background:transparent;color:var(--muted);border-radius:8px 8px 0 0;
   padding:8px 14px;border-bottom:2px solid transparent;margin-bottom:-1px}
 .tabs .tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* ---------------- home page ---------------- */
+/* The landing view: a golden-hour banner with Pepe holding the 2698 logo, the title, then one card
+   per extractor. Each extractor keeps its own header and tabs as before; the home page is the
+   address with no #, the extractors are #kartz and #cp. */
+#home{margin:-16px -16px 0}
+.athome #home{display:block}
+.athome #app{display:none}
+.homeband{position:relative;overflow:hidden;padding:56px 16px 0;
+  background:linear-gradient(180deg,#fff3e2 0%,#fcd9b8 50%,#f6a98b 100%)}
+:root[data-theme="dark"] .homeband{background:linear-gradient(180deg,#3a1d2c,#6e2c3a 55%,#b9524a)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .homeband{background:linear-gradient(180deg,#3a1d2c,#6e2c3a 55%,#b9524a)}}
+.homeband .themebtn{position:absolute;top:16px;right:max(16px, env(safe-area-inset-right));color:#2a1024;border-color:rgba(42,16,36,.25)}
+:root[data-theme="dark"] .homeband .themebtn{color:#fff;border-color:rgba(255,255,255,.35)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .homeband .themebtn{color:#fff;border-color:rgba(255,255,255,.35)}}
+.pepe{position:relative;width:300px;max-width:72vw;aspect-ratio:500/499;margin:0 auto}
+/* the sign's board is see-through in the picture; the logo sits behind it, trimmed top and
+   bottom so that both SERVER and 2698 show */
+.pepe .sign{position:absolute;left:.8%;top:2%;width:98.4%;height:44.5%;overflow:hidden;background:#2a1024}
+.pepe .sign img{width:100%;height:100%;object-fit:cover;object-position:50% 36%;display:block}
+.pepe .frog{position:relative;width:100%;height:100%;display:block}
+.homebody{padding:0 16px 64px}
+.hometitle{font-size:24px;letter-spacing:-.3px;margin:18px 0 14px}
+.homecards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:640px){.homecards{grid-template-columns:1fr;gap:12px}.hometitle{text-align:center;font-size:22px}}
+.hcard{position:relative;overflow:hidden;border-radius:14px;padding:20px 18px 16px;color:#fff;
+  display:flex;flex-direction:column;gap:18px;background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b)}
+.hcard.cp{background:linear-gradient(135deg,#c31441,#f26b3a 55%,#f5b04c)}
+.hcard::after{content:"";position:absolute;right:-40px;top:-40px;width:140px;height:140px;border-radius:50%;
+  background:rgba(255,255,255,.12);pointer-events:none}
+.hcard b{position:relative;font-size:21px}
+.hcard .acts{position:relative;display:flex;gap:8px}
+.hcard .acts a{flex:1;text-align:center;border-radius:8px;padding:9px 6px;font-weight:700;text-decoration:none;white-space:nowrap;
+  transition:transform .06s ease, filter .12s ease}
+.hcard .acts a:active{transform:translateY(1px);filter:brightness(.9)}
+.hcard .go{background:#fff;color:#7b1a31}
+.hcard.cp .go{color:#c2410c}
+.hcard .open{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.55);color:#fff}
 </style>
 </head>
 <body>
-<div class="wrap">
+<!-- Home: the landing page. Kartz and Base CP open from here (#kartz, #cp); logic in cp.js. -->
+<div id="home" class="hide">
+  <div class="homeband">
+    <button type="button" class="themebtn" id="themeHome"></button>
+    <div class="pepe">
+      <div class="sign"><img src="icon.png" alt="Server 2698"></div>
+      <img class="frog" src="pepe-sign.png" alt="">
+    </div>
+  </div>
+  <div class="homebody wrap">
+    <h1 class="hometitle">2698 Data Extractor</h1>
+    <div class="homecards">
+      <div class="hcard"><b>Kartz ranking</b>
+        <div class="acts"><a class="go" href="#kartz">Extract</a><a class="open" href="https://docs.google.com/spreadsheets/d/1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE/edit#gid=1243524383" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
+      <div class="hcard cp"><b>Base and March CP</b>
+        <div class="acts"><a class="go" href="#cp">Extract</a><a class="open" href="https://docs.google.com/spreadsheets/d/1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8/edit#gid=237521468" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" id="app">
 <header class="top">
   <div class="brand">
     <img src="icon.png" alt="" width="36" height="36">
@@ -150,8 +217,9 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 </header>
 
 <nav class="tabs" role="tablist">
+  <button class="tab" data-tab="home" role="tab">Home</button>
   <button class="tab on" data-tab="kartz" role="tab">Kartz Extractor</button>
-  <button class="tab" data-tab="cp" role="tab">Base CP</button>
+  <button class="tab" data-tab="cp" role="tab">Base and March CP</button>
 </nav>
 
 <div id="tab-kartz">
@@ -243,15 +311,10 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 </section>
 
 <section>
-  <h2>2 &middot; Member list recording</h2>
-  <div class="drop" id="cpDrop">
-    <strong>Choose or drop the screen recording</strong><br>
-    <span id="cpFileName">the alliance member list, scrolled from top to bottom</span>
-  </div>
-  <input id="cpFile" type="file" accept="video/*" class="hide">
+  <h2>2 &middot; Member list</h2>
   <!-- What Alliance Rosters wants besides the extracted rows. Submitter and Alliance are the
        Kartz tab's own, kept in step between the tabs; the CP type starts empty on every visit. -->
-  <div class="row" style="margin-top:12px">
+  <div class="row">
     <div>
       <label for="cpSubmitter">Submitter</label>
       <input id="cpSubmitter" type="text" placeholder="Type or choose…" autocomplete="off"
@@ -274,8 +337,22 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
       </select>
     </div>
   </div>
-  <button id="cpGo" style="margin-top:12px" disabled>Extract</button>
-  <div class="bar"><i id="cpProg"></i></div>
+  <!-- March CP: read from a recording of the member list. -->
+  <div id="cpVid">
+    <div class="drop" id="cpDrop" style="margin-top:12px">
+      <strong>Choose or drop the screen recording</strong><br>
+      <span id="cpFileName">the alliance member list, scrolled from top to bottom</span>
+    </div>
+    <input id="cpFile" type="file" accept="video/*" class="hide">
+    <button id="cpGo" style="margin-top:12px" disabled>Extract</button>
+    <div class="bar"><i id="cpProg"></i></div>
+  </div>
+  <!-- Base CP: no recording. Fetched from the Global CP list (topwarfandom.com) through the
+       Worker, and filtered to server 2698 and the chosen alliance. -->
+  <div id="cpApi" class="hide">
+    <p class="source">Source: <a href="https://www.topwarfandom.com" target="_blank" rel="noopener">topwarfandom.com</a> with permission from <span class="nass">Nass</span></p>
+    <button id="cpFetch" style="margin-top:12px" disabled>Choose an alliance first</button>
+  </div>
   <div class="log" id="cpLog"></div>
   <div class="strip" id="cpStrip"></div>
 </section>
@@ -2663,11 +2740,13 @@ const isDark = () => document.documentElement.dataset.theme
 // the button shows where it goes, not where it is: a sun in dark mode, a moon in light
 function paintTheme() {
   const dark = isDark();
-  $('theme').innerHTML = dark ? SUN : MOON;
-  $('theme').title = dark ? 'Switch to light mode' : 'Switch to dark mode';
-  $('theme').setAttribute('aria-label', $('theme').title);
+  for (const b of [$('theme'), $('themeHome')]) {
+    b.innerHTML = dark ? SUN : MOON;
+    b.title = dark ? 'Switch to light mode' : 'Switch to dark mode';
+    b.setAttribute('aria-label', b.title);
+  }
 }
-$('theme').onclick = () => {
+$('theme').onclick = $('themeHome').onclick = () => {
   const next = isDark() ? 'light' : 'dark';
   document.documentElement.dataset.theme = next;
   store.set('theme', next);
