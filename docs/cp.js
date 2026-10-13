@@ -400,8 +400,18 @@ $('cpGo').onclick = async () => {
 const CP_SERVER = '2698';
 const cpUsesList = () => $('cpType').value === '0';
 function cpMode() {
-  const list = cpUsesList(), ally = $('cpAlliance').value;
-  $('cpVid').classList.toggle('hide', list);
+  const list = cpUsesList(), typed = $('cpType').value !== '';
+  // "All four" is a Base CP choice only — a recording is of one alliance's list. Added and removed
+  // rather than hidden, since Safari shows a hidden <option> anyway.
+  if (list && !cpAll4.isConnected) $('cpAlliance').append(cpAll4);
+  if (!list && cpAll4.isConnected) {
+    const was = $('cpAlliance').value === 'ALL4';
+    cpAll4.remove();
+    if (was) $('cpAlliance').value = $('alliance').value;
+  }
+  const ally = $('cpAlliance').value;
+  // nothing to choose or fetch until the CP type says which
+  $('cpVid').classList.toggle('hide', !typed || list);
   $('cpApi').classList.toggle('hide', !list);
   // The roster's Pull button is for March CP; Base CP only needs it on a device that has never
   // pulled one (its matching uses the same roster). Without the Setup step the steps lose their numbers.
@@ -410,7 +420,8 @@ function cpMode() {
   document.querySelectorAll('#tab-cp .cpnum').forEach(n => n.classList.toggle('hide', !setup));
   if (!cpBusy) {
     $('cpFetch').disabled = !ally;
-    $('cpFetch').textContent = ally ? `Fetch ${ally} members` : 'Choose an alliance first';
+    $('cpFetch').textContent = ally === 'ALL4' ? 'Fetch all four alliances'
+                             : ally ? `Fetch ${ally} members` : 'Choose an alliance first';
   }
   // rows from the other source, or for another alliance, are not this choice's rows
   if (cpRows.length && ((cpSource === 'list') !== list || (cpSource === 'list' && cpFetched !== ally))) {
@@ -419,6 +430,7 @@ function cpMode() {
   }
 }
 let cpBusy = false, cpFetched = '';
+const cpAll4 = new Option('All four (698S, N, W, C)', 'ALL4');
 $('cpType').addEventListener('change', cpMode);
 $('cpAlliance').addEventListener('change', cpMode);
 $('cpFetch').onclick = async () => {
@@ -438,20 +450,22 @@ $('cpFetch').onclick = async () => {
     const all = await r.json();
     const tag = p => (String(p['Alliance Name & Tag'] || '').match(/\[([^\]]+)\]\s*$/) || [])[1] || '';
     const mine = all.filter(p => String(p.Server) === CP_SERVER
-      && (ally === 'Other' ? !MAIN_ALLIANCES.includes(tag(p)) : tag(p) === ally));
-    if (!mine.length) throw new Error(`nobody from ${ally} on server ${CP_SERVER} in the list`);
+      && (ally === 'ALL4' ? MAIN_ALLIANCES.includes(tag(p))
+          : ally === 'Other' ? !MAIN_ALLIANCES.includes(tag(p)) : tag(p) === ally));
+    if (!mine.length) throw new Error(`nobody from ${ally === 'ALL4' ? 'the four alliances' : ally} on server ${CP_SERVER} in the list`);
     // In the list's order (highest power first), CP in millions to one decimal, as the member
     // cards show it.
     cpRows = cpListMatch(mine.map((p, i) => {
       const name = String(p.Name || '').trim();
-      return { name, plain: name, listName: name, order: i,
+      return { name, plain: name, listName: name, order: i, ally: tag(p),
                cp: +(Number(String(p.Power).replace(/[^\d]/g, '')) / 1e6).toFixed(1) };
     }));
     cpHeaders = [];
     cpSource = 'list'; cpFetched = ally;
     cpRender();
     const matched = cpRows.filter(r => r.match).length;
-    log(`done — ${cpRows.length} players from ${ally} on server ${CP_SERVER}, ${matched} matched to the roster`);
+    const from = ally === 'ALL4' ? '698S, 698N, 698W and 698C' : ally;
+    log(`done — ${cpRows.length} players from ${from} on server ${CP_SERVER}, ${matched} matched to the roster`);
   } catch (e) { log('✗ ' + e.message); }
   logEl = 'log';
   cpBusy = false;
@@ -496,14 +510,14 @@ function cpCount() {
 // to confirm with the roster name as a suggestion. So is a roster player two list names both
 // land on. Nothing is merged: unlike a recording's readings, every list row is its own player.
 function cpListMatch(rows) {
-  const roster = currentRoster(), ally = $('cpAlliance').value;
+  const roster = currentRoster();
   const match = makeMatcher(buildIndex(roster), [], store.get('aliases') || {});
   // Several roster players can answer to one name — Woody (698S) and 🌍Woody (698C) both fold to
   // woody — so the name is tried as written first, then folded, and a tie goes to the player in
   // the alliance being fetched. Only then the general matcher, for saved fixes and near misses.
-  const pickOne = c => c.length === 1 ? c[0] : (c.filter(x => x.alliance === ally).length === 1
-                       ? c.find(x => x.alliance === ally) : null);
   const out = rows.map(r => {
+    const pickOne = c => c.length === 1 ? c[0] : (c.filter(x => x.alliance === r.ally).length === 1
+                         ? c.find(x => x.alliance === r.ally) : null);
     const k = fold(r.name);
     const same = roster.filter(x => x.ingame === r.name || x.search === r.name);
     const folded = k ? roster.filter(x => [x.ingame, x.search].some(n => n && fold(n) === k)) : [];
@@ -529,9 +543,10 @@ function cpListPlayer(r) {
 // the row to them (their search name), "New player — keep …" or Enter changes the name itself.
 // ✓ keeps an unmatched row as a new player. ✕ leaves a player out.
 function cpRenderList() {
-  $('cpTbl').innerHTML = '<thead><tr><th>#</th><th>In-game name</th><th>CP</th><th></th><th></th></tr></thead><tbody>'
+  const four = cpFetched === 'ALL4';
+  $('cpTbl').innerHTML = `<thead><tr><th>#</th><th>In-game name</th>${four ? '<th>Alliance</th>' : ''}<th>CP</th><th></th><th></th></tr></thead><tbody>`
     + cpRows.map((r, i) => `<tr class="${r.match || r.confirmed ? 'ok' : 'new'}${r.dropped ? ' drop' : ''}" data-i="${i}">
-        <td>${i + 1}</td><td class="nm"></td><td>${r.cp}</td><td class="st"></td>
+        <td>${i + 1}</td><td class="nm"></td>${four ? `<td>${esc(r.ally)}</td>` : ''}<td>${r.cp}</td><td class="st"></td>
         <td><button class="ghost cpdrop" data-i="${i}"
                     title="${r.dropped ? 'bring this row back' : 'leave this player out'}"
                     style="width:auto;padding:4px 9px">${r.dropped ? '↺' : '✕'}</button></td>
@@ -742,6 +757,7 @@ for (const [mine, theirs] of [['cpSubmitter', 'submitter'], ['cpAlliance', 'alli
   $(mine).value = $(theirs).value;
   for (const ev of ['change', 'input']) {
     $(mine).addEventListener(ev, () => {
+      if ($(mine).value === 'ALL4') return cpRefreshSend();   // Base CP's own; Kartz has no such choice
       $(theirs).value = $(mine).value;
       store.set(theirs, $(mine).value);
       if (rows.length) render(lastRoster);
@@ -761,7 +777,8 @@ function cpSheetRows() {
   return cpRows.filter(r => !r.dropped).map(r => {
     const p = cpPlayer(r), cps = ['', '', '', ''];
     if (col !== '') cps[+col] = r.cp;
-    return [stamp, $('cpSubmitter').value.trim(), p.search, p.ingame, $('cpAlliance').value, ...cps];
+    const ally = $('cpAlliance').value === 'ALL4' ? r.ally : $('cpAlliance').value;
+    return [stamp, $('cpSubmitter').value.trim(), p.search, p.ingame, ally, ...cps];
   });
 }
 // Same rule as the Kartz tab: nothing goes while a name is undecided or a field is empty.
