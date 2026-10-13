@@ -118,11 +118,11 @@ button.pencil:not(:disabled):active{filter:none}
 /* the name box while editing, with its "✓ Done" pill tucked into the right-hand end */
 .field{position:relative;display:inline-block;vertical-align:middle}
 .field .pickbox{padding-right:78px}
-button.done{position:absolute;top:50%;right:4px;transform:translateY(-50%);width:auto;margin:0;padding:3px 10px;
+button.keepbtn{position:absolute;top:50%;right:4px;transform:translateY(-50%);width:auto;margin:0;padding:3px 10px;
   border:0;border-radius:999px;font-size:12px;font-weight:600;line-height:1.4;cursor:pointer;
   background:color-mix(in srgb, var(--accent) 12%, transparent);color:var(--accent)}
-button.done:hover{background:color-mix(in srgb, var(--accent) 20%, transparent)}
-button.done:not(:disabled):active{filter:none;transform:translateY(-50%)}
+button.keepbtn:hover{background:color-mix(in srgb, var(--accent) 20%, transparent)}
+button.keepbtn:not(:disabled):active{filter:none;transform:translateY(-50%)}
 button.ghost.tickok{color:var(--ok)}
 /* Selects inherit width:100% from the base control rule, which made these stretch across a
    column sized for the header rather than for "698S". Sized to their content instead, with a
@@ -2239,7 +2239,7 @@ function render(roster) {
               : (r.editing ? '<span class="field">' : '')
                 + `<input data-i="${i}" class="pickbox" data-row="${i}" placeholder="type to search…"
                         value="${esc(r.pick || (r.editing ? shown : ''))}" spellcheck="false">`
-                + (r.editing ? `<button class="done" type="button" title="keep this name">✓ Done</button></span>` : '')}</td>
+                + (r.editing ? `<button class="keepbtn" type="button" title="keep this name">✓ Done</button></span>` : '')}</td>
         <td>${alli ? esc(alli) : '<span class="note">—</span>'}</td>
         <td>${r.points}</td>
         <td>${r.skipped ? '<span class="pill p-new">excluded</span>'
@@ -2302,7 +2302,7 @@ function render(roster) {
     // puts the row back exactly as it was. The suggestion menu is excepted, because it hangs
     // off the body rather than the row, so clicking an option is otherwise "outside".
     const field = inp.closest('.field') || inp;
-    const done = field.querySelector('.done');
+    const done = field.querySelector('.keepbtn');
     if (done) done.onclick = () => {
       document.removeEventListener('mousedown', escape, true);
       if (inp.value.trim()) choose(inp.value.trim());

@@ -615,8 +615,8 @@ function cpListRow(tr, i) {
   // keep …", ✓ Done or Enter on text of your own renames the row instead, as a new player.
   // Esc, or tapping anywhere outside the box, puts the row back as it was.
   td.innerHTML = `<span class="field"><input class="pickbox" value="${esc(r.name)}" placeholder="type to search…"`
-    + ` spellcheck="false"><button class="done" type="button" title="keep this name">✓ Done</button></span>`;
-  const box = td.querySelector('input'), done = td.querySelector('.done');
+    + ` spellcheck="false"><button class="keepbtn" type="button" title="keep this name">✓ Done</button></span>`;
+  const box = td.querySelector('input'), done = td.querySelector('.keepbtn');
   const keep = (v, chosen = false) => {
     if (!r.editing) return;
     v = String(v || '').trim();
@@ -675,7 +675,7 @@ function cpRender() {
                     + ` title="this name is right as it is"`
                     + ` style="width:auto;padding:4px 9px;margin-left:6px">✓</button>` : '')
               : `<span class="field"><input class="pickbox" data-i="${i}" placeholder="type to search…"
-                        value="${esc(outName(r))}" spellcheck="false"><button class="done" type="button" title="keep this name">✓ Done</button></span>`}</td>
+                        value="${esc(outName(r))}" spellcheck="false"><button class="keepbtn" type="button" title="keep this name">✓ Done</button></span>`}</td>
         <td>${r.cp}${r.cpRead ? ` <span class="note" title="the decimal point was missed">`
               + `read ${r.cpRead}</span>` : ''}</td>
         <td>${r.match ? `<span class="pill p-ok">${r.near1 ? '1 char' : 'exact'}</span>`
@@ -706,7 +706,7 @@ function cpRender() {
       setTimeout(cpRender, 0);
     };
     wirePicker(inp, (v, committed) => { if (committed) choose(v); });
-    const done = inp.closest('.field').querySelector('.done');
+    const done = inp.closest('.field').querySelector('.keepbtn');
     done.onmousedown = e => e.preventDefault();          // pressing Done is not leaving the box
     done.onclick = () => inp.value.trim() ? choose(inp.value.trim()) : (r.editing = false, cpRender());
     // Leaving the box without Done or a choice puts the row back as it was. The menu's own
