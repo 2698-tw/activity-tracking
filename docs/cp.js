@@ -521,7 +521,8 @@ function cpListVerdict() {
 function cpListName(td, i) {
   const r = cpRows[i];
   if (!r.editing) {
-    td.innerHTML = `${esc(r.name)}<button class="pencil" title="change this name">✎ Edit</button>`
+    td.innerHTML = `<span class="nmtext" title="${esc(r.name)}">${esc(r.name)}</span>`
+      + `<button class="pencil" title="change this name">✎ Edit</button>`
       + (r.name !== r.listName ? `<span class="pill p-ok edited" title="in the list as ${esc(r.listName)}">edited</span>` : '');
     td.querySelector('.pencil').onclick = () => {
       r.editing = true;
@@ -575,7 +576,7 @@ function cpRender() {
         <td>${i + 1}</td>
         <td>${esc(r.name)}</td>
         <td>${!r.editing
-              ? `<span class="${green || r.pick ? 'named' : 'asdrawn'}">${esc(outName(r))}</span>`
+              ? `<span class="nmtext ${green || r.pick ? 'named' : 'asdrawn'}" title="${esc(outName(r))}">${esc(outName(r))}</span>`
                 + `<button class="pencil" data-i="${i}" title="change this name">✎ Edit</button>`
                 + (!green && !r.pick ? `<button class="ghost tickok" data-i="${i}"`
                     + ` title="this name is right as it is"`

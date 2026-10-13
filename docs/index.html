@@ -107,7 +107,10 @@ tr.new{background:var(--warnbg)}
 .named{color:var(--ok)}
 .asdrawn{color:var(--ink)}
 /* the edit button on every results table: a soft blue "✎ Edit" pill */
-button.pencil{display:inline-flex;align-items:center;gap:4px;width:auto;margin-left:8px;padding:3px 10px;
+/* the name sits in a fixed width so every row's Edit pill lines up in one column; a longer name is
+   cut short with … and shown in full on hover */
+.nmtext{display:inline-block;width:12em;vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+button.pencil{display:inline-flex;align-items:center;gap:4px;width:auto;margin-left:12px;padding:3px 10px;vertical-align:middle;
   border:0;border-radius:999px;font-size:12px;font-weight:600;line-height:1.4;cursor:pointer;
   background:color-mix(in srgb, var(--accent) 12%, transparent);color:var(--accent)}
 button.pencil:hover{background:color-mix(in srgb, var(--accent) 20%, transparent)}
@@ -2219,7 +2222,7 @@ function render(roster) {
         <td>${esc(r.name)}</td>
         <td>${settled ? esc(outPlayer(r).search) : '<span class="note">—</span>'}</td>
         <td>${settled
-              ? `<span class="${green ? 'named' : 'asdrawn'}">${esc(shown)}</span>`
+              ? `<span class="nmtext ${green ? 'named' : 'asdrawn'}" title="${esc(shown)}">${esc(shown)}</span>`
                 + `<button class="pencil" data-i="${i}" title="change this name">✎ Edit</button>`
                 + (!green ? `<button class="ghost tickok" data-i="${i}"`
                     + ` title="this name is right as it is"`
