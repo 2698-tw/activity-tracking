@@ -38,7 +38,7 @@ addEventListener('hashchange', () => { showTab(viewFromAddress()); scrollTo(0, 0
 showTab(viewFromAddress());
 
 /* setup and file */
-$('cpPull').onclick = () => pullNow($('cpPull'), 'cpLog');
+$('cpPull').onclick = async () => { await pullNow($('cpPull'), 'cpLog'); cpMode(); };
 $('cpDrop').onclick = () => $('cpFile').click();
 $('cpFile').onchange = e => cpPick(e.target.files[0]);
 ['dragover', 'dragenter'].forEach(ev => $('cpDrop').addEventListener(ev, e => {
@@ -394,18 +394,20 @@ $('cpGo').onclick = async () => {
 // list (about 130,000 players, 28 MB, refreshed every ten minutes, nobody under 25M). The site
 // does not let other pages read it, so the Worker fetches it (/api/global-cp) and hands it over
 // unchanged — on the free plan a Worker has too little time to sort through 28 MB itself — and
-// the page keeps server 2698 and the chosen alliance. The names are sent as the list has them,
-// not matched to the roster. March CP is not in the list and still comes from a recording.
+// the page keeps server 2698 and the chosen alliance. Each name is matched to the roster only for
+// the search-name column; the in-game name sent is always the list's, which is the game's own and
+// current (see cpListMatch). March CP is not in the list and still comes from a recording.
 const CP_SERVER = '2698';
 const cpUsesList = () => $('cpType').value === '0';
 function cpMode() {
   const list = cpUsesList(), ally = $('cpAlliance').value;
   $('cpVid').classList.toggle('hide', list);
   $('cpApi').classList.toggle('hide', !list);
-  // the roster is only for March CP's recordings; without its Setup step the steps lose their numbers
-  const march = /^[123]$/.test($('cpType').value);
-  $('cpSetup').classList.toggle('hide', !march);
-  document.querySelectorAll('#tab-cp .cpnum').forEach(n => n.classList.toggle('hide', !march));
+  // The roster's Pull button is for March CP; Base CP only needs it on a device that has never
+  // pulled one (its matching uses the same roster). Without the Setup step the steps lose their numbers.
+  const setup = /^[123]$/.test($('cpType').value) || (list && !currentRoster().length);
+  $('cpSetup').classList.toggle('hide', !setup);
+  document.querySelectorAll('#tab-cp .cpnum').forEach(n => n.classList.toggle('hide', !setup));
   if (!cpBusy) {
     $('cpFetch').disabled = !ally;
     $('cpFetch').textContent = ally ? `Fetch ${ally} members` : 'Choose an alliance first';
@@ -439,17 +441,17 @@ $('cpFetch').onclick = async () => {
       && (ally === 'Other' ? !MAIN_ALLIANCES.includes(tag(p)) : tag(p) === ally));
     if (!mine.length) throw new Error(`nobody from ${ally} on server ${CP_SERVER} in the list`);
     // In the list's order (highest power first), CP in millions to one decimal, as the member
-    // cards show it. Not matched to the roster: the list's names are the game's own, and they go
-    // to the sheet as they are, in both the search-name and in-game-name columns (outPlayer).
-    cpRows = mine.map((p, i) => {
+    // cards show it.
+    cpRows = cpListMatch(mine.map((p, i) => {
       const name = String(p.Name || '').trim();
-      return { name, plain: name, listName: name, order: i, match: null, pick: '', confirmed: true,
+      return { name, plain: name, listName: name, order: i,
                cp: +(Number(String(p.Power).replace(/[^\d]/g, '')) / 1e6).toFixed(1) };
-    });
+    }));
     cpHeaders = [];
     cpSource = 'list'; cpFetched = ally;
     cpRender();
-    log(`done — ${cpRows.length} players from ${ally} on server ${CP_SERVER}`);
+    const matched = cpRows.filter(r => r.match).length;
+    log(`done — ${cpRows.length} players from ${ally} on server ${CP_SERVER}, ${matched} matched to the roster`);
   } catch (e) { log('✗ ' + e.message); }
   logEl = 'log';
   cpBusy = false;
@@ -486,20 +488,56 @@ function cpCount() {
   }
   return { list, above };
 }
-// The Global CP list's rows: its own names, not matched to the roster. ✎ Edit turns a name into a
-// text box for a fix; Enter or tapping away keeps it, Esc undoes it, and the fixed name is the one
-// sent. ✕ leaves a player out.
-// A name being edited holds up Send, the way an unconfirmed row does (cpOpen).
+// The list's names against the roster. The roster supplies the search name — the key the sheet
+// ties a player's rows together by — and nothing else: the in-game name sent stays the list's,
+// since the roster can lag behind a rename (Woody in the game, 🌍Woody in the roster).
+// Only a clear match is taken: the same name once folded, or a fix saved earlier. A near miss —
+// one character off, which is how ALl and ALI differ — is not taken but offered: the row is left
+// to confirm with the roster name as a suggestion. So is a roster player two list names both
+// land on. Nothing is merged: unlike a recording's readings, every list row is its own player.
+function cpListMatch(rows) {
+  const roster = currentRoster(), ally = $('cpAlliance').value;
+  const match = makeMatcher(buildIndex(roster), [], store.get('aliases') || {});
+  // Several roster players can answer to one name — Woody (698S) and 🌍Woody (698C) both fold to
+  // woody — so the name is tried as written first, then folded, and a tie goes to the player in
+  // the alliance being fetched. Only then the general matcher, for saved fixes and near misses.
+  const pickOne = c => c.length === 1 ? c[0] : (c.filter(x => x.alliance === ally).length === 1
+                       ? c.find(x => x.alliance === ally) : null);
+  const out = rows.map(r => {
+    const k = fold(r.name);
+    const same = roster.filter(x => x.ingame === r.name || x.search === r.name);
+    const folded = k ? roster.filter(x => [x.ingame, x.search].some(n => n && fold(n) === k)) : [];
+    let hit = (same.length && pickOne(same)) || (!same.length && folded.length && pickOne(folded)) || null;
+    let suggest = !hit ? (same[0] || folded[0] || null) : null;
+    if (!hit && !suggest) {
+      const m = match({ ...r, obs: [r.name], claims: [], pick_: '' });
+      if (m.match && !m.near1) hit = m.match; else if (m.match) suggest = m.match;
+    }
+    return { ...r, match: hit, suggest, pick: '', confirmed: false };
+  });
+  // two list names on one roster player: neither is taken, both are offered
+  const byPlayer = new Map();
+  for (const r of out) if (r.match) byPlayer.set(r.match, [...(byPlayer.get(r.match) || []), r]);
+  for (const [, g] of byPlayer) if (g.length > 1) for (const r of g) { r.suggest = r.match; r.match = null; }
+  return out;
+}
+// What a list row sends: the roster's search name when it is matched, and the list's name.
+function cpListPlayer(r) {
+  return { search: r.match ? (r.match.search || r.match.ingame) : r.name, ingame: r.name };
+}
+// The Global CP list's rows. ✎ Edit opens the roster search box: choosing a roster player links
+// the row to them (their search name), "New player — keep …" or Enter changes the name itself.
+// ✓ keeps an unmatched row as a new player. ✕ leaves a player out.
 function cpRenderList() {
-  $('cpTbl').innerHTML = '<thead><tr><th>#</th><th>In-game name</th><th>CP</th><th></th></tr></thead><tbody>'
-    + cpRows.map((r, i) => `<tr class="ok${r.dropped ? ' drop' : ''}">
-        <td>${i + 1}</td><td class="nm" data-i="${i}"></td><td>${r.cp}</td>
+  $('cpTbl').innerHTML = '<thead><tr><th>#</th><th>In-game name</th><th>CP</th><th></th><th></th></tr></thead><tbody>'
+    + cpRows.map((r, i) => `<tr class="${r.match || r.confirmed ? 'ok' : 'new'}${r.dropped ? ' drop' : ''}" data-i="${i}">
+        <td>${i + 1}</td><td class="nm"></td><td>${r.cp}</td><td class="st"></td>
         <td><button class="ghost cpdrop" data-i="${i}"
                     title="${r.dropped ? 'bring this row back' : 'leave this player out'}"
                     style="width:auto;padding:4px 9px">${r.dropped ? '↺' : '✕'}</button></td>
       </tr>`).join('') + '</tbody>';
   const tbl = $('cpTbl');
-  tbl.querySelectorAll('td.nm').forEach(td => cpListName(td, +td.dataset.i));
+  tbl.querySelectorAll('tbody tr').forEach(tr => cpListRow(tr, +tr.dataset.i));
   tbl.querySelectorAll('.cpdrop').forEach(b => b.onclick = () => {
     const r = cpRows[+b.dataset.i];
     r.dropped = !r.dropped;
@@ -510,43 +548,66 @@ function cpRenderList() {
   $('cpOut').classList.remove('hide');
 }
 function cpListVerdict() {
-  const kept = cpRows.filter(r => !r.dropped).length;
-  const open = cpRows.filter(r => !r.dropped && r.editing).length;
-  $('cpVerdict').innerHTML = `<div class="${open ? 'warnbox' : 'okbox'}">${kept} players from the Global CP list`
-    + (open ? ` &middot; <strong>finish editing ${open} name${open > 1 ? 's' : ''}</strong>` : '') + '</div>';
+  const live = cpRows.filter(r => !r.dropped);
+  const matched = live.filter(r => r.match).length, open = live.filter(cpOpen).length;
+  $('cpVerdict').innerHTML = `<div class="${open ? 'warnbox' : 'okbox'}">${live.length} players from the Global CP list`
+    + ` &middot; ${matched} matched to the roster`
+    + (open ? ` &middot; <strong>${open} to confirm below</strong>` : '') + '</div>';
   cpRefreshSend();
 }
-// One name cell, drawn and wired on its own: finishing an edit redraws only this cell, so a tap
-// on another row's ✎ Edit or ✕ — which is what finishes it — still lands on its button.
-function cpListName(td, i) {
-  const r = cpRows[i];
+// One row's name and status, drawn and wired on their own: finishing an edit redraws only this
+// row, so a tap on another row's ✎ Edit or ✕ — which is what finishes it — still lands.
+function cpListRow(tr, i) {
+  const r = cpRows[i], td = tr.querySelector('td.nm'), st = tr.querySelector('td.st');
+  tr.classList.toggle('ok', !!(r.match || r.confirmed));
+  tr.classList.toggle('new', !(r.match || r.confirmed));
+  st.innerHTML = r.match
+      ? `<span class="pill p-ok" title="search name in the sheet">${esc(r.match.search || r.match.ingame)}</span>`
+    : r.confirmed ? '<span class="pill p-ok" title="not in the roster: sent as a new player">new player</span>'
+    : `<span class="pill p-new">confirm</span>`
+      + (r.suggest ? ` <span class="note">roster has ${esc(r.suggest.ingame || r.suggest.search)}</span>` : '');
   if (!r.editing) {
     td.innerHTML = `<span class="nmtext" title="${esc(r.name)}">${esc(r.name)}</span>`
       + `<button class="pencil" title="change this name">✎ Edit</button>`
-      + (r.name !== r.listName ? `<span class="pill p-ok edited" title="in the list as ${esc(r.listName)}">edited</span>` : '');
+      + (!r.match && !r.confirmed ? `<button class="ghost tickok" title="keep as a new player"`
+          + ` style="width:auto;padding:4px 9px;margin-left:6px">✓</button>` : '');
     td.querySelector('.pencil').onclick = () => {
       r.editing = true;
-      cpListName(td, i);
+      cpListRow(tr, i);
       cpListVerdict();
       const box = td.querySelector('input');
       box.focus(); box.select();
     };
+    const tick = td.querySelector('.tickok');
+    if (tick) tick.onclick = () => { r.confirmed = true; cpListRow(tr, i); cpListVerdict(); };
     return;
   }
-  td.innerHTML = `<input class="pickbox" value="${esc(r.name)}" spellcheck="false" title="Enter to keep, Esc to undo">`;
+  // Type to search the roster. Choosing a roster player links the row to them; "New player —
+  // keep …" or Enter on text of your own renames the row instead, as a new player. Esc puts it
+  // back; tapping away keeps what is in the box.
+  td.innerHTML = `<input class="pickbox" value="${esc(r.name)}" placeholder="type to search…" spellcheck="false">`;
   const box = td.querySelector('input');
-  box.onkeydown = e => {
-    if (e.key === 'Enter') box.blur();
-    if (e.key === 'Escape') { box.value = r.name; box.blur(); }
-  };
-  // leaving the box keeps what is in it: there is no separate button to press
-  box.onblur = () => {
+  const keep = (v, chosen = false) => {
     if (!r.editing) return;
-    r.name = r.plain = box.value.trim() || r.listName;
+    v = String(v || '').trim();
+    const entry = chosen && v ? fullRoster().find(x => (x.ingame || x.search) === v) : null;
+    if (entry) { r.match = entry; r.confirmed = false; }
+    else if (v && v !== r.name) { r.name = r.plain = v; r.match = null; r.confirmed = true; }
     r.editing = false;
-    cpListName(td, i);
+    closeMenu();
+    cpListRow(tr, i);
     cpListVerdict();
   };
+  wirePicker(box, (v, committed) => { if (committed) keep(v, true); });
+  // after wirePicker's own keys, which take Enter only when a roster name is highlighted
+  box.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.defaultPrevented) keep(box.value);
+    if (e.key === 'Escape') { box.value = r.name; keep(r.name); }
+  });
+  // the menu's own clicks keep focus in the box, so a blur means somewhere else was tapped
+  box.addEventListener('blur', () => setTimeout(() => {
+    if (r.editing && document.activeElement !== box) keep(box.value);
+  }, 150));
 }
 function cpRender() {
   closeMenu();
@@ -629,7 +690,8 @@ function cpRender() {
 }
 
 const CP_HEADERS = ['In-game Name', 'Base CP'];
-const cpOut = () => cpRows.filter(r => !r.dropped).map(r => [outName(r), r.cp]);
+const cpPlayer = r => cpSource === 'list' ? cpListPlayer(r) : outPlayer(r);
+const cpOut = () => cpRows.filter(r => !r.dropped).map(r => [cpPlayer(r).ingame, r.cp]);
 $('cpCopy').onclick = async () => {
   const tsv = cpOut().map(r => r.join('\t')).join('\n');
   try {
@@ -697,7 +759,7 @@ cpMode();
 function cpSheetRows() {
   const stamp = loadStamp(new Date()), col = $('cpType').value;
   return cpRows.filter(r => !r.dropped).map(r => {
-    const p = outPlayer(r), cps = ['', '', '', ''];
+    const p = cpPlayer(r), cps = ['', '', '', ''];
     if (col !== '') cps[+col] = r.cp;
     return [stamp, $('cpSubmitter').value.trim(), p.search, p.ingame, $('cpAlliance').value, ...cps];
   });
