@@ -509,6 +509,16 @@ function cpCount() {
 // one character off, which is how ALl and ALI differ — is not taken but offered: the row is left
 // to confirm with the roster name as a suggestion. So is a roster player two list names both
 // land on. Nothing is merged: unlike a recording's readings, every list row is its own player.
+// A name's shape: what it looks like in the game font, before any lowercasing. A capital I, a
+// lowercase l, a 1 and a | are one stroke; O and 0 are one ring; Cyrillic а е о р с у х (and their
+// capitals) are drawn exactly like the Latin letters. So ALl (lowercase L, as the game list has
+// it) and ALI (capital I, as the roster was typed) share a shape, and so do JоhnWick with a
+// Cyrillic о and JohnWick — names fold() keeps apart, since it lowercases first.
+const CP_SHAPES = { I: 'l', l: 'l', '1': 'l', '|': 'l', 'ǀ': 'l', 'Ӏ': 'l', 'ӏ': 'l', 'І': 'l', 'і': 'i',
+  O: 'o', '0': 'o', 'О': 'o', 'о': 'o', 'А': 'a', 'а': 'a', 'Е': 'e', 'е': 'e', 'Р': 'p', 'р': 'p',
+  'С': 'c', 'с': 'c', 'У': 'y', 'у': 'y', 'Х': 'x', 'х': 'x', 'К': 'k', 'к': 'k', 'М': 'm', 'Т': 't',
+  'Н': 'h', 'В': 'b', 'ѕ': 's', 'Ѕ': 's', 'ј': 'j', 'Ј': 'j' };
+const cpShape = name => fold([...String(name || '').normalize('NFKC')].map(c => CP_SHAPES[c] || c).join(''));
 function cpListMatch(rows) {
   const roster = currentRoster();
   const match = makeMatcher(buildIndex(roster), [], store.get('aliases') || {});
@@ -521,8 +531,12 @@ function cpListMatch(rows) {
     const k = fold(r.name);
     const same = roster.filter(x => x.ingame === r.name || x.search === r.name);
     const folded = k ? roster.filter(x => [x.ingame, x.search].some(n => n && fold(n) === k)) : [];
-    let hit = (same.length && pickOne(same)) || (!same.length && folded.length && pickOne(folded)) || null;
-    let suggest = !hit ? (same[0] || folded[0] || null) : null;
+    const sk = cpShape(r.name);
+    const shaped = sk ? roster.filter(x => [x.ingame, x.search].some(n => n && cpShape(n) === sk)) : [];
+    // as written, then folded, then by shape — each only when the one before found nobody
+    const tier = same.length ? same : folded.length ? folded : shaped;
+    let hit = (tier.length && pickOne(tier)) || null;
+    let suggest = !hit ? (tier[0] || null) : null;
     if (!hit && !suggest) {
       const m = match({ ...r, obs: [r.name], claims: [], pick_: '' });
       if (m.match && !m.near1) hit = m.match; else if (m.match) suggest = m.match;
