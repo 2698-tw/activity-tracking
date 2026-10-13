@@ -453,12 +453,12 @@ $('cpFetch').onclick = async () => {
       && (ally === 'ALL4' ? MAIN_ALLIANCES.includes(tag(p))
           : ally === 'Other' ? !MAIN_ALLIANCES.includes(tag(p)) : tag(p) === ally));
     if (!mine.length) throw new Error(`nobody from ${ally === 'ALL4' ? 'the four alliances' : ally} on server ${CP_SERVER} in the list`);
-    // In the list's order (highest power first), CP in millions to one decimal, as the member
-    // cards show it.
+    // In the list's order (highest power first), CP in millions rounded to the nearest whole
+    // million (171,460,968 → 171).
     cpRows = cpListMatch(mine.map((p, i) => {
       const name = String(p.Name || '').trim();
       return { name, plain: name, listName: name, order: i, ally: tag(p),
-               cp: +(Number(String(p.Power).replace(/[^\d]/g, '')) / 1e6).toFixed(1) };
+               cp: Math.round(Number(String(p.Power).replace(/[^\d]/g, '')) / 1e6) };
     }));
     cpHeaders = [];
     cpSource = 'list'; cpFetched = ally;
