@@ -612,10 +612,11 @@ function cpListRow(tr, i) {
     return;
   }
   // Type to search the roster. Choosing a roster player links the row to them; "New player —
-  // keep …" or Enter on text of your own renames the row instead, as a new player. Esc puts it
-  // back; tapping away keeps what is in the box.
-  td.innerHTML = `<input class="pickbox" value="${esc(r.name)}" placeholder="type to search…" spellcheck="false">`;
-  const box = td.querySelector('input');
+  // keep …", ✓ Done or Enter on text of your own renames the row instead, as a new player.
+  // Esc, or tapping anywhere outside the box, puts the row back as it was.
+  td.innerHTML = `<span class="field"><input class="pickbox" value="${esc(r.name)}" placeholder="type to search…"`
+    + ` spellcheck="false"><button class="done" type="button" title="keep this name">✓ Done</button></span>`;
+  const box = td.querySelector('input'), done = td.querySelector('.done');
   const keep = (v, chosen = false) => {
     if (!r.editing) return;
     v = String(v || '').trim();
@@ -633,9 +634,11 @@ function cpListRow(tr, i) {
     if (e.key === 'Enter' && !e.defaultPrevented) keep(box.value);
     if (e.key === 'Escape') { box.value = r.name; keep(r.name); }
   });
+  done.onmousedown = e => e.preventDefault();            // pressing Done is not leaving the box
+  done.onclick = () => keep(box.value);
   // the menu's own clicks keep focus in the box, so a blur means somewhere else was tapped
   box.addEventListener('blur', () => setTimeout(() => {
-    if (r.editing && document.activeElement !== box) keep(box.value);
+    if (r.editing && document.activeElement !== box) { box.value = r.name; keep(r.name); }
   }, 150));
 }
 function cpRender() {
@@ -671,8 +674,8 @@ function cpRender() {
                 + (!green && !r.pick ? `<button class="ghost tickok" data-i="${i}"`
                     + ` title="this name is right as it is"`
                     + ` style="width:auto;padding:4px 9px;margin-left:6px">✓</button>` : '')
-              : `<input class="pickbox" data-i="${i}" placeholder="type to search…"
-                        value="${esc(outName(r))}" spellcheck="false">`}</td>
+              : `<span class="field"><input class="pickbox" data-i="${i}" placeholder="type to search…"
+                        value="${esc(outName(r))}" spellcheck="false"><button class="done" type="button" title="keep this name">✓ Done</button></span>`}</td>
         <td>${r.cp}${r.cpRead ? ` <span class="note" title="the decimal point was missed">`
               + `read ${r.cpRead}</span>` : ''}</td>
         <td>${r.match ? `<span class="pill p-ok">${r.near1 ? '1 char' : 'exact'}</span>`
@@ -695,15 +698,19 @@ function cpRender() {
   });
   tbl.querySelectorAll('.pickbox').forEach(inp => {
     const r = cpRows[+inp.dataset.i];
-    wirePicker(inp, (v, committed) => {
-      if (!committed) return;
-      // choosing here is the answer: it replaces whatever the matcher decided
+    // choosing a name from the menu, or ✓ Done on what is typed, is the answer: it replaces
+    // whatever the matcher decided
+    const choose = v => {
       Object.assign(r, { pick: v, match: null, editing: false, confirmed: true });
       closeMenu();
       setTimeout(cpRender, 0);
-    });
-    // Leaving the box without choosing puts the row back as it was. The menu's own clicks
-    // keep focus in the box, so a blur means somewhere else was clicked.
+    };
+    wirePicker(inp, (v, committed) => { if (committed) choose(v); });
+    const done = inp.closest('.field').querySelector('.done');
+    done.onmousedown = e => e.preventDefault();          // pressing Done is not leaving the box
+    done.onclick = () => inp.value.trim() ? choose(inp.value.trim()) : (r.editing = false, cpRender());
+    // Leaving the box without Done or a choice puts the row back as it was. The menu's own
+    // clicks keep focus in the box, so a blur means somewhere else was clicked.
     inp.onblur = () => setTimeout(() => {
       if (r.editing && document.activeElement !== inp) { r.editing = false; cpRender(); }
     }, 150);

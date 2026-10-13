@@ -115,6 +115,14 @@ button.pencil{display:inline-flex;align-items:center;gap:4px;width:auto;margin-l
   background:color-mix(in srgb, var(--accent) 12%, transparent);color:var(--accent)}
 button.pencil:hover{background:color-mix(in srgb, var(--accent) 20%, transparent)}
 button.pencil:not(:disabled):active{filter:none}
+/* the name box while editing, with its "✓ Done" pill tucked into the right-hand end */
+.field{position:relative;display:inline-block;vertical-align:middle}
+.field .pickbox{padding-right:78px}
+button.done{position:absolute;top:50%;right:4px;transform:translateY(-50%);width:auto;margin:0;padding:3px 10px;
+  border:0;border-radius:999px;font-size:12px;font-weight:600;line-height:1.4;cursor:pointer;
+  background:color-mix(in srgb, var(--accent) 12%, transparent);color:var(--accent)}
+button.done:hover{background:color-mix(in srgb, var(--accent) 20%, transparent)}
+button.done:not(:disabled):active{filter:none;transform:translateY(-50%)}
 button.ghost.tickok{color:var(--ok)}
 /* Selects inherit width:100% from the base control rule, which made these stretch across a
    column sized for the header rather than for "698S". Sized to their content instead, with a
@@ -2228,8 +2236,10 @@ function render(roster) {
                 + (!green ? `<button class="ghost tickok" data-i="${i}"`
                     + ` title="this name is right as it is"`
                     + ` style="width:auto;padding:4px 9px;margin-left:6px">✓</button>` : '')
-              : `<input data-i="${i}" class="pickbox" data-row="${i}" placeholder="type to search…"
-                        value="${esc(r.pick || (r.editing ? shown : ''))}" spellcheck="false">`}</td>
+              : (r.editing ? '<span class="field">' : '')
+                + `<input data-i="${i}" class="pickbox" data-row="${i}" placeholder="type to search…"
+                        value="${esc(r.pick || (r.editing ? shown : ''))}" spellcheck="false">`
+                + (r.editing ? `<button class="done" type="button" title="keep this name">✓ Done</button></span>` : '')}</td>
         <td>${alli ? esc(alli) : '<span class="note">—</span>'}</td>
         <td>${r.points}</td>
         <td>${r.skipped ? '<span class="pill p-new">excluded</span>'
@@ -2261,12 +2271,12 @@ function render(roster) {
     render(lastRoster);
   });
   $('tbl').querySelectorAll('.pickbox').forEach(inp => {
-    wirePicker(inp, (v, committed) => {
+    // Typing decides nothing. Writing each keystroke into r.pick meant abandoning an edit
+    // left the half-typed fragment behind as the row's answer — "Peez" where ChiGrub had
+    // been — so the escape below could not actually put anything back.
+    // A name is decided by choosing it from the menu, or by ✓ Done, which keeps what is typed.
+    const choose = v => {
       const r = rows[+inp.dataset.i];
-      // Typing decides nothing. Writing each keystroke into r.pick meant abandoning an edit
-      // left the half-typed fragment behind as the row's answer — "Peez" where ChiGrub had
-      // been — so the escape below could not actually put anything back.
-      if (!committed) return;
       r.pick = v;
       // a row being edited no longer rides on its original match, nor on the excluded player
       // it used to be taken for — choosing a name here is choosing to put the row in the sheet
@@ -2279,7 +2289,8 @@ function render(roster) {
       }
       closeMenu();
       setTimeout(() => render(lastRoster), 0);
-    });
+    };
+    wirePicker(inp, (v, committed) => { if (committed) choose(v); });
     const r = rows[+inp.dataset.i];
     // A box that is not an edit — one you discarded and are refilling, say —
     // has no earlier state to go back to, so whatever is in it when you leave is the answer.
@@ -2290,8 +2301,15 @@ function render(roster) {
     // An edit opened by accident should cost nothing. A mousedown anywhere outside the box
     // puts the row back exactly as it was. The suggestion menu is excepted, because it hangs
     // off the body rather than the row, so clicking an option is otherwise "outside".
+    const field = inp.closest('.field') || inp;
+    const done = field.querySelector('.done');
+    if (done) done.onclick = () => {
+      document.removeEventListener('mousedown', escape, true);
+      if (inp.value.trim()) choose(inp.value.trim());
+      else { r.editing = false; closeMenu(); render(lastRoster); }
+    };
     const escape = ev => {
-      if (inp.contains(ev.target) || (menuEl && menuEl.contains(ev.target))) return;
+      if (field.contains(ev.target) || (menuEl && menuEl.contains(ev.target))) return;
       document.removeEventListener('mousedown', escape, true);
       if (!r.editing) return;
       r.editing = false;
