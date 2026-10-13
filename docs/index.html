@@ -279,6 +279,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   </div>
   <button id="go" style="margin-top:12px" disabled>Extract</button>
   <div class="bar"><i id="prog"></i></div>
+  <div class="log" id="rosterLog"></div>
   <div class="log" id="log"></div>
   <div class="strip" id="strip"></div>
 </section>
@@ -344,6 +345,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
     <p class="source">Source: <a href="https://www.topwarfandom.com" target="_blank" rel="noopener">topwarfandom.com</a> with permission from <span class="nass">Nass</span></p>
     <button id="cpFetch" style="margin-top:12px" disabled>Choose an alliance first</button>
   </div>
+  <div class="log" id="cpRosterLog"></div>
   <div class="log" id="cpLog"></div>
   <div class="strip" id="cpStrip"></div>
 </section>
@@ -513,16 +515,23 @@ function refreshState() {
 // run always matches against the sheet as it is now, and nobody has to remember a Pull button.
 // When the pull fails (no signal, Google slow) the copy saved by the last good pull is used and
 // the log says so; only a device that has never pulled one has nothing to fall back on.
+// Its progress has a line of its own under the button, above the run's log, so "roster updated"
+// stays in view for the whole run instead of being overwritten by the next step.
 async function freshRoster() {
+  const line = $(logEl === 'cpLog' ? 'cpRosterLog' : 'rosterLog');
+  line.textContent = 'pulling roster data…';
   try {
     rosterCache = await pullRoster(ROSTER_SHEET);
     store.set('roster', rosterCache);            // kept for the next run, should that pull fail
     refreshRosterList();
-    log(`roster: ${rosterCache.all.length} names`);
+    line.textContent = `roster updated — ${rosterCache.all.length} members`;
   } catch (e) {
     const saved = currentRoster().length;
-    if (!saved) throw new Error(`could not load the alliance roster (${e.message}) — check the connection and try again`);
-    log(`✗ could not update the roster (${e.message}) — using the saved copy, ${saved} names`);
+    if (!saved) {
+      line.textContent = '✗ could not load the roster';
+      throw new Error(`could not load the alliance roster (${e.message}) — check the connection and try again`);
+    }
+    line.textContent = `✗ could not update the roster (${e.message}) — using the saved copy, ${saved} members`;
   }
   return currentRoster();
 }
