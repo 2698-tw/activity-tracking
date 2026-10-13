@@ -1,8 +1,28 @@
+/**
+ * Kartz key holder — a Cloudflare Worker that keeps the Ollama Cloud key off the page.
+ *
+ * The static page sends its existing vision request to this Worker. The Worker translates
+ * that request into Ollama's native /api/chat format, adds the OLLAMA_API_KEY secret, and
+ * forwards it to Ollama Cloud. The browser never receives the API key.
+ *
+ * Required Cloudflare secret:
+ *   wrangler secret put OLLAMA_API_KEY
+ *
+ * The model is fixed to gemma4:31b by the page. The key is stored only in Cloudflare.
+ *
+ * The Base CP tab uses Gemini instead, through /api/gemini/<model>:
+ *   wrangler secret put GEMINI_API_KEY
+ */
+
+// Extra origins allowed to call this when the page is hosted somewhere else.
 const ALLOWED_ORIGINS = [
   'http://localhost:8731',
   'https://2698-tw.github.io',
-  'https://data-collection.jk06nm04.workers.dev/',
+  'https://data-extractor.jk06nm04.workers.dev',
 ];
+
+// Every player's power on every server, refreshed about every ten minutes (see api/global-cp).
+const GLOBAL_CP = 'https://www.topwarfandom.com/api/global-cp';
 
 // Ollama Cloud API. Authentication is supplied through the Authorization header below.
 const UPSTREAM = 'https://ollama.com/api/chat';
@@ -351,6 +371,22 @@ export default {
     });
 
     if (request.method !== 'POST') return reply({ error: 'POST only' }, 405);
+
+    // The Global CP list (topwarfandom.com), for the Base CP tab. That site does not let other
+    // pages read it, so it comes through here — passed on unchanged rather than filtered: it is
+    // 28 MB, more than a free-plan Worker has the time to sort through, and the page keeps its
+    // own server and alliance. Cloudflare keeps a copy for ten minutes, which is as often as the
+    // list itself changes, so repeated fetches do not go back to the site.
+    if (url.pathname.replace(/^\/+/, '') === 'api/global-cp') {
+      let up;
+      try {
+        up = await fetch(GLOBAL_CP, { cf: { cacheTtl: 600, cacheEverything: true } });
+      } catch (e) {
+        return reply({ error: 'the Global CP list could not be reached: ' + (e.message || e) }, 502);
+      }
+      if (!up.ok) return reply({ error: `the Global CP list refused: ${up.status}` }, 502);
+      return new Response(up.body, { headers: { ...cors, 'content-type': 'application/json' } });
+    }
 
     // Checked before the model route, which would otherwise take "append" for a model name.
     if (url.pathname.replace(/^\/+/, '') === 'api/append') {
