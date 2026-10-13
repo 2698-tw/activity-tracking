@@ -38,7 +38,6 @@ addEventListener('hashchange', () => { showTab(viewFromAddress()); scrollTo(0, 0
 showTab(viewFromAddress());
 
 /* setup and file */
-$('cpPull').onclick = async () => { await pullNow($('cpPull'), 'cpLog'); cpMode(); };
 $('cpDrop').onclick = () => $('cpFile').click();
 $('cpFile').onchange = e => cpPick(e.target.files[0]);
 ['dragover', 'dragenter'].forEach(ev => $('cpDrop').addEventListener(ev, e => {
@@ -361,8 +360,7 @@ $('cpGo').onclick = async () => {
   $('cpGo').disabled = true; $('cpOut').classList.add('hide');
   logEl = 'cpLog'; progEl = 'cpProg';
   try {
-    const roster = currentRoster();
-    if (!roster.length) throw new Error('No roster loaded — press Pull / Update Alliance Roster.');
+    const roster = await freshRoster();
     log('decoding video…'); setProg(0);
     const spentBefore = callProxy.spent || 0;
     const frames = await extractFrames(cpFile, +$('sens').value,
@@ -413,11 +411,6 @@ function cpMode() {
   // nothing to choose or fetch until the CP type says which
   $('cpVid').classList.toggle('hide', !typed || list);
   $('cpApi').classList.toggle('hide', !list);
-  // The roster's Pull button is for March CP; Base CP only needs it on a device that has never
-  // pulled one (its matching uses the same roster). Without the Setup step the steps lose their numbers.
-  const setup = /^[123]$/.test($('cpType').value) || (list && !currentRoster().length);
-  $('cpSetup').classList.toggle('hide', !setup);
-  document.querySelectorAll('#tab-cp .cpnum').forEach(n => n.classList.toggle('hide', !setup));
   if (!cpBusy) {
     $('cpFetch').disabled = !ally;
     $('cpFetch').textContent = ally === 'ALL4' ? 'Fetch all four alliances'
@@ -440,6 +433,7 @@ $('cpFetch').onclick = async () => {
   $('cpOut').classList.add('hide');
   logEl = 'cpLog';
   try {
+    await freshRoster();                 // the names below are matched against it
     log('fetching the Global CP list…');
     const r = await fetch(API_BASE + '/global-cp', { method: 'POST' });
     if (!r.ok) {

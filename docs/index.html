@@ -233,19 +233,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 
 <div id="tab-kartz">
 <section>
-  <h2>1 &middot; Setup <span id="setupState" class="pill p-new">not configured</span></h2>
-  <!-- The roster tab is fixed in the code rather than typed in on every device: everyone pulls
-       the same sheet, and a link box only invites a mistyped one. Hand-pasting went with it —
-       it existed for when there was no sheet to pull from, and there always is one now. So the
-       whole of setup is one list and one button. -->
-  <div class="row">
-    <button class="ghost" id="pull">Pull / Update Alliance Roster</button>
-  </div>
-  <p class="note" id="keyNote"></p>
-</section>
-
-<section>
-  <h2>2 &middot; Recording</h2>
+  <h2>1 &middot; Recording</h2>
   <div class="drop" id="drop">
     <strong>Choose or drop the screen recording</strong><br>
     <span id="fileName">on a phone this opens your camera roll</span>
@@ -296,7 +284,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 </section>
 
 <section id="out" class="hide">
-  <h2>3 &middot; Results</h2>
+  <h2>2 &middot; Results</h2>
   <div id="verdict"></div>
   <div class="tablewrap"><table id="tbl"></table></div>
   <div class="note" id="sendNote"></div>
@@ -312,16 +300,8 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 
 <!-- Base CP: the alliance member list, read into In-game Name and Base CP. Logic in cp.js. -->
 <div id="tab-cp" class="hide">
-<!-- Only for March CP: Base CP comes from the Global CP list and needs no roster. -->
-<section id="cpSetup" class="hide">
-  <h2>1 &middot; Setup <span id="cpSetupState" class="pill p-new">not configured</span></h2>
-  <div class="row">
-    <button class="ghost" id="cpPull">Pull / Update Alliance Roster</button>
-  </div>
-</section>
-
 <section>
-  <h2><span class="cpnum">2 &middot; </span>Member list</h2>
+  <h2>1 &middot; Member list</h2>
   <!-- What Alliance Rosters wants besides the extracted rows. Submitter and Alliance are the
        Kartz tab's own, kept in step between the tabs; the CP type starts empty on every visit. -->
   <div class="row">
@@ -369,7 +349,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 </section>
 
 <section id="cpOut" class="hide">
-  <h2><span class="cpnum">3 &middot; </span>Results</h2>
+  <h2>2 &middot; Results</h2>
   <div id="cpVerdict"></div>
   <div class="tablewrap"><table id="cpTbl"></table></div>
   <div class="note" id="cpSendNote"></div>
@@ -522,36 +502,29 @@ function wireSubmitter(inp) {
 }
 wireSubmitter($('submitter'));
 function refreshState() {
-  const names = currentRoster().length;
-  // one badge per tab, both saying the same thing about the one roster
-  for (const el of [$('setupState'), $('cpSetupState')].filter(Boolean)) {
-    el.className = 'pill ' + (names ? 'p-ok' : 'p-new');
-    el.textContent = names ? `${names} roster names` : 'not configured';
-  }
-  $('go').disabled = !(names && videoFile);
+  // the roster is pulled when the run starts, so a recording is all a run needs
+  $('go').disabled = !videoFile;
   // cp.js loads after this script, so its file may not exist yet on the first call
-  if ($('cpGo')) $('cpGo').disabled = !(names && typeof cpFile !== 'undefined' && cpFile);
+  if ($('cpGo')) $('cpGo').disabled = !(typeof cpFile !== 'undefined' && cpFile);
 }
 
 // Both tabs have a Pull button, for the one roster; each reports in its own tab's log.
-$('pull').onclick = () => pullNow($('pull'), 'log');
-async function pullNow(btn, logTo) {
-  const logWas = logEl; logEl = logTo;
-  btn.disabled = true;
-  const was = btn.textContent; btn.textContent = 'Pulling…';
-  let ok = false;
+// The roster is pulled at the start of every run — Extract on either tab, Fetch on Base CP — so a
+// run always matches against the sheet as it is now, and nobody has to remember a Pull button.
+// When the pull fails (no signal, Google slow) the copy saved by the last good pull is used and
+// the log says so; only a device that has never pulled one has nothing to fall back on.
+async function freshRoster() {
   try {
     rosterCache = await pullRoster(ROSTER_SHEET);
-    store.set('roster', rosterCache);            // cached so a later run works offline
+    store.set('roster', rosterCache);            // kept for the next run, should that pull fail
+    refreshRosterList();
     log(`roster: ${rosterCache.all.length} names`);
-    ok = true;
-  } catch (e) { log('✗ ' + e.message); }
-  btn.textContent = was; btn.disabled = false;
-  logEl = logWas;
-  if (ok) {
-    flash(btn, `${rosterCache.all.length} rows ✓`);
+  } catch (e) {
+    const saved = currentRoster().length;
+    if (!saved) throw new Error(`could not load the alliance roster (${e.message}) — check the connection and try again`);
+    log(`✗ could not update the roster (${e.message}) — using the saved copy, ${saved} names`);
   }
-  refreshState();
+  return currentRoster();
 }
 
 /* ---------------- roster ---------------- */
@@ -2082,9 +2055,8 @@ let rows = [], index = [], skipIndex = [], aliases = {};
 $('go').onclick = async () => {
   $('go').disabled = true; $('out').classList.add('hide');
   try {
-    const roster = currentRoster();
-    if (!roster.length) throw new Error('No roster loaded — paste the sheet link and press Pull roster.');
     startVideoUpload(videoFile);       // normally already under way since the file was chosen
+    const roster = await freshRoster();
     index = buildIndex(roster);
     skipIndex = buildIndex(skippedRoster());
     aliases = store.get('aliases') || {};
