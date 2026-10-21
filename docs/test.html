@@ -295,13 +295,13 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
     <div><label for="gvModel">Model</label>
       <select id="gvModel"><option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option></select></div>
     <div><label for="gvFps">Frames a second (whole video)</label>
-      <select id="gvFps"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>6</option></select></div>
+      <select id="gvFps"><option>0.5</option><option selected>1</option><option>2</option><option>3</option><option>4</option><option>6</option></select></div>
     <div><label for="gvRes">Detail per frame</label>
       <select id="gvRes"><option value="MEDIA_RESOLUTION_MEDIUM">medium</option><option value="MEDIA_RESOLUTION_HIGH" selected>high</option></select></div>
   </div>
   <div class="row" style="align-items:end">
     <div><label><input type="checkbox" id="gvGaps" checked style="width:auto"> Re-read missing ranks</label>
-      <select id="gvGapFps"><option>6</option><option selected>10</option><option>15</option></select></div>
+      <select id="gvGapFps"><option>2</option><option selected>4</option><option>6</option><option>10</option></select></div>
     <div><button class="ghost" id="gvModels" style="margin-top:10px">Load the models this key can use</button>
       <div class="note" id="gvModelNote"></div></div>
   </div>
@@ -2801,6 +2801,6 @@ loadSetup();
 </script>
 <script src="cp.js"></script>
 <!-- TEST ONLY: Kartz read from the whole video by Gemini -->
-<script src="video.js"></script>
+<script src="video.js?v=3"></script>
 </body>
 </html>

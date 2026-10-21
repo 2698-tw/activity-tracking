@@ -15,7 +15,7 @@
 //   4. Everything after the reading is the live page's own: the foreign-row filter, consolidation
 //      by rank, roster matching and the table.
 
-const GV = { model: MODEL, fps: 2, res: 'MEDIA_RESOLUTION_HIGH', gaps: true, gapFps: 10 };
+const GV = { model: MODEL, fps: 1, res: 'MEDIA_RESOLUTION_HIGH', gaps: true, gapFps: 4 };
 const gvEl = id => document.getElementById(id);
 const gvSleep = ms => new Promise(r => setTimeout(r, ms));
 const gvPost = async (path, body) => {
@@ -80,6 +80,15 @@ startVideoUpload = f => {
 // A test run is not a real one: the recording is not copied on to the Drive folder from this page.
 saveAfterSend = async () => {};
 
+// The recording's length, for checking the foot of the list.
+const gvDuration = f => new Promise(ok => {
+  const v = document.createElement('video');
+  v.preload = 'metadata'; v.muted = true;
+  v.onloadedmetadata = () => { ok(isFinite(v.duration) ? v.duration : 0); URL.revokeObjectURL(v.src); };
+  v.onerror = () => ok(0);
+  v.src = URL.createObjectURL(f);
+});
+
 // Gemini works through an uploaded video before it can be read; wait until it says ACTIVE.
 async function gvReady(g) {
   for (let i = 0; i < 160; i++) {
@@ -110,7 +119,8 @@ function gvPrompt(only) {
     .replace('"points": <int>, "img": <int>}', '"points": <int>, "t": "<MM:SS>"}')
     .replace('- "img" is which image the row was read from, counting every image in this request from 1.',
              '- "t" is the moment in the video, as MM:SS (for example 00:14), at which you read this row.');
-  if (only) p += `\n- This is a short clip from the middle of the list. Report ONLY ranks ${only[0]} to ${only[1]}; ignore every other row.`;
+  if (only) p += `\n- These are short clips from the list, in order. Report ONLY these ranks: ${only}. Ignore every other row.`
+    + `\n- "t" for a row in a clip is still the moment in the WHOLE video, as MM:SS.`;
   return p;
 }
 const gvSec = t => {
@@ -118,12 +128,13 @@ const gvSec = t => {
   return m ? (+(m[1] || 0)) * 60 + +m[2] : null;
 };
 const gvSecs = s => `${Math.max(0, s).toFixed(1)}s`;
-async function gvAsk(g, meta, only, usage) {
+async function gvAsk(g, metas, only, usage) {
   const sheet = rosterSheet(currentRoster());
+  // one part per clip of the same uploaded video: the whole video, or the stretches to re-read
   const parts = [
     { text: gvPrompt(only) },
     ...(sheet ? [{ inline_data: { mime_type: 'image/jpeg', data: sheet } }] : []),
-    { file_data: { mime_type: g.mimeType, file_uri: g.uri }, videoMetadata: meta },
+    ...[].concat(metas).map(meta => ({ file_data: { mime_type: g.mimeType, file_uri: g.uri }, videoMetadata: meta })),
   ];
   const config = {
     temperature: 0, maxOutputTokens: 32768, seed: 7,
@@ -156,7 +167,7 @@ async function gvAsk(g, meta, only, usage) {
 }
 
 /* 3. check, and read only what is missing again */
-function gvGaps(read) {
+function gvGaps(read, duration) {
   const at = new Map();                     // rank -> the moments it was read
   for (const r of read) {
     const s = gvSec(r.t);
@@ -176,6 +187,12 @@ function gvGaps(read) {
     gaps.push({ from: k, to: e, start: Math.max(0, Math.min(t0, t1) - 1), end: Math.max(t0, t1) + 1 });
     k = e;
   }
+  // The foot of the list: ranks after the last one read leave no hole to notice. If the last rank
+  // was read well before the video ends, the rest of the video is read again for anything below it.
+  // Recordings usually end a few seconds after the last row, as the list is closed, so on its own
+  // that only earns a request when the gap is long; alongside other gaps it rides along for free.
+  const lastT = max ? Math.max(...at.get(max)) : 0, after = duration ? duration - lastT : 0;
+  if ((gaps.length && after > 1) || after > 5) gaps.push({ from: max + 1, to: null, start: Math.max(0, lastT - 1), end: duration });
   return { gaps, max, seen: at.size };
 }
 
@@ -220,16 +237,19 @@ $('go').onclick = async () => {
     log(`reading the video at ${GV.fps} frame(s) a second with ${GV.model}…`); setProg(0.3);
     let read = await gvAsk(g, { fps: GV.fps }, null, usage);
     const tRead = Date.now();
-    const first = gvGaps(read);
-    let filled = 0;
+    const first = gvGaps(read, await gvDuration(videoFile));
+    let filled = 0, tail = 0;
     if (GV.gaps && first.gaps.length) {
-      log(`${first.gaps.length} stretch(es) missing — reading just those again at ${GV.gapFps} frames a second…`); setProg(0.7);
-      const extra = await Promise.all(first.gaps.map(gp =>
-        gvAsk(g, { fps: GV.gapFps, startOffset: gvSecs(gp.start), endOffset: gvSecs(gp.end) }, [gp.from, gp.to], usage)
-          .catch(e => { log('✗ re-read failed: ' + e.message); return []; })));
-      const want = new Set(first.gaps.flatMap(gp => Array.from({ length: gp.to - gp.from + 1 }, (_, i) => gp.from + i)));
-      const got = extra.flat().filter(r => want.has(r.rank));
-      filled = new Set(got.map(r => r.rank)).size;
+      // every stretch in one request, as clips of the same video, so the prompt is paid for once
+      const holes = first.gaps.filter(gp => gp.to != null);
+      log(`${holes.length} stretch(es) missing${first.gaps.length > holes.length ? ', and the foot of the list to check' : ''}`
+          + ` — reading just those again at ${GV.gapFps} frames a second…`); setProg(0.7);
+      const only = first.gaps.map(gp => gp.to == null ? `any rank after ${gp.from - 1}` : gp.from === gp.to ? `${gp.from}` : `${gp.from} to ${gp.to}`).join(', ');
+      const got = (await gvAsk(g, first.gaps.map(gp => ({ fps: GV.gapFps, startOffset: gvSecs(gp.start), endOffset: gvSecs(gp.end) })), only, usage)
+        .catch(e => { log('✗ re-read failed: ' + e.message); return []; }))
+        .filter(r => first.gaps.some(gp => r.rank >= gp.from && (gp.to == null || r.rank <= gp.to)));
+      filled = new Set(got.filter(r => r.rank <= first.max).map(r => r.rank)).size;
+      tail = new Set(got.filter(r => r.rank > first.max).map(r => r.rank)).size;
       read = read.concat(got);
     }
     const sightings = dropForeignRows(read);
@@ -254,6 +274,7 @@ $('go').onclick = async () => {
     const summary = `${GV.model} · ${GV.fps} fps · ${GV.res.replace('MEDIA_RESOLUTION_', '').toLowerCase()} detail — `
       + `${rows.length} players · first pass found ${first.seen} of ${first.max} ranks`
       + (GV.gaps && missingBefore ? `, the re-read filled ${filled} of ${missingBefore}` : '')
+      + (tail ? `, and found ${tail} more at the foot of the list` : '')
       + ` · ${usage.total.toLocaleString()} tokens in ${usage.requests} request(s) (prompt ${usage.prompt.toLocaleString()}, `
       + `cached ${usage.cached.toLocaleString()}, output ${usage.output.toLocaleString()})`
       + ` · ${s(Date.now() - t0)} in all: upload wait ${s(tUp - t0)}, processing ${s(tReady - tUp)}, `
