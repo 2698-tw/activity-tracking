@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>2698 Data Extractor — TEST (stitching)</title>
+<title>2698 Data Extractor — TEST (Gemini video)</title>
 <!-- the Server 2698 badge: browser tab, Home Screen, and beside the title -->
 <link rel="icon" type="image/png" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
@@ -197,7 +197,6 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .hcard .go{background:#fff;color:#7b1a31}
 .hcard.cp .go{color:#c2410c}
 .hcard .open{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.55);color:#fff}
-#stImgs img{height:220px;border:1px solid var(--line);border-radius:6px;background:#fff}
 </style>
 </head>
 <body>
@@ -285,28 +284,29 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   <div class="strip" id="strip"></div>
 </section>
 
-<!-- TEST ONLY: the stitched pipeline's settings and a preview of what it sends (see stitch.js). -->
-<section id="stTest">
-  <h2>Test · stitching <span class="pill p-new">test page</span></h2>
-  <p class="note" style="margin:0 0 8px">Extract on this page reads the recording by stitching it into one long
-    picture instead of sending 192 frame slices. <strong>Preview</strong> shows what would be sent without
-    sending anything. The recording is not saved to Drive from this page.</p>
+<!-- TEST ONLY: Kartz read from the whole video by Gemini (see video.js). -->
+<section id="gvTest">
+  <h2>Test · Gemini reads the video <span class="pill p-new">test page</span></h2>
+  <p class="note" style="margin:0 0 8px">Choosing a recording above sends it straight to Gemini (then to Backblaze in the
+    background). Extract has Gemini watch the whole video, checks the ranks for gaps and re-reads only those stretches.
+    Nothing is saved to the Drive folder from this page, but <strong>Send to sheet still writes real rows</strong>.</p>
+  <div class="note" id="gvUpLog" style="margin:0 0 8px">no recording chosen yet</div>
   <div class="row">
-    <div><label>Rows per piece <b id="stRowsV">8</b></label><input id="stRows" type="range" min="3" max="16" value="8"></div>
-    <div><label>Pieces per image <b id="stColsV">2</b></label><input id="stCols" type="range" min="1" max="4" value="2"></div>
-    <div><label>Images per request <b id="stPerV">12</b></label><input id="stPer" type="range" min="1" max="20" value="12"></div>
+    <div><label for="gvModel">Model</label>
+      <select id="gvModel"><option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option></select></div>
+    <div><label for="gvFps">Frames a second (whole video)</label>
+      <select id="gvFps"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>6</option></select></div>
+    <div><label for="gvRes">Detail per frame</label>
+      <select id="gvRes"><option value="MEDIA_RESOLUTION_MEDIUM">medium</option><option value="MEDIA_RESOLUTION_HIGH" selected>high</option></select></div>
   </div>
-  <div class="row">
-    <div><label>Rank column from <b id="stRankLV">0</b>% to <b id="stRankRV">20</b>%</label>
-      <input id="stRankL" type="range" min="0" max="40" value="0"><input id="stRankR" type="range" min="5" max="50" value="20"></div>
-    <div><label>Name column from <b id="stTextLV">36</b>% to <b id="stTextRV">92</b>%</label>
-      <input id="stTextL" type="range" min="10" max="70" value="36"><input id="stTextR" type="range" min="40" max="100" value="92"></div>
-    <div><label for="stRate">Frames looked at per second of video</label>
-      <select id="stRate"><option>8</option><option selected>12</option><option>16</option><option>24</option></select></div>
+  <div class="row" style="align-items:end">
+    <div><label><input type="checkbox" id="gvGaps" checked style="width:auto"> Re-read missing ranks</label>
+      <select id="gvGapFps"><option>6</option><option selected>10</option><option>15</option></select></div>
+    <div><button class="ghost" id="gvModels" style="margin-top:10px">Load the models this key can use</button>
+      <div class="note" id="gvModelNote"></div></div>
   </div>
-  <button class="ghost" id="stPreview" style="margin-top:10px">Preview the images</button>
-  <div class="note" id="stStats" style="margin-top:8px"></div>
-  <div id="stImgs" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
+  <h2 style="margin-top:14px">Runs so far</h2>
+  <ol id="gvRuns" class="note" style="margin:0;padding-left:18px"></ol>
 </section>
 
 
@@ -2800,7 +2800,7 @@ $('toBottom').onclick = () => scrollTo({ top: document.documentElement.scrollHei
 loadSetup();
 </script>
 <script src="cp.js"></script>
-<!-- TEST ONLY: Kartz extraction by stitching -->
-<script src="stitch.js"></script>
+<!-- TEST ONLY: Kartz read from the whole video by Gemini -->
+<script src="video.js"></script>
 </body>
 </html>
