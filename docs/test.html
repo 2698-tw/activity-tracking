@@ -3,24 +3,65 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Kartz Extractor — TEST</title>
+<title>2698 Data Extractor — TEST (stitching)</title>
+<!-- the Server 2698 badge: browser tab, Home Screen, and beside the title -->
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&display=swap">
+<script>
+// The saved theme, applied before the first paint so the page never flashes the other one.
+try { const t = JSON.parse(localStorage.getItem('kartz.theme'));
+      if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
+// No #kartz or #cp in the address: the home page, shown from the first paint (cp.js takes over).
+if (!/^#(kartz|cp)$/.test(location.hash)) document.documentElement.classList.add('athome');
+</script>
 <style>
+/* Light by default, dark when the device prefers it — unless the toggle by the title has chosen,
+   which sets data-theme on <html> and is remembered per device. */
 :root{
   --bg:#f4f5f8; --panel:#fff; --ink:#15181f; --muted:#666e7d; --line:#dfe3ea;
   --accent:#3b5bdb; --ok:#2b8a3e; --warn:#c26a00; --bad:#c92a2a;
   --okbg:#e9f7ed; --warnbg:#fff4e2; --badbg:#fdecec;
+  color-scheme:light;
 }
-@media (prefers-color-scheme:dark){:root{
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#12141a; --panel:#1a1d25; --ink:#e8eaef; --muted:#98a0b0; --line:#2b303c;
   --accent:#748ffc; --ok:#69db7c; --warn:#ffc078; --bad:#ff8787;
   --okbg:#17301e; --warnbg:#33270f; --badbg:#361a1a;
+  color-scheme:dark;
 }}
+:root[data-theme="dark"]{
+  --bg:#12141a; --panel:#1a1d25; --ink:#e8eaef; --muted:#98a0b0; --line:#2b303c;
+  --accent:#748ffc; --ok:#69db7c; --warn:#ffc078; --bad:#ff8787;
+  --okbg:#17301e; --warnbg:#33270f; --badbg:#361a1a;
+  color-scheme:dark;
+}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
   font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
   padding:16px;padding-bottom:64px}
 .wrap{max-width:960px;margin:0 auto}
 h1{font-size:19px;margin:0 0 2px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
+.top h1{margin:0}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand img{width:36px;height:36px;border-radius:9px;flex:none}
+/* on a narrow phone the title gives way, not the icon or the toggle */
+.brand h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+button.themebtn{width:auto;flex:none;padding:7px;line-height:0;background:transparent;color:var(--ink);
+  border:1px solid var(--line);border-radius:999px}
+.themebtn svg{width:18px;height:18px}
+/* Jump to top / bottom: bottom left, small, and only while the page is being scrolled — they fade
+   out after a moment's stillness, so on a phone they never sit over the rows being read. */
+.jump{position:fixed;z-index:40;left:max(12px, env(safe-area-inset-left));
+  bottom:max(12px, env(safe-area-inset-bottom));display:flex;gap:6px;
+  opacity:0;transform:translateY(8px);pointer-events:none;transition:opacity .2s ease, transform .2s ease}
+.jump.on{opacity:1;transform:none;pointer-events:auto}
+.jump button{width:auto;padding:6px 12px;font-size:12px;font-weight:500;border-radius:999px;
+  background:var(--panel);color:var(--ink);border:1px solid var(--line);box-shadow:0 2px 10px rgba(0,0,0,.18)}
+.jump button[hidden]{display:none}
 .sub{color:var(--muted);font-size:13px;margin:0 0 18px}
 section{background:var(--panel);border:1px solid var(--line);border-radius:12px;
   padding:14px 16px;margin-bottom:12px}
@@ -56,7 +97,7 @@ table{border-collapse:collapse;width:100%;font-size:13px;min-width:600px}
 th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
   color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
 td{padding:5px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
-tr.ok td:nth-child(3),tr.ok td:nth-child(4){color:var(--ok)}
+#tbl tr.ok td:nth-child(3),#tbl tr.ok td:nth-child(4),#cpTbl tr.ok td:nth-child(3){color:var(--ok)}
 tr.new{background:var(--warnbg)}
 .pill{font-size:11px;padding:2px 7px;border-radius:20px;font-weight:600;white-space:nowrap}
 .p-ok{background:var(--okbg);color:var(--ok)}
@@ -65,16 +106,30 @@ tr.new{background:var(--warnbg)}
 .pickbox{padding:5px 8px;font-size:13px;min-width:170px}
 .named{color:var(--ok)}
 .asdrawn{color:var(--ink)}
-.pencil{background:none;border:0;color:var(--muted);cursor:pointer;font-size:13px;
-  padding:0 4px;width:auto;line-height:1;opacity:.5}
-.pencil:hover{opacity:1;color:var(--accent)}
+/* the edit button on every results table: a soft blue "✎ Edit" pill */
+/* the name sits in a fixed width so every row's Edit pill lines up in one column; a longer name is
+   cut short with … and shown in full on hover */
+.nmtext{display:inline-block;width:12em;vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+button.pencil{display:inline-flex;align-items:center;gap:4px;width:auto;margin-left:12px;padding:3px 10px;vertical-align:middle;
+  border:0;border-radius:999px;font-size:12px;font-weight:600;line-height:1.4;cursor:pointer;
+  background:color-mix(in srgb, var(--accent) 12%, transparent);color:var(--accent)}
+button.pencil:hover{background:color-mix(in srgb, var(--accent) 20%, transparent)}
+button.pencil:not(:disabled):active{filter:none}
+/* the name box while editing, with its "✓ Done" pill tucked into the right-hand end */
+.field{position:relative;display:inline-block;vertical-align:middle}
+.field .pickbox{padding-right:78px}
+button.keepbtn{position:absolute;top:50%;right:4px;transform:translateY(-50%);width:auto;margin:0;padding:3px 10px;
+  border:0;border-radius:999px;font-size:12px;font-weight:600;line-height:1.4;cursor:pointer;
+  background:color-mix(in srgb, var(--accent) 12%, transparent);color:var(--accent)}
+button.keepbtn:hover{background:color-mix(in srgb, var(--accent) 20%, transparent)}
+button.keepbtn:not(:disabled):active{filter:none;transform:translateY(-50%)}
 button.ghost.tickok{color:var(--ok)}
 /* Selects inherit width:100% from the base control rule, which made these stretch across a
    column sized for the header rather than for "698S". Sized to their content instead, with a
    floor so the four codes line up, and a ceiling so the one row carrying "z1.Transferred"
    widens a little rather than setting the width for all of them. */
 .allipick{width:auto;min-width:88px;max-width:150px;padding:7px 9px}
-#tbl tr.drop{opacity:.4}
+#tbl tr.drop,#cpTbl tr.drop{opacity:.4}
 .menu{position:fixed;z-index:50;background:var(--panel);border:1px solid var(--line);
   border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.16);max-height:210px;overflow-y:auto;
   min-width:200px;padding:4px 0}
@@ -93,55 +148,114 @@ td select{padding:4px 6px;font-size:12px;min-width:150px}
   font-size:13px;margin-top:10px}
 details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .hide{display:none}
+/* the link under Send: only after a send. Styled here, not inline, so .hide can still hide it —
+   an inline display:block outranked the class and showed the link before anything was sent. */
+.sheetlink{display:block;text-align:center;font-size:13px;color:var(--accent);margin-top:6px}
+.sheetlink.hide{display:none}
+.homelink{display:inline-block;margin:0 0 12px;color:var(--accent);text-decoration:none;font-weight:600;font-size:14px}
+.homelink:hover{text-decoration:underline}
+.edited{margin-left:6px}
+/* the Global CP credit; Nass's name in his site's heading font (Orbitron) */
+.source{margin:12px 0 0;font-size:13px;color:var(--muted)}
+.source a{color:var(--accent);text-decoration:none}
+.nass{font-family:Orbitron,sans-serif;font-weight:600;letter-spacing:.06em;color:var(--ink)}
+
+/* ---------------- home page ---------------- */
+/* The landing view: a golden-hour banner with Pepe holding the 2698 logo, the title, then one card
+   per extractor. Each extractor keeps its own header and tabs as before; the home page is the
+   address with no #, the extractors are #kartz and #cp. */
+#home{margin:-16px -16px 0}
+.athome #home{display:block}
+.athome #app{display:none}
+.homeband{position:relative;overflow:hidden;padding:56px 16px 0;
+  background:linear-gradient(180deg,#fff3e2 0%,#fcd9b8 50%,#f6a98b 100%)}
+:root[data-theme="dark"] .homeband{background:linear-gradient(180deg,#3a1d2c,#6e2c3a 55%,#b9524a)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .homeband{background:linear-gradient(180deg,#3a1d2c,#6e2c3a 55%,#b9524a)}}
+.homeband .themebtn{position:absolute;top:16px;right:max(16px, env(safe-area-inset-right));color:#2a1024;border-color:rgba(42,16,36,.25)}
+:root[data-theme="dark"] .homeband .themebtn{color:#fff;border-color:rgba(255,255,255,.35)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .homeband .themebtn{color:#fff;border-color:rgba(255,255,255,.35)}}
+.pepe{position:relative;width:300px;max-width:72vw;aspect-ratio:500/499;margin:0 auto}
+/* the sign's board is see-through in the picture; the logo sits behind it, trimmed top and
+   bottom so that both SERVER and 2698 show */
+.pepe .sign{position:absolute;left:.8%;top:2%;width:98.4%;height:44.5%;overflow:hidden;background:#2a1024}
+.pepe .sign img{width:100%;height:100%;object-fit:cover;object-position:50% 36%;display:block}
+.pepe .frog{position:relative;width:100%;height:100%;display:block}
+.homebody{padding:0 16px 64px}
+.hometitle{font-size:24px;letter-spacing:-.3px;margin:18px 0 14px}
+.homecards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:640px){.homecards{grid-template-columns:1fr;gap:12px}.hometitle{text-align:center;font-size:22px}}
+.hcard{position:relative;overflow:hidden;border-radius:14px;padding:20px 18px 16px;color:#fff;
+  display:flex;flex-direction:column;gap:18px;background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b)}
+.hcard.cp{background:linear-gradient(135deg,#c31441,#f26b3a 55%,#f5b04c)}
+.hcard::after{content:"";position:absolute;right:-40px;top:-40px;width:140px;height:140px;border-radius:50%;
+  background:rgba(255,255,255,.12);pointer-events:none}
+.hcard b{position:relative;font-size:21px}
+.hcard .acts{position:relative;display:flex;gap:8px}
+.hcard .acts a{flex:1;text-align:center;border-radius:8px;padding:9px 6px;font-weight:700;text-decoration:none;white-space:nowrap;
+  transition:transform .06s ease, filter .12s ease}
+.hcard .acts a:active{transform:translateY(1px);filter:brightness(.9)}
+.hcard .go{background:#fff;color:#7b1a31}
+.hcard.cp .go{color:#c2410c}
+.hcard .open{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.55);color:#fff}
+#stImgs img{height:220px;border:1px solid var(--line);border-radius:6px;background:#fff}
 </style>
 </head>
 <body>
-<div class="wrap">
-<h1>Kartz Extractor</h1>
-<!-- The staging copy: same Worker, same /api, same sheet. Once it has proved itself, copy it
-     over index.html and delete this banner. -->
-<div class="warnbox" style="margin-bottom:12px"><strong>TEST PAGE</strong> — Send to sheet
-  writes real rows to <em>Input-RawData</em>. The live page is <a href="./">index.html</a>.</div>
-
-<section>
-  <h2>1 &middot; Setup <span id="setupState" class="pill p-new">not configured</span></h2>
-  <!-- The roster tab is fixed in the code rather than typed in on every device: everyone pulls
-       the same sheet, and a link box only invites a mistyped one. Hand-pasting went with it —
-       it existed for when there was no sheet to pull from, and there always is one now. So the
-       whole of setup is one list and one button. -->
-  <div class="row">
-    <button class="ghost" id="pull">Pull / Update Alliance Roster</button>
+<!-- Home: the landing page. Kartz and Base CP open from here (#kartz, #cp); logic in cp.js. -->
+<div id="home" class="hide">
+  <div class="homeband">
+    <button type="button" class="themebtn" id="themeHome"></button>
+    <div class="pepe">
+      <div class="sign"><img src="icon.png" alt="Server 2698"></div>
+      <img class="frog" src="pepe-sign.png" alt="">
+    </div>
   </div>
-  <p class="note" id="keyNote"></p>
-</section>
+  <div class="homebody wrap">
+    <h1 class="hometitle">2698 Data Extractor</h1>
+    <div class="homecards">
+      <div class="hcard"><b>Kartz ranking</b>
+        <div class="acts"><a class="go" href="#kartz">Extract</a><a class="open" href="https://docs.google.com/spreadsheets/d/1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE/edit#gid=1243524383" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
+      <div class="hcard cp"><b>Base and March CP</b>
+        <div class="acts"><a class="go" href="#cp">Extract</a><a class="open" href="https://docs.google.com/spreadsheets/d/1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8/edit#gid=237521468" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
+    </div>
+  </div>
+</div>
 
+<div class="wrap" id="app">
+<header class="top">
+  <div class="brand">
+    <img src="icon.png" alt="" width="36" height="36">
+    <h1>2698 Data Extractor</h1>
+  </div>
+  <button type="button" class="themebtn" id="theme"></button>
+</header>
+
+<a class="homelink" id="homeLink" href="./">← Home</a>
+
+<div id="tab-kartz">
 <section>
-  <h2>2 &middot; Recording</h2>
+  <h2>1 &middot; Recording</h2>
   <div class="drop" id="drop">
     <strong>Choose or drop the screen recording</strong><br>
     <span id="fileName">on a phone this opens your camera roll</span>
   </div>
   <input id="file" type="file" accept="video/*" class="hide">
   <div class="row" style="margin-top:12px">
-    <div>
-      <label for="datestr">Load date</label>
-      <input id="datestr" type="date">
-    </div>
-    <!-- These four are what Input-RawData wants besides the extracted rows. Remembered per
-         device, because the same person usually submits the same alliance run after run. -->
+    <!-- What Input-RawData wants besides the extracted rows. The load date and month are not
+         asked for: both are stamped from the clock at the moment the rows are sent. These three
+         are remembered per device, because the same person usually submits the same alliance. -->
     <div>
       <label for="submitter">Submitter</label>
-      <select id="submitter">
-        <option value="">Choose…</option>
-        <option>star</option><option>glitter</option><option>cein</option>
-        <option>peach</option><option>artu</option><option>mimi</option>
-      </select>
+      <!-- free text, so a new submitter needs no code change; the usual names drop down -->
+      <input id="submitter" type="text" placeholder="Type or choose…" autocomplete="off"
+             spellcheck="false">
     </div>
     <div>
       <label for="alliance">Alliance</label>
       <select id="alliance">
         <option value="">Choose…</option>
         <option>698S</option><option>698N</option><option>698W</option><option>698C</option>
+        <option>Other</option>
       </select>
     </div>
     <div>
@@ -166,22 +280,121 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   </div>
   <button id="go" style="margin-top:12px" disabled>Extract</button>
   <div class="bar"><i id="prog"></i></div>
+  <div class="log" id="rosterLog"></div>
   <div class="log" id="log"></div>
   <div class="strip" id="strip"></div>
 </section>
 
+<!-- TEST ONLY: the stitched pipeline's settings and a preview of what it sends (see stitch.js). -->
+<section id="stTest">
+  <h2>Test · stitching <span class="pill p-new">test page</span></h2>
+  <p class="note" style="margin:0 0 8px">Extract on this page reads the recording by stitching it into one long
+    picture instead of sending 192 frame slices. <strong>Preview</strong> shows what would be sent without
+    sending anything. The recording is not saved to Drive from this page.</p>
+  <div class="row">
+    <div><label>Rows per piece <b id="stRowsV">8</b></label><input id="stRows" type="range" min="3" max="16" value="8"></div>
+    <div><label>Pieces per image <b id="stColsV">2</b></label><input id="stCols" type="range" min="1" max="4" value="2"></div>
+    <div><label>Images per request <b id="stPerV">12</b></label><input id="stPer" type="range" min="1" max="20" value="12"></div>
+  </div>
+  <div class="row">
+    <div><label>Rank column from <b id="stRankLV">0</b>% to <b id="stRankRV">20</b>%</label>
+      <input id="stRankL" type="range" min="0" max="40" value="0"><input id="stRankR" type="range" min="5" max="50" value="20"></div>
+    <div><label>Name column from <b id="stTextLV">36</b>% to <b id="stTextRV">92</b>%</label>
+      <input id="stTextL" type="range" min="10" max="70" value="36"><input id="stTextR" type="range" min="40" max="100" value="92"></div>
+    <div><label for="stRate">Frames looked at per second of video</label>
+      <select id="stRate"><option>8</option><option selected>12</option><option>16</option><option>24</option></select></div>
+  </div>
+  <button class="ghost" id="stPreview" style="margin-top:10px">Preview the images</button>
+  <div class="note" id="stStats" style="margin-top:8px"></div>
+  <div id="stImgs" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
+</section>
+
+
 <section id="out" class="hide">
-  <h2>3 &middot; Results</h2>
+  <h2>2 &middot; Results</h2>
   <div id="verdict"></div>
   <div class="tablewrap"><table id="tbl"></table></div>
   <div class="note" id="sendNote"></div>
   <button id="send" style="margin-top:8px">Send to sheet</button>
+  <a id="sheetLink" class="sheetlink hide" target="_blank" rel="noopener">Open in Google Sheets ↗</a>
   <div class="row" style="margin-top:10px">
     <button class="ghost" id="copy">Copy for sheet</button>
     <button class="ghost" id="csv">Download CSV</button>
     <button class="ghost" id="learn">Remember my fixes</button>
   </div>
 </section>
+</div>
+
+<!-- Base CP: the alliance member list, read into In-game Name and Base CP. Logic in cp.js. -->
+<div id="tab-cp" class="hide">
+<section>
+  <h2>1 &middot; Member list</h2>
+  <!-- What Alliance Rosters wants besides the extracted rows. Submitter and Alliance are the
+       Kartz tab's own, kept in step between the tabs; the CP type starts empty on every visit. -->
+  <div class="row">
+    <div>
+      <label for="cpSubmitter">Submitter</label>
+      <input id="cpSubmitter" type="text" placeholder="Type or choose…" autocomplete="off"
+             spellcheck="false">
+    </div>
+    <div>
+      <label for="cpAlliance">Alliance</label>
+      <select id="cpAlliance">
+        <option value="">Choose…</option>
+        <option>698S</option><option>698N</option><option>698W</option><option>698C</option>
+        <option>Other</option>
+
+      </select>
+    </div>
+    <div>
+      <label for="cpType">CP type</label>
+      <select id="cpType">
+        <option value="">Choose…</option>
+        <option value="0">Base CP</option><option value="1">March 1 CP</option>
+        <option value="2">March 2 CP</option><option value="3">March 3 CP</option>
+      </select>
+    </div>
+  </div>
+  <!-- March CP: read from a recording of the member list. -->
+  <div id="cpVid">
+    <div class="drop" id="cpDrop" style="margin-top:12px">
+      <strong>Choose or drop the screen recording</strong><br>
+      <span id="cpFileName">the alliance member list, scrolled from top to bottom</span>
+    </div>
+    <input id="cpFile" type="file" accept="video/*" class="hide">
+    <button id="cpGo" style="margin-top:12px" disabled>Extract</button>
+    <div class="bar"><i id="cpProg"></i></div>
+  </div>
+  <!-- Base CP: no recording. Fetched from the Global CP list (topwarfandom.com) through the
+       Worker, and filtered to server 2698 and the chosen alliance. -->
+  <div id="cpApi" class="hide">
+    <p class="source">Source: <a href="https://www.topwarfandom.com" target="_blank" rel="noopener">topwarfandom.com</a> with permission from <span class="nass">Nass</span></p>
+    <button id="cpFetch" style="margin-top:12px" disabled>Choose an alliance first</button>
+  </div>
+  <div class="log" id="cpRosterLog"></div>
+  <div class="log" id="cpLog"></div>
+  <div class="strip" id="cpStrip"></div>
+</section>
+
+<section id="cpOut" class="hide">
+  <h2>2 &middot; Results</h2>
+  <div id="cpVerdict"></div>
+  <div class="tablewrap"><table id="cpTbl"></table></div>
+  <div class="note" id="cpSendNote"></div>
+  <button id="cpSend" style="margin-top:8px">Send to sheet</button>
+  <a id="cpSheetLink" class="sheetlink hide" target="_blank" rel="noopener">Open in Google Sheets ↗</a>
+  <div class="row" style="margin-top:10px">
+    <button class="ghost" id="cpCopy">Copy for sheet</button>
+    <button class="ghost" id="cpCsv">Download CSV</button>
+    <button class="ghost" id="cpLearn">Remember my fixes</button>
+  </div>
+</section>
+</div>
+</div>
+
+<div class="jump" id="jump">
+  <button type="button" id="toTop">↑ Top</button>
+  <button type="button" id="toBottom">↓ Bottom</button>
 </div>
 
 <script>
@@ -191,8 +404,11 @@ const $ = id => document.getElementById(id);
 // Shown on the page. Several people run this from their own phones and a browser can sit on
 // an open tab for days, so "it is still happening" and "it is fixed" are easy to say about
 // different builds. Bump it with any change worth telling apart from the one before.
-const BUILD = '2026-09-29-sheet-append';
-const MODEL = 'gemma4:31b-cloud';
+const BUILD = '2026-10-05-r2-staging';
+// Gemini, through the Worker's /api/gemini route where the key lives — the same paid key the
+// Base CP tab uses (4,000 requests and 4M tokens a minute). It was Ollama's gemma4:31b; that
+// route is still in the Worker, and switching back is this line and MODEL_BASE below.
+const MODEL = 'gemini-3.1-flash-lite';
 const FALLBACKS = [];        // one model, deliberately: a run either works or says why
 // This copy may be served from GitHub Pages, so its requests are
 // cross-origin and need the Worker's own address. On the workers.dev deployment of the same
@@ -200,6 +416,7 @@ const FALLBACKS = [];        // one model, deliberately: a run either works or s
 const API_BASE = location.hostname.endsWith('.workers.dev')
   ? '/api'
   : 'https://data-collection.jk06nm04.workers.dev/api';
+const MODEL_BASE = API_BASE + '/gemini';
 // The allowance is fifteen REQUESTS a minute and it does not care what they carry: sixteen
 // images in one request costs the same one-fifteenth as four images would. So the number of
 // images per request is derived from the work rather than fixed, sized so that the whole run
@@ -216,14 +433,40 @@ const API_BASE = location.hostname.endsWith('.workers.dev')
 // was a bad trade: 47 images to a request instead of 31 dropped the match rate from 91 of 129
 // to 67, for about 14,000 tokens. The model attends to a long batch worse than a short one,
 // and the tokens saved are not worth the reading lost.
-const REQ_CAP = 6, BATCH_MIN = 8, BATCH_MAX = 40;
-const batchSize = n => Math.min(BATCH_MAX, Math.max(BATCH_MIN, Math.ceil(n / REQ_CAP)));
+//
+// All of that was sizing for Gemini's allowance. On Ollama Cloud's free tier the binding limit is
+// how many requests it will run at once: six requests of ~32 images left together, most sat in
+// Ollama's queue ("stuck at batch 2 of 6") and the rest came back 429 and were waited out. So the
+// batch is now a fixed twelve images — a short batch is also read more carefully, as the note
+// above found — and at most PARALLEL of them are in flight at a time (see inTurn below).
+//
+// On the paid Gemini key neither limit binds, and what matters is the run's token total, which
+// should stay under 250,000 — images are most of it. So the batch size and the image detail are
+// set here from measurement (see the note on KARTZ), and every batch goes out at once.
+const PARALLEL = 2;                     // inTurn's default; the Kartz run passes its own
+// Measured on the 43-second, 153-player recording, 12 images a request, 13 requests:
+//   thinking low,     full detail    388k tokens, 76 s   153 players, 152 matched, 1 to confirm
+//   thinking minimal, full detail    281k tokens, 10 s   153 players, 149 matched, 4 to confirm
+//   thinking minimal, medium detail  194k tokens, 10 s   153 players, 150 matched, 3 to confirm
+// Every rank and every score was identical in all three; only a few stylised names differed.
+// "Low" thinking spent 104k tokens and a minute to settle two of them, so it is minimal, with
+// medium image detail to bring the run under the 250k budget. The names it leaves for you
+// (ŊŲƁĮ read as DUBI, a bare 🐼) are what Remember my fixes is for: fixed once, matched after.
+const KARTZ = {
+  batch: 12,
+  // merged into the request's generationConfig, over the defaults in callProxy
+  config: { thinkingConfig: { thinkingLevel: 'minimal' }, mediaResolution: 'MEDIA_RESOLUTION_MEDIUM' },
+};
+const batchSize = () => KARTZ.batch;
 
 /* ---------------- persistence ---------------- */
 // The one tab everybody pulls from. It was a text box on every device, which is a per-person
 // chance to paste the wrong link for something that has only ever had one right answer.
 const ROSTER_SHEET =
   'https://docs.google.com/spreadsheets/d/1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE/edit?gid=767166123';
+// Where Send to sheet writes: the same spreadsheet, the Input-RawData tab. Only used to link to it.
+const RAWDATA_TAB =
+  'https://docs.google.com/spreadsheets/d/1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE/edit#gid=1243524383';
 // The four alliances the sheet is actually organised around. Anything else in its Alliance
 // column — z3.?, z1.Transferred, a stray 698E — is a candidate for filtering out.
 const MAIN_ALLIANCES = ['698W', '698S', '698N', '698C'];
@@ -241,43 +484,83 @@ function loadSetup() {
   // the filter can be changed without pulling again.
   if (rosterCache && !rosterCache.all)
     rosterCache = { all: [...(rosterCache.active || []), ...(rosterCache.skipped || [])] };
-  $('datestr').value = store.get('datestr')  || new Date().toLocaleDateString('en-CA');
   for (const id of RUN_FIELDS) $(id).value = store.get(id) || '';
   refreshRosterList(); refreshState();
 }
 // Kept per device and saved as they change, so a phone that always submits for one person and
 // one alliance only ever needs the day picking.
 const RUN_FIELDS = ['submitter', 'alliance', 'kday'];
-for (const id of [...RUN_FIELDS, 'datestr'])
-  $(id).addEventListener('change', () => {
+for (const id of RUN_FIELDS)
+  // 'input' as well, so a typed submitter counts before the box is left
+  for (const ev of ['change', 'input']) $(id).addEventListener(ev, () => {
     store.set(id, $(id).value);
     // the table's Alliance column follows the run's alliance, and Send's readiness all four
     if (rows.length) render(lastRoster);
   });
+
+// The submitter box: typed freely, but focusing or clicking it drops down the usual names,
+// filtered by what is typed. Drawn with the same menu as the roster search in the results table.
+const SUBMITTERS = ['star', 'glitter', 'cein', 'peach', 'artu', 'mimi'];
+// Any submitter box: the Kartz tab's, and the Base CP tab's (see cp.js).
+function openSubmitters(inp = $('submitter')) {
+  if (!(inp instanceof HTMLInputElement)) inp = $('submitter');
+  closeMenu();
+  const q = inp.value.trim().toLowerCase();
+  // a box already holding one of the names shows them all, so it can be changed with one click
+  const hits = SUBMITTERS.includes(q) ? SUBMITTERS : SUBMITTERS.filter(n => n.includes(q));
+  if (!hits.length) return;
+  menuEl = document.createElement('div');
+  menuEl.className = 'menu';
+  menuEl.innerHTML = hits.map(n => `<div data-v="${esc(n)}">${esc(n)}</div>`).join('');
+  document.body.appendChild(menuEl);
+  menuEl.querySelectorAll('div[data-v]').forEach(d => d.onmousedown = ev => {
+    ev.preventDefault();
+    inp.value = d.dataset.v;
+    closeMenu();
+    inp.dispatchEvent(new Event('change'));
+  });
+  menuOwner = inp;
+  placeMenu(inp);
+}
+function wireSubmitter(inp) {
+  inp.onfocus = () => openSubmitters(inp);
+  inp.onclick = () => { if (!menuEl) openSubmitters(inp); };
+  inp.addEventListener('input', () => openSubmitters(inp));
+  inp.onkeydown = e => { if (e.key === 'Escape' || e.key === 'Enter') closeMenu(); };
+}
+wireSubmitter($('submitter'));
 function refreshState() {
-  const names = currentRoster().length;
-  $('setupState').className = 'pill ' + (names ? 'p-ok' : 'p-new');
-  $('setupState').textContent = names ? `${names} roster names` : 'not configured';
-  $('go').disabled = !(names && videoFile);
+  // the roster is pulled when the run starts, so a recording is all a run needs
+  $('go').disabled = !videoFile;
+  // cp.js loads after this script, so its file may not exist yet on the first call
+  if ($('cpGo')) $('cpGo').disabled = !(typeof cpFile !== 'undefined' && cpFile);
 }
 
-$('pull').onclick = async () => {
-  $('pull').disabled = true;
-  const was = $('pull').textContent; $('pull').textContent = 'Pulling…';
-  let ok = false;
+// Both tabs have a Pull button, for the one roster; each reports in its own tab's log.
+// The roster is pulled at the start of every run — Extract on either tab, Fetch on Base CP — so a
+// run always matches against the sheet as it is now, and nobody has to remember a Pull button.
+// When the pull fails (no signal, Google slow) the copy saved by the last good pull is used and
+// the log says so; only a device that has never pulled one has nothing to fall back on.
+// Its progress has a line of its own under the button, above the run's log, so "roster updated"
+// stays in view for the whole run instead of being overwritten by the next step.
+async function freshRoster() {
+  const line = $(logEl === 'cpLog' ? 'cpRosterLog' : 'rosterLog');
+  line.textContent = 'pulling roster data…';
   try {
     rosterCache = await pullRoster(ROSTER_SHEET);
-    store.set('roster', rosterCache);            // cached so a later run works offline
-    log(`roster: ${rosterCache.all.length} names`);
-    ok = true;
-  } catch (e) { log('✗ ' + e.message); }
-  $('pull').textContent = was; $('pull').disabled = false;
-  if (ok) {
-    store.set('datestr', $('datestr').value);   // the only other thing setup ever saved
-    flash($('pull'), `${rosterCache.all.length} rows ✓`);
+    store.set('roster', rosterCache);            // kept for the next run, should that pull fail
+    refreshRosterList();
+    line.textContent = `roster updated — ${rosterCache.all.length} members`;
+  } catch (e) {
+    const saved = currentRoster().length;
+    if (!saved) {
+      line.textContent = '✗ could not load the roster';
+      throw new Error(`could not load the alliance roster (${e.message}) — check the connection and try again`);
+    }
+    line.textContent = `✗ could not update the roster (${e.message}) — using the saved copy, ${saved} members`;
   }
-  refreshState();
-};
+  return currentRoster();
+}
 
 /* ---------------- roster ---------------- */
 // Google serves any link-readable sheet as CSV from /export, with permissive CORS, so the
@@ -349,8 +632,8 @@ const fullRoster = currentRoster;
 // enclosed, squared, struck-through and small-capital forms players decorate names with —
 // "\u{1F157}\u{1F150}\u{1F15D}\u{1F162}" is four NEGATIVE CIRCLED LATIN CAPITAL LETTERs spelling HANS, and
 // Unicode says so. Two parallel strings rather than an object literal, to keep it compact.
-const LATIN_K = '\u00D8\u00F8\u0110\u0111\u0126\u0127\u0141\u0142\u0166\u0167\u0180\u0181\u0182\u0183\u0187\u0188\u018A\u018B\u018C\u0191\u0192\u0193\u0197\u0198\u0199\u019A\u019D\u019E\u019F\u01A4\u01A5\u01AB\u01AC\u01AD\u01AE\u01B2\u01B3\u01B4\u01B5\u01B6\u01E4\u01E5\u01FE\u01FF\u0220\u0221\u0224\u0225\u0234\u0235\u0236\u023A\u023B\u023C\u023D\u023E\u023F\u0240\u0243\u0244\u0246\u0247\u0248\u0249\u024B\u024C\u024D\u024E\u024F\u0253\u0255\u0256\u0257\u0260\u0266\u0268\u026B\u026C\u026D\u0271\u0272\u0273\u027C\u027D\u027E\u0282\u0288\u0289\u028B\u0290\u0291\u029D\u02A0\u0363\u0364\u0365\u0366\u0367\u0368\u0369\u036A\u036B\u036C\u036D\u036E\u036F\u1ABF\u1D6C\u1D6D\u1D6E\u1D6F\u1D70\u1D71\u1D72\u1D73\u1D74\u1D75\u1D76\u1D7B\u1D7D\u1D7E\u1D80\u1D81\u1D82\u1D83\u1D84\u1D85\u1D86\u1D87\u1D88\u1D89\u1D8A\u1D8C\u1D8D\u1D8E\u1D8F\u1D91\u1D92\u1D96\u1D99\u1DCA\u1DD7\u1DDA\u1DDC\u1DDD\u1DE0\u1DE3\u1DE4\u1DE6\u1DE8\u1DEB\u1DEC\u1DED\u1DEE\u1DF0\u1DF1\u1DF2\u1DF3\u1DF4\u1EFE\u1EFF\u24F5\u24F6\u24F7\u24F8\u24F9\u24FA\u24FB\u24FC\u24FD\u24FF\u2776\u2777\u2778\u2779\u277A\u277B\u277C\u277D\u277E\u2780\u2781\u2782\u2783\u2784\u2785\u2786\u2787\u2788\u278A\u278B\u278C\u278D\u278E\u278F\u2790\u2791\u2792\u2C60\u2C61\u2C62\u2C63\u2C64\u2C65\u2C66\u2C67\u2C68\u2C69\u2C6A\u2C6B\u2C6C\u2C6E\u2C71\u2C72\u2C73\u2C74\u2C78\u2C7A\u2C7E\u2C7F\uA740\uA741\uA742\uA743\uA744\uA745\uA748\uA749\uA74A\uA74B\uA74C\uA74D\uA750\uA751\uA752\uA753\uA754\uA755\uA756\uA757\uA758\uA759\uA75A\uA75B\uA75E\uA75F\uA78E\uA790\uA791\uA792\uA793\uA794\uA795\uA796\uA797\uA798\uA799\uA7A0\uA7A1\uA7A2\uA7A3\uA7A4\uA7A5\uA7A6\uA7A7\uA7A8\uA7A9\uA7AA\uA7AD\uA7B2\uA7B8\uA7B9\uA7C4\uA7C5\uA7C6\uA7C7\uA7C8\uA7C9\uA7CA\uAB31\uAB34\uAB37\uAB38\uAB39\uAB3A\uAB3B\uAB47\uAB49\uAB4E\uAB4F\uAB52\uAB56\uAB57\uAB58\uAB59\uAB5A\u{1DF09}\u{1DF11}\u{1DF13}\u{1DF16}\u{1DF1A}\u{1DF1B}\u{1DF1D}\u{1DF1E}\u{1DF25}\u{1DF26}\u{1DF27}\u{1DF28}\u{1DF29}\u{1DF2A}\u{1F10B}\u{1F10C}\u{1F150}\u{1F151}\u{1F152}\u{1F153}\u{1F154}\u{1F155}\u{1F156}\u{1F157}\u{1F158}\u{1F159}\u{1F15A}\u{1F15B}\u{1F15C}\u{1F15D}\u{1F15E}\u{1F15F}\u{1F160}\u{1F161}\u{1F162}\u{1F163}\u{1F164}\u{1F165}\u{1F166}\u{1F167}\u{1F168}\u{1F169}\u{1F170}\u{1F171}\u{1F172}\u{1F173}\u{1F174}\u{1F175}\u{1F176}\u{1F177}\u{1F178}\u{1F179}\u{1F17A}\u{1F17B}\u{1F17C}\u{1F17D}\u{1F17E}\u{1F17F}\u{1F180}\u{1F181}\u{1F182}\u{1F183}\u{1F184}\u{1F185}\u{1F186}\u{1F187}\u{1F188}\u{1F189}\u{1F18A}\u{1F1A5}';
-const LATIN_V = 'OODDHHLLTTBBBBCCDDDFFGIKKLNNOPPTTTTVYYZZGGOONDZZLNTACCLTSZBUEEJJQRRYYBCDDGHILLLMNNRRRSTUVZZJQAEIOUCDHMRTVXWBDFMNPRRSTZIPUBDFGKLMNPRSVXZADEIURCGKLNRSZBFLOPUWAOUYY1234567890123456789123456789123456789LLLPRATHHKKZZMVWWVEOSZKKKKKKLLOOOOPPPPPPQQQQRRVVLNNCCCHBBFFGGKKNNRRSSHLJUUCSZDDSSAELLLMNRRUUUXXXXYTLLRIOCSDLNRST00ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZPD';
+const LATIN_K = '\u00D8\u00F8\u0110\u0111\u0126\u0127\u0141\u0142\u0166\u0167\u0180\u0181\u0182\u0183\u0187\u0188\u018A\u018B\u018C\u0191\u0192\u0193\u0197\u0198\u0199\u019A\u019D\u019E\u019F\u01A4\u01A5\u01AB\u01AC\u01AD\u01AE\u01B2\u01B3\u01B4\u01B5\u01B6\u01E4\u01E5\u01FE\u01FF\u0220\u0221\u0224\u0225\u0234\u0235\u0236\u023A\u023B\u023C\u023D\u023E\u023F\u0240\u0243\u0244\u0246\u0247\u0248\u0249\u024B\u024C\u024D\u024E\u024F\u0253\u0255\u0256\u0257\u0260\u0266\u0268\u026B\u026C\u026D\u0271\u0272\u0273\u027C\u027D\u027E\u0282\u0288\u0289\u028B\u0290\u0291\u029D\u02A0\u0363\u0364\u0365\u0366\u0367\u0368\u0369\u036A\u036B\u036C\u036D\u036E\u036F\u1ABF\u1D6C\u1D6D\u1D6E\u1D6F\u1D70\u1D71\u1D72\u1D73\u1D74\u1D75\u1D76\u1D7B\u1D7D\u1D7E\u1D80\u1D81\u1D82\u1D83\u1D84\u1D85\u1D86\u1D87\u1D88\u1D89\u1D8A\u1D8C\u1D8D\u1D8E\u1D8F\u1D91\u1D92\u1D96\u1D99\u1DCA\u1DD7\u1DDA\u1DDC\u1DDD\u1DE0\u1DE3\u1DE4\u1DE6\u1DE8\u1DEB\u1DEC\u1DED\u1DEE\u1DF0\u1DF1\u1DF2\u1DF3\u1DF4\u1EFE\u1EFF\u24F5\u24F6\u24F7\u24F8\u24F9\u24FA\u24FB\u24FC\u24FD\u24FF\u2776\u2777\u2778\u2779\u277A\u277B\u277C\u277D\u277E\u2780\u2781\u2782\u2783\u2784\u2785\u2786\u2787\u2788\u278A\u278B\u278C\u278D\u278E\u278F\u2790\u2791\u2792\u2C60\u2C61\u2C62\u2C63\u2C64\u2C65\u2C66\u2C67\u2C68\u2C69\u2C6A\u2C6B\u2C6C\u2C6E\u2C71\u2C72\u2C73\u2C74\u2C78\u2C7A\u2C7E\u2C7F\uA740\uA741\uA742\uA743\uA744\uA745\uA748\uA749\uA74A\uA74B\uA74C\uA74D\uA750\uA751\uA752\uA753\uA754\uA755\uA756\uA757\uA758\uA759\uA75A\uA75B\uA75E\uA75F\uA78E\uA790\uA791\uA792\uA793\uA794\uA795\uA796\uA797\uA798\uA799\uA7A0\uA7A1\uA7A2\uA7A3\uA7A4\uA7A5\uA7A6\uA7A7\uA7A8\uA7A9\uA7AA\uA7AD\uA7B2\uA7B8\uA7B9\uA7C4\uA7C5\uA7C6\uA7C7\uA7C8\uA7C9\uA7CA\uAB31\uAB34\uAB37\uAB38\uAB39\uAB3A\uAB3B\uAB47\uAB49\uAB4E\uAB4F\uAB52\uAB56\uAB57\uAB58\uAB59\uAB5A\u{1DF09}\u{1DF11}\u{1DF13}\u{1DF16}\u{1DF1A}\u{1DF1B}\u{1DF1D}\u{1DF1E}\u{1DF25}\u{1DF26}\u{1DF27}\u{1DF28}\u{1DF29}\u{1DF2A}\u{1F10B}\u{1F10C}\u{1F150}\u{1F151}\u{1F152}\u{1F153}\u{1F154}\u{1F155}\u{1F156}\u{1F157}\u{1F158}\u{1F159}\u{1F15A}\u{1F15B}\u{1F15C}\u{1F15D}\u{1F15E}\u{1F15F}\u{1F160}\u{1F161}\u{1F162}\u{1F163}\u{1F164}\u{1F165}\u{1F166}\u{1F167}\u{1F168}\u{1F169}\u{1F170}\u{1F171}\u{1F172}\u{1F173}\u{1F174}\u{1F175}\u{1F176}\u{1F177}\u{1F178}\u{1F179}\u{1F17A}\u{1F17B}\u{1F17C}\u{1F17D}\u{1F17E}\u{1F17F}\u{1F180}\u{1F181}\u{1F182}\u{1F183}\u{1F184}\u{1F185}\u{1F186}\u{1F187}\u{1F188}\u{1F189}\u{1F18A}\u{1F1A5}\u0190\u025B';
+const LATIN_V = 'OODDHHLLTTBBBBCCDDDFFGIKKLNNOPPTTTTVYYZZGGOONDZZLNTACCLTSZBUEEJJQRRYYBCDDGHILLLMNNRRRSTUVZZJQAEIOUCDHMRTVXWBDFMNPRRSTZIPUBDFGKLMNPRSVXZADEIURCGKLNRSZBFLOPUWAOUYY1234567890123456789123456789123456789LLLPRATHHKKZZMVWWVEOSZKKKKKKLLOOOOPPPPPPQQQQRRVVLNNCCCHBBFFGGKKNNRRSSHLJUUCSZDDSSAELLLMNRRUUUXXXXYTLLRIOCSDLNRST00ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZPDEE';
 const LATIN_MAP = (() => {
   const m = {};
   const ks = [...LATIN_K], vs = [...LATIN_V];
@@ -692,7 +975,10 @@ function resolve(name, plain, ix, aliases) {
 
 /* ---------------- frame extraction ---------------- */
 let videoFile = null;
-const log = m => { $('log').textContent = m; };
+// Where progress is reported. The Base CP tab points these at its own log and bar for the
+// length of its run, so the shared sampler and model calls report on whichever tab started them.
+let logEl = 'log', progEl = 'prog';
+const log = m => { $(logEl).textContent = m; };
 if ($('build')) $('build').textContent =
   ` · build ${BUILD}`;
 // Say it on the button. Each of these actions reports what it did in the log at the top of
@@ -711,7 +997,7 @@ function flash(btn, text, ms = 1600) {
     delete btn.dataset.flashing;
   }, ms);
 }
-const setProg = p => { $('prog').style.width = (p * 100) + '%'; };
+const setProg = p => { $(progEl).style.width = (p * 100) + '%'; };
 
 $('drop').onclick = () => $('file').click();
 $('file').onchange = e => pickFile(e.target.files[0]);
@@ -725,6 +1011,10 @@ function pickFile(f) {
   videoFile = f;
   $('fileName').textContent = f.name + '  ·  ' + (f.size / 1e6).toFixed(0) + ' MB';
   refreshState();
+  // The recording starts uploading the moment it is chosen, so it has the whole run — fields,
+  // Extract, checking rows — to get there before Send. A recording swapped for another, or never
+  // sent, is cleared by the staging bucket's lifecycle rule.
+  startVideoUpload(f);
 }
 
 const once = (el, ev) => new Promise(res => el.addEventListener(ev, res, { once: true }));
@@ -875,11 +1165,12 @@ const SHARP_MAX = 0.2, SHARP_STEPS = 3;
 // turns up in more of them. That matters more than the seams: 56 of 153 ranks were being seen
 // exactly once in a run, with no second reading to fall back on if the first went wrong.
 const STRIPS = 3, STRIP_OVERLAP = 0.25;
-function sliceStrips(src) {
+// `strips` is per tab: 1 sends the frame whole, for screens whose text is already large.
+function sliceStrips(src, strips = STRIPS) {
   const w = src.width, h = src.height;
-  const band = h / STRIPS, pad = band * STRIP_OVERLAP;
+  const band = h / strips, pad = strips > 1 ? band * STRIP_OVERLAP : 0;
   const out = [];
-  for (let i = 0; i < STRIPS; i++) {
+  for (let i = 0; i < strips; i++) {
     const y0 = Math.max(0, Math.round(i * band - pad));
     const y1 = Math.min(h, Math.round((i + 1) * band + pad));
     const c = Object.assign(document.createElement('canvas'), { width: w, height: y1 - y0 });
@@ -902,19 +1193,121 @@ function sharpness(canvas) {
     }
   return n ? acc / n : 0;
 }
-async function extractFrames(file, budget, onProg) {
-  const video = await openVideo(file);
-  const dur = video.duration;
-  // Keep the recording's own resolution. 560 was chosen when the worry was payload size,
-  // but token cost turns out to be near enough flat per image, so the downscale bought
-  // nothing and cost the fine detail in stylised names: at 560 the glyphs "ŊŲƁĮ" came back
-  // as "MB" and "DJ", while the same row read at the phone's native width resolves to Nubi.
-  const W = Math.min(video.videoWidth || 720, 1080);
-  const H = Math.round(W * video.videoHeight / video.videoWidth);
-  const cv = Object.assign(document.createElement('canvas'), { width: W, height: H });
-  const cx = cv.getContext('2d', { willReadFrequently: true });
-  const step = 0.25;
+// The first pass, by playing. Seeking is the slow part of sampling — every seek waits for the
+// decoder to find a keyframe and work forward from it, 20 to 50 ms each and more on a phone —
+// and the seeking pass below makes one every quarter second of video, plus three more around
+// every pick: about 420 for a 43-second recording, which is where 13 seconds went. A video that
+// is simply played is decoded in one continuous run, far faster. So it is played, muted and out
+// of sight, and every frame the browser presents is measured as it goes: the scroll motion, the
+// moving region, and a quarter-size grey copy for judging sharpness later, once the list's
+// position is known. Only the chosen frames are then fetched by seeking.
+//
+// Browsers will not play faster than 16x, which puts a floor of a sixteenth of the recording
+// under a single player — 4.4 s for a 71-second one. So the recording is cut into PLAY_LANES
+// stretches played side by side by separate players, which decoders handle in parallel, and the
+// seeks for the chosen frames are shared out between the same players afterwards.
+//
+// At 16x a 60 Hz display presents about four frames per second of video, the same density as the
+// quarter-second seeking pass. A browser that cannot keep up, lacks requestVideoFrameCallback, or
+// refuses to play gets null here, and the seeking pass does the job as before.
+const PLAY_RATE = 16, PLAY_LANES = 4, PLAY_MIN_DENSITY = 1.5;   // frames per video second, at least
+async function scanByPlaying(src, dur, W, H, cx, onProg) {
+  if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype)) return null;
+  const TW = Math.max(8, Math.round(W / 4)), TH = Math.max(8, Math.round(H / 4));
+  const tcv = Object.assign(document.createElement('canvas'), { width: TW, height: TH });
+  const tc = tcv.getContext('2d', { willReadFrequently: true });
+  const lanes = [];
+  try {
+    for (let k = 0; k < PLAY_LANES; k++) {
+      const v = document.createElement('video');
+      v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = src;
+      // A detached video is never composited, and a frame that is never composited is never
+      // reported; so each is attached, but a pixel square and all but transparent.
+      Object.assign(v.style, { position: 'fixed', left: '0', top: '0', width: '2px',
+                               height: '2px', opacity: '0.01', pointerEvents: 'none' });
+      document.body.appendChild(v);
+      lanes.push(v);
+    }
+    await Promise.all(lanes.map(v => v.readyState >= 1 ? null : once(v, 'loadedmetadata')));
+    const seen = [];                     // { t, grid, map, grey } from every lane
+    let progress = 0;
+    const playLane = async (v, from, to) => {
+      await seek(v, from);
+      v.playbackRate = PLAY_RATE;
+      return new Promise(resolve => {
+        let lastTick = Date.now(), finished = false;
+        const finish = ok => {
+          if (finished) return;
+          finished = true; clearInterval(watch); v.pause(); resolve(ok);
+        };
+        // a stalled decoder, or a hidden tab (which presents no frames), gives up to the fallback
+        const watch = setInterval(() => { if (Date.now() - lastTick > 3000) finish(false); }, 500);
+        const onFrame = (_now, meta) => {
+          if (finished) return;
+          lastTick = Date.now();
+          if (meta.mediaTime >= to) return finish(true);
+          // drawn, measured and let go in one step, so the lanes can share the one canvas
+          cx.drawImage(v, 0, 0, W, H);
+          tc.drawImage(cx.canvas, 0, 0, W, H, 0, 0, TW, TH);
+          const px = tc.getImageData(0, 0, TW, TH).data, grey = new Uint8Array(TW * TH);
+          for (let i = 0; i < grey.length; i++)
+            grey[i] = (px[i*4] * 0.299 + px[i*4+1] * 0.587 + px[i*4+2] * 0.114) | 0;
+          seen.push({ t: meta.mediaTime, grid: motionGrid(cx, W, H), map: motionMap(cx, W, H), grey });
+          progress += 1; onProg(0.6 * Math.min(1, progress / (dur * 4)), 0);
+          v.requestVideoFrameCallback(onFrame);
+        };
+        v.requestVideoFrameCallback(onFrame);
+        v.addEventListener('ended', () => finish(true), { once: true });
+        v.play().catch(() => finish(false));
+      });
+    };
+    const span = dur / PLAY_LANES;
+    const oks = await Promise.all(lanes.map((v, k) =>
+      playLane(v, k * span, k === PLAY_LANES - 1 ? Infinity : (k + 1) * span)));
+    if (oks.includes(false)) { lanes.forEach(v => v.remove()); return null; }
 
+    // stitched back into one timeline; motion is measured frame to frame along it
+    seen.sort((a, b) => a.t - b.t);
+    const times = [], motion = [], thumbs = [];
+    const accum = new Float32Array(GW * GH);
+    let total = 0;
+    for (let i = 0; i < seen.length; i++) {
+      if (i > 0) {
+        total += gridDiff(seen[i-1].grid, seen[i].grid);
+        const a = seen[i-1].map, b = seen[i].map;
+        for (let j = 0; j < accum.length; j++) accum[j] += Math.abs(b[j] - a[j]);
+      }
+      times.push(seen[i].t); motion.push(total); thumbs.push(seen[i].grey);
+    }
+    // every lane has to have delivered, densely enough, or the stitched timeline has gaps
+    const gaps = times.some((t, i) => i > 0 && t - times[i-1] > 1.5);
+    if (!times.length || times[0] > 1.5 || times[times.length - 1] < dur - 1.5 || gaps
+        || times.length < Math.max(20, dur * PLAY_MIN_DENSITY)) { lanes.forEach(v => v.remove()); return null; }
+    lanes.forEach(v => { v.playbackRate = 1; });
+    return { times, motion, total, accum, thumbs, TW, TH, lanes };
+  } catch {
+    lanes.forEach(v => v.remove());
+    return null;
+  }
+}
+// Sharpness of a quarter-size grey copy, inside the list: the same mean absolute Laplacian as
+// sharpness(), which only has to rank a few neighbouring frames of the same list against each
+// other, and a smeared frame loses its edges at a quarter size as surely as at full size.
+function thumbSharpness(grey, TW, TH, box) {
+  const x0 = Math.max(1, Math.floor((box ? box.x0 : 0) * TW)), x1 = Math.min(TW - 1, Math.ceil((box ? box.x1 : 1) * TW));
+  const y0 = Math.max(1, Math.floor((box ? box.y0 : 0) * TH)), y1 = Math.min(TH - 1, Math.ceil((box ? box.y1 : 1) * TH));
+  let acc = 0, n = 0;
+  for (let y = y0; y < y1 - 1; y++)
+    for (let x = x0; x < x1 - 1; x++) {
+      const i = y * TW + x;
+      acc += Math.abs(4 * grey[i] - grey[i-1] - grey[i+1] - grey[i-TW] - grey[i+TW]);
+      n++;
+    }
+  return n ? acc / n : 0;
+}
+// The first pass by seeking, as it always was: now the fallback.
+async function scanBySeeking(video, W, H, cx, onProg) {
+  const dur = video.duration, step = 0.25;
   const times = [], motion = [];
   const accum = new Float32Array(GW * GH);     // per-cell change, for locating the list
   let prev = null, prevMap = null, total = 0;
@@ -930,6 +1323,25 @@ async function extractFrames(file, budget, onProg) {
     times.push(t); motion.push(total);
     onProg(0.6 * t / dur, 0);
   }
+  return { times, motion, total, accum, thumbs: null };
+}
+
+async function extractFrames(file, budget, onProg, strips = STRIPS) {
+  const video = await openVideo(file);
+  const dur = video.duration;
+  // Keep the recording's own resolution. 560 was chosen when the worry was payload size,
+  // but token cost turns out to be near enough flat per image, so the downscale bought
+  // nothing and cost the fine detail in stylised names: at 560 the glyphs "ŊŲƁĮ" came back
+  // as "MB" and "DJ", while the same row read at the phone's native width resolves to Nubi.
+  const W = Math.min(video.videoWidth || 720, 1080);
+  const H = Math.round(W * video.videoHeight / video.videoWidth);
+  const cv = Object.assign(document.createElement('canvas'), { width: W, height: H });
+  const cx = cv.getContext('2d', { willReadFrequently: true });
+
+  const scan = await scanByPlaying(video.src, dur, W, H, cx, onProg)
+            || await scanBySeeking(video, W, H, cx, onProg);
+  extractFrames.mode = scan.thumbs ? 'played' : 'seeked';
+  const { times, motion, total, accum } = scan;
   const box = movingRegion(accum);      // always: it removes the pinned own-rank card
   lastCropBox = box;
 
@@ -944,7 +1356,8 @@ async function extractFrames(file, budget, onProg) {
   const last = times[times.length - 1];
   if (picks[picks.length - 1] !== last) picks.push(last);
 
-  const frames = [];
+  // For each pick, the sharpest frame within reach of it.
+  const chosen = [];
   for (let i = 0; i < picks.length; i++) {
     const prevGap = i > 0 ? picks[i] - picks[i-1] : Infinity;
     const nextGap = i < picks.length - 1 ? picks[i+1] - picks[i] : Infinity;
@@ -954,24 +1367,66 @@ async function extractFrames(file, budget, onProg) {
     // from the other and were photographed by neither.
     const reach = Math.min(SHARP_MAX, 0.25 * Math.min(prevGap, nextGap));
     let bestT = null, bestScore = -1;
-    for (let k = 0; k < SHARP_STEPS; k++) {
-      const off = reach * (2 * k / (SHARP_STEPS - 1) - 1);   // -reach .. +reach
-      const t = picks[i] + off;
-      if (t < 0 || t > dur - 0.05) continue;
-      await seek(video, t);
-      cx.drawImage(video, 0, 0, W, H);
-      const score = sharpness(cropFrame(cv, W, H, box));
-      if (score > bestScore) { bestScore = score; bestT = t; }
+    if (scan.thumbs) {
+      // every presented frame in the window was already measured: no seeking to choose
+      for (let k = 0; k < times.length; k++) {
+        if (Math.abs(times[k] - picks[i]) > reach + 1e-6) continue;
+        const score = thumbSharpness(scan.thumbs[k], scan.TW, scan.TH, box);
+        if (score > bestScore) { bestScore = score; bestT = times[k]; }
+      }
+    } else {
+      for (let k = 0; k < SHARP_STEPS; k++) {
+        const off = reach * (2 * k / (SHARP_STEPS - 1) - 1);   // -reach .. +reach
+        const t = picks[i] + off;
+        if (t < 0 || t > dur - 0.05) continue;
+        await seek(video, t);
+        cx.drawImage(video, 0, 0, W, H);
+        const score = sharpness(cropFrame(cv, W, H, box));
+        if (score > bestScore) { bestScore = score; bestT = t; }
+        onProg(0.6 + 0.2 * (i + 1) / picks.length, 0);
+      }
     }
-    if (bestT !== null) {
-      await seek(video, bestT);
-      cx.drawImage(video, 0, 0, W, H);
-      for (const strip of sliceStrips(cropFrame(cv, W, H, box))) frames.push(strip);
-    }
-    onProg(0.6 + 0.4 * (i + 1) / picks.length, frames.length);
+    if (bestT !== null) chosen.push(bestT);
   }
+
+  // Then fetch them. Played, the seeks are shared between the lanes and run side by side; each
+  // frame is drawn, cropped and cut the instant its seek lands, so they can share one canvas.
+  // A presented frame's time is its first instant, so a hair past it is unambiguously that frame.
+  const players = scan.lanes || [video];
+  const pad = scan.thumbs ? 0.001 : 0;
+  const shots = new Array(chosen.length);
+  let fetched = 0;
+  await Promise.all(players.map(async (v, lane) => {
+    for (let i = lane; i < chosen.length; i += players.length) {
+      await seek(v, Math.min(chosen[i] + pad, dur - 0.05));
+      cx.drawImage(v, 0, 0, W, H);
+      shots[i] = sliceStrips(cropFrame(cv, W, H, box), strips);
+      onProg(0.6 + 0.4 * (++fetched) / chosen.length, fetched * strips);
+    }
+  }));
+  if (scan.lanes) scan.lanes.forEach(v => v.remove());
+  const frames = shots.flat();
+  // when in the video each image was taken, for going back to a stretch that came up short
+  frames.times = shots.flatMap((sh, i) => sh.map(() => chosen[i]));
+  frames.duration = dur;
   URL.revokeObjectURL(video.src);
   return frames;
+}
+// Fresh images from given moments of the video, cropped and cut exactly as the run's own were.
+async function grabStrips(file, times, strips = STRIPS) {
+  const video = await openVideo(file);
+  const W = Math.min(video.videoWidth || 720, 1080);
+  const H = Math.round(W * video.videoHeight / video.videoWidth);
+  const cv = Object.assign(document.createElement('canvas'), { width: W, height: H });
+  const cx = cv.getContext('2d', { willReadFrequently: true });
+  const out = [];
+  for (const t of times) {
+    await seek(video, Math.max(0, Math.min(t, video.duration - 0.05)));
+    cx.drawImage(video, 0, 0, W, H);
+    out.push(sliceStrips(cropFrame(cv, W, H, lastCropBox), strips));
+  }
+  URL.revokeObjectURL(video.src);
+  return out;
 }
 
 // A picture of the roster, for the names that words cannot describe.
@@ -1110,7 +1565,7 @@ ${names.join(', ')}
 ${symbolNote}${sheetNote}
 
 Return every row you can read ${scope} as a single JSON array, one object per row:
-{"rank": <int or null>, "roster_name": "<a name copied exactly from the ROSTER, or null>", "seen": "<the name as actually drawn on screen>", "points": <int>}
+{"rank": <int or null>, "roster_name": "<a name copied exactly from the ROSTER, or null>", "seen": "<the name as actually drawn on screen>", "points": <int>, "img": <int>}
 
 Rules:
 - "roster_name" MUST be copied character-for-character from the list above, or be null if
@@ -1118,6 +1573,7 @@ Rules:
 - Prefer a known player whenever the drawn name plausibly corresponds to one, allowing for
   stylised glyphs, emoji, accents and lookalike characters.
 - "seen" is the raw on-screen name, so a person can check the match.
+- "img" is which image the row was read from, counting every image in this request from 1.
 - Some players have no letters in their name at all — just emoji, symbols or non-Latin
   characters. Reproduce those exactly, character for character, in "seen"; do not substitute
   a similar-looking emoji. A polar bear is not a panda. The roster lists these names in the
@@ -1196,25 +1652,47 @@ async function callModel(frames) {
   for (let i = 0; i < frames.length; i += B) batches.push(frames.slice(i, i + B));
   let done = 0;
   const switched = new Set();
-  const promptTokens = Math.ceil(buildPrompt(false).length / CHARS_PER_TOKEN);
-  const one = async b => {
-    const est = (b.length + (sheet ? 1 : 0)) * IMG_TOKENS + promptTokens;
+  callModel.slowest = 0;
+  const one = async (b, bi) => {
+    // No rate gate: on the paid key a run is a few dozen requests against 4,000 a minute.
     const rows = await withFallback(async m => {
-                                      const lease = await rateGate(est);
-                                      try {
-                                        const got = await callProxy(sheet ? [sheet, ...b] : b,
-                                                                    m, API_BASE);
-                                        lease.settle(callProxy.lastUsage);
-                                        return got;
-                                      } catch (e) { lease.refund(); throw e; }
+                                      const t0 = Date.now();
+                                      const got = await callProxy(sheet ? [sheet, ...b] : b,
+                                                                  m, MODEL_BASE);
+                                      callModel.slowest = Math.max(callModel.slowest, Date.now() - t0);
+                                      return got;
                                     },
                                     modelChain(), m => switched.add(m), true);
     done++; setProg(0.5 + 0.5 * done / batches.length);
     log(`read ${done} of ${batches.length} batches…`
         + (switched.size ? `  (fell back to ${[...switched].join(', ')})` : ''));
+    // Which of the run's frames each row was read from, so the gap fill knows where in the video
+    // each rank was. The model counts the reference sheet as image 1 when it is sent, so that is
+    // taken off first. Where it leaves the number out, which it often does, the row's place in
+    // its reply stands in: rows come back in image order, which places a row within a frame or
+    // two, close enough for a stretch of video that is padded either side anyway.
+    rows.forEach((r, i) => {
+      let k = typeof r.img === 'number' ? r.img - 1 - (sheet ? 1 : 0) : -1;
+      if (!(k >= 0 && k < b.length))
+        k = Math.round(rows.length > 1 ? i / (rows.length - 1) * (b.length - 1) : 0);
+      r.frame = bi * B + k;
+    });
     return rows;
   };
-  return (await Promise.all(batches.map(one))).flat();
+  // every batch at once: a run takes as long as its slowest answer
+  return (await inTurn(batches, one, batches.length)).flat();
+}
+
+// Run fn over items with no more than `limit` in flight, keeping results in item order.
+// Used by both tabs for their model requests, so neither can overrun Ollama's free tier.
+async function inTurn(items, fn, limit = PARALLEL) {
+  const out = new Array(items.length);
+  let next = 0;
+  const lane = async () => {
+    while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane));
+  return out;
 }
 
 const modelChain = () => [MODEL, ...FALLBACKS.filter(m => m !== MODEL)];
@@ -1269,14 +1747,29 @@ async function withFallback(call, chain, note, paced) {
 
 // Same request the direct Gemini path sends, aimed at the team Worker instead. No key
 // travels with it; the Worker holds that and adds it upstream.
-async function callProxy(batch, model, base) {
+const RANKING_SCHEMA = {
+  type: 'ARRAY',
+  items: {
+    type: 'OBJECT',
+    properties: {
+      rank:        { type: 'STRING' },
+      roster_name: { type: 'STRING' },
+      seen:        { type: 'STRING' },
+      points:      { type: 'STRING' },
+      img:         { type: 'STRING' },
+    },
+    required: ['rank', 'seen', 'points'],
+  },
+};
+// `spec` lets another tab ask its own question through the same path: { prompt, schema, parse }.
+async function callProxy(batch, model, base, spec = null) {
   const r = await fetch(base + '/' + encodeURIComponent(model), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [
         ...batch.map(d => ({ inline_data: { mime_type: 'image/jpeg', data: d } })),
-        { text: buildPrompt(false) }] }],
+        { text: spec ? spec.prompt : buildPrompt(false) }] }],
       generationConfig: {
         temperature: 0, maxOutputTokens: 32768,
         // The same recording gives the same rows. Temperature 0 was never enough on its own —
@@ -1291,23 +1784,13 @@ async function callProxy(batch, model, base) {
         // much as the fix: a fault you can reproduce is a fault you can chase.
         seed: 7,
         thinkingConfig: { thinkingLevel: 'low' },
+        // a tab on another model can swap settings that model does not take (see cp.js)
+        ...(spec ? spec.config : KARTZ.config),
         // Ask the API to enforce the shape rather than hoping the model returns clean JSON.
         // Everything is a string: models will happily emit "1,234" or "#4" for a number and
         // then the whole response is rejected, so take text and convert here.
         responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'ARRAY',
-          items: {
-            type: 'OBJECT',
-            properties: {
-              rank:        { type: 'STRING' },
-              roster_name: { type: 'STRING' },
-              seen:        { type: 'STRING' },
-              points:      { type: 'STRING' },
-            },
-            required: ['rank', 'seen', 'points'],
-          },
-        },
+        responseSchema: spec ? spec.schema : RANKING_SCHEMA,
       }
     })
   });
@@ -1317,10 +1800,13 @@ async function callProxy(batch, model, base) {
   // estimate, and an estimate that drifts low would walk the run straight back into a 429.
   if (j.usageMetadata) {
     callProxy.lastUsage = j.usageMetadata.totalTokenCount || 0;
+    // per request too: with several in flight, lastUsage belongs to whichever finished last
+    if (spec) spec.usage = callProxy.lastUsage;
     callProxy.spent = (callProxy.spent || 0) + callProxy.lastUsage;
     callProxy.calls = (callProxy.calls || 0) + 1;
   }
-  return parseJSON(j.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '');
+  const text = j.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+  return spec ? spec.parse(text) : parseJSON(text);
 }
 
 // Parse row objects individually rather than requiring one well-formed array. A long
@@ -1350,6 +1836,7 @@ function parseJSON(text) {
       };
       r.points = num(r.points);
       r.rank   = num(r.rank);
+      r.img    = num(r.img);
       if (typeof r.points === 'number' && (r.name || r.plain)) rows.push(r);
     } catch { /* a half-written object at the cut: skip it */ }
   }
@@ -1442,6 +1929,9 @@ function consolidate(sightings, frameCount) {
       rank:   rank > 0 ? rank : null,
       seenRank: rank > 0 ? rank : 0,
       seen:   g.length,
+      // the frames this rank was read in, most-read first
+      frames: Object.entries(g.reduce((c, x) => (x.frame != null && (c[x.frame] = (c[x.frame] || 0) + 1), c), {}))
+                .sort((a, b) => b[1] - a[1]).map(([f]) => +f),
     });
   }
   return out.sort((a, b) => b.points - a.points || (a.seenRank || 9999) - (b.seenRank || 9999));
@@ -1453,18 +1943,161 @@ const mode = arr => {
   return best;
 };
 
+// Which roster player a row is, or that it is none of them. Shared by both tabs: the Ranking
+// rows and the Base CP member cards are identified in exactly the same way, and one copy of
+// the rules means a fix to them reaches both. A row brings its readings — name, plain, obs —
+// and the model's roster claims — claims, pick_.
+function makeMatcher(index, skipIndex, aliases) {
+  // A roster_name the model returned is only worth anything if it is genuinely in the
+  // roster; models will occasionally produce a plausible-looking name that is not on the
+  // list, and that is exactly the case a human needs to see.
+  // Folded name -> roster entries. A Set, because a handful of keys are claimed by two
+  // players — "Killua" and "Killua swords" both reduce to killua — and those cases must
+  // not be decided by string folding.
+  const byFold = new Map();
+  for (const e of index) {
+    if (!byFold.has(e.k)) byFold.set(e.k, new Set());
+    byFold.get(e.k).add(e.r);
+  }
+  const soleMatch = k => { const set = k && byFold.get(k); return set && set.size === 1 ? [...set][0] : null; };
+  return r => {
+    // Order matters, most authoritative first.
+    // 1. Something you corrected by hand and saved. Nothing should overrule that.
+    const al = aliases[aliasKey(r.plain || r.name)] || aliases[aliasKey(r.name)];
+    if (al) {
+      const nm = typeof al === 'string' ? al : al.name;
+      const hit = soleMatch(fold(nm)) || byFold.get(fold(nm))?.values().next().value;
+      if (hit) return { ...r, match: hit, score: 1, pick: hit.search };
+    }
+    // 2. The name as actually drawn, when exactly one roster entry reduces to it. This is
+    //    stronger evidence than the model's own choice: a player shown as "JoJo🐼" folds to
+    //    jojo, which only Jojo answers to, however the model happened to label the row.
+    //    Where a key is shared, we skip this and let the model decide, since it saw the
+    //    glyphs and a fold cannot tell those two apart.
+    // Only the drawn name here — r.plain carries the model's own answer, and folding that
+    // would just be step 3 wearing a disguise.
+    //    Every distinct reading of the row is tried, not just the commonest: a name read
+    //    three ways is three chances to land on the player, and taking only the mode threw
+    //    the other attempts away.
+    const readings = (r.obs && r.obs.length) ? r.obs : [r.name];
+    for (const o of readings) {
+      const bySeen = soleMatch(fold(o));
+      if (bySeen) return { ...r, match: bySeen, score: 1,
+                           pick: bySeen.ingame || bySeen.search, via: 'drawn:' + o };
+    }
+    // 3. The roster entry the model named — provided it really exists AND some reading of
+    //    the row actually supports it. Without that second test this step accepts whatever
+    //    the model asserts, which is how a row drawn "𝓡𝓝/𝓑" was confidently filed as MB.
+    for (const c of (r.claims && r.claims.length ? r.claims : [r.pick_]).filter(Boolean)) {
+      const entry = soleMatch(fold(c)) || byFold.get(fold(c))?.values().next().value;
+      if (!entry) continue;
+      if (!readings.some(o => claimPlausible(o, entry))) continue;
+      return { ...r, match: entry, score: 1,
+               pick: entry.ingame || entry.search, claimed: true, via: 'claim:' + c };
+    }
+    // There is no step here for "the model named a player but nothing in the reading
+    // supports it". One was tried, guarded by requiring the claim to be unanimous within the
+    // run, and it matched rank 33 to angkasa — the row is batman. That row reads as Thai one
+    // run, IPA the next and 🦇man the third, and the claim flips between batman and angkasa
+    // with it, so agreement inside a single run says nothing about being right. A name the
+    // model cannot transcribe and cannot consistently recognise belongs in the confirm list.
+    // 4. Fuzzy over every reading, and failing that the row is raised for confirmation.
+    let m = { r: null, score: 0, near: null }, from = '';
+    for (const o of readings) {
+      const t = resolve(o, o, index, aliases);
+      if (t.score > m.score) { m = t; from = o; }
+    }
+    if (m.r) return { ...r, match: m.r, score: m.score, near1: m.near1,
+                      pick: m.r.ingame || m.r.search, via: 'near:' + from };
+    const sk = skipIndex.length ? resolve(r.name, r.plain, skipIndex, {}) : { r: null };
+    if (sk.r) return { ...r, match: null, skipped: sk.r, score: sk.score, pick: '' };
+    return { ...r, match: null, score: m.score, near: m.near, pick: '', via: 'none' };
+  };
+}
+
+/* ---------------- gap fill ---------------- */
+// Ranks the run never captured. A rank goes missing in one of two ways: no sampled frame showed
+// its row whole — the list moved past between two samples, or the row sat cut off at an edge in
+// every frame it was in — or a frame did show it and the model, reading a long batch, left it
+// out. Either way the page knows exactly which ranks are absent, and roughly where: between the
+// frames that showed the rank above and the rank below.
+//
+// So each gap gets its own small request, and only when there is a gap: fresh frames taken from
+// that stretch of the video, and the usual question narrowed to just those ranks. A run with no
+// gaps costs nothing extra. Measured, a missed rank is most often a single row, and the ask for it
+// comes to roughly 15,000 tokens.
+const GAP_MAX = 8, GAP_MOMENTS = 5, GAP_REACH = 3;
+async function fillGaps(sightings, frames, file) {
+  if (!frames.times) return { asked: 0, found: 0, rows: [] };
+  const at = s => s.frame != null ? frames.times[s.frame] : null;
+  const when = new Map();                  // rank -> times it was seen
+  for (const s of sightings) {
+    if (!(s.rank > 0)) continue;
+    if (!when.has(s.rank)) when.set(s.rank, []);
+    const t = at(s);
+    if (t != null) when.get(s.rank).push(t);
+  }
+  if (!when.size) return { asked: 0, found: 0, rows: [] };
+  const top = Math.max(...when.keys());
+  const ranges = [];
+  for (let k = 1; k <= top; k++) {
+    if (when.has(k)) continue;
+    const last = ranges[ranges.length - 1];
+    if (last && last[1] === k - 1) last[1] = k; else ranges.push([k, k]);
+  }
+  if (!ranges.length) return { asked: 0, found: 0, rows: [] };
+  const todo = ranges.slice(0, GAP_MAX);
+  const missing = todo.reduce((n, [a, b]) => n + b - a + 1, 0);
+  log(`filling ${missing} missing rank${missing > 1 ? 's' : ''}…`);
+
+  // the stretch of video between the nearest ranks either side that were seen
+  const seenNear = (from, step) => {
+    for (let k = from, i = 0; i < GAP_REACH; k += step, i++) {
+      const ts = when.get(k);
+      if (ts && ts.length) return step < 0 ? Math.max(...ts) : Math.min(...ts);
+    }
+    return null;
+  };
+  const moments = todo.map(([a, b]) => {
+    let t0 = seenNear(a - 1, -1) ?? 0, t1 = seenNear(b + 1, 1) ?? frames.duration;
+    if (t1 < t0) [t0, t1] = [t1, t0];
+    t0 = Math.max(0, t0 - 0.3); t1 = Math.min(frames.duration, t1 + 0.3);
+    return Array.from({ length: GAP_MOMENTS }, (_, i) => t0 + (t1 - t0) * i / (GAP_MOMENTS - 1));
+  });
+  const shots = await grabStrips(file, moments.flat());
+  let found = 0;
+  const rows = (await Promise.all(todo.map(async ([a, b], gi) => {
+    const imgs = shots.slice(gi * GAP_MOMENTS, (gi + 1) * GAP_MOMENTS).flat();
+    const spec = {
+      prompt: buildPrompt(false) + `
+
+These images were taken to find rows the first reading missed. Report ONLY the rows ranked
+${a === b ? a : `${a} to ${b}`}, and nothing else.`,
+      schema: RANKING_SCHEMA, parse: parseJSON, config: KARTZ.config,
+    };
+    try {
+      const got = await withFallback(m => callProxy(imgs, m, MODEL_BASE, spec), modelChain(), () => {}, true);
+      const hit = got.filter(r => r.rank >= a && r.rank <= b);
+      found += new Set(hit.map(r => r.rank)).size;
+      return hit;
+    } catch { return []; }                 // a failed fill leaves the gap reported, as before
+  }))).flat();
+  return { asked: missing, found, rows };
+}
+
 /* ---------------- run ---------------- */
 let rows = [], index = [], skipIndex = [], aliases = {};
 $('go').onclick = async () => {
   $('go').disabled = true; $('out').classList.add('hide');
   try {
-    const roster = currentRoster();
-    if (!roster.length) throw new Error('No roster loaded — paste the sheet link and press Pull roster.');
+    startVideoUpload(videoFile);       // normally already under way since the file was chosen
+    const roster = await freshRoster();
     index = buildIndex(roster);
     skipIndex = buildIndex(skippedRoster());
     aliases = store.get('aliases') || {};
 
     log('decoding video…'); setProg(0);
+    const spentBefore = callProxy.spent || 0;
     const frames = await extractFrames(videoFile, +$('sens').value,
       (p, n) => { setProg(p * 0.5); log(`sampling video — ${n} frames kept`); });
     if (!frames.length) throw new Error('no frames captured');
@@ -1473,74 +2106,12 @@ $('go').onclick = async () => {
     log(`${frames.length} frames (${(frames.join('').length * 0.75 / 1024 | 0)} KB) — sending…`);
     let sightings = await callModel(frames);
     const frameCount = frames.length;
-    // A roster_name the model returned is only worth anything if it is genuinely in the
-    // roster; models will occasionally produce a plausible-looking name that is not on the
-    // list, and that is exactly the case a human needs to see.
-    // Folded name -> roster entries. A Set, because a handful of keys are claimed by two
-    // players — "Killua" and "Killua swords" both reduce to killua — and those cases must
-    // not be decided by string folding.
-    const byFold = new Map();
-    for (const e of index) {
-      if (!byFold.has(e.k)) byFold.set(e.k, new Set());
-      byFold.get(e.k).add(e.r);
-    }
-    const soleMatch = k => { const set = k && byFold.get(k); return set && set.size === 1 ? [...set][0] : null; };
 
     sightings = dropForeignRows(sightings);
+    const fill = await fillGaps(sightings, frames, videoFile);
+    sightings = sightings.concat(fill.rows);
     const base = consolidate(sightings, frameCount);
-    rows = base.map(r => {
-      // Order matters, most authoritative first.
-      // 1. Something you corrected by hand and saved. Nothing should overrule that.
-      const al = aliases[aliasKey(r.plain || r.name)] || aliases[aliasKey(r.name)];
-      if (al) {
-        const nm = typeof al === 'string' ? al : al.name;
-        const hit = soleMatch(fold(nm)) || byFold.get(fold(nm))?.values().next().value;
-        if (hit) return { ...r, match: hit, score: 1, pick: hit.search };
-      }
-      // 2. The name as actually drawn, when exactly one roster entry reduces to it. This is
-      //    stronger evidence than the model's own choice: a player shown as "JoJo🐼" folds to
-      //    jojo, which only Jojo answers to, however the model happened to label the row.
-      //    Where a key is shared, we skip this and let the model decide, since it saw the
-      //    glyphs and a fold cannot tell those two apart.
-      // Only the drawn name here — r.plain carries the model's own answer, and folding that
-      // would just be step 3 wearing a disguise.
-      //    Every distinct reading of the row is tried, not just the commonest: a name read
-      //    three ways is three chances to land on the player, and taking only the mode threw
-      //    the other attempts away.
-      const readings = (r.obs && r.obs.length) ? r.obs : [r.name];
-      for (const o of readings) {
-        const bySeen = soleMatch(fold(o));
-        if (bySeen) return { ...r, match: bySeen, score: 1,
-                             pick: bySeen.ingame || bySeen.search, via: 'drawn:' + o };
-      }
-      // 3. The roster entry the model named — provided it really exists AND some reading of
-      //    the row actually supports it. Without that second test this step accepts whatever
-      //    the model asserts, which is how a row drawn "𝓡𝓝/𝓑" was confidently filed as MB.
-      for (const c of (r.claims && r.claims.length ? r.claims : [r.pick_]).filter(Boolean)) {
-        const entry = soleMatch(fold(c)) || byFold.get(fold(c))?.values().next().value;
-        if (!entry) continue;
-        if (!readings.some(o => claimPlausible(o, entry))) continue;
-        return { ...r, match: entry, score: 1,
-                 pick: entry.ingame || entry.search, claimed: true, via: 'claim:' + c };
-      }
-      // There is no step here for "the model named a player but nothing in the reading
-      // supports it". One was tried, guarded by requiring the claim to be unanimous within the
-      // run, and it matched rank 33 to angkasa — the row is batman. That row reads as Thai one
-      // run, IPA the next and 🦇man the third, and the claim flips between batman and angkasa
-      // with it, so agreement inside a single run says nothing about being right. A name the
-      // model cannot transcribe and cannot consistently recognise belongs in the confirm list.
-      // 4. Fuzzy over every reading, and failing that the row is raised for confirmation.
-      let m = { r: null, score: 0, near: null }, from = '';
-      for (const o of readings) {
-        const t = resolve(o, o, index, aliases);
-        if (t.score > m.score) { m = t; from = o; }
-      }
-      if (m.r) return { ...r, match: m.r, score: m.score, near1: m.near1,
-                        pick: m.r.ingame || m.r.search, via: 'near:' + from };
-      const sk = skipIndex.length ? resolve(r.name, r.plain, skipIndex, {}) : { r: null };
-      if (sk.r) return { ...r, match: null, skipped: sk.r, score: sk.score, pick: '' };
-      return { ...r, match: null, score: m.score, near: m.near, pick: '', via: 'none' };
-    });
+    rows = base.map(makeMatcher(index, skipIndex, aliases));
     // Two rows resolving to one player means at least one of them is wrong, and neither the
     // model nor the fuzzy match can tell which. Surface both rather than silently emitting a
     // duplicate the sheet would then double-count.
@@ -1576,7 +2147,11 @@ $('go').onclick = async () => {
       if (r.rank > n) n = r.rank;
     }
     render(roster);
-    log(`done — ${sightings.length} readings → ${rows.length} players`);
+    const spent = (callProxy.spent || 0) - spentBefore;
+    log(`done — ${sightings.length} readings → ${rows.length} players · `
+        + (fill.asked ? `gap fill found ${fill.found} of ${fill.asked} · ` : '')
+        + `${Math.round(spent / 1000)}k tokens · slowest answer ${Math.round(callModel.slowest / 1000)}s`
+        + (spent > 250000 ? ' (over the 250k budget)' : ''));
     setProg(1);
   } catch (e) {
     const m = e.message;
@@ -1663,13 +2238,15 @@ function render(roster) {
         <td>${esc(r.name)}</td>
         <td>${settled ? esc(outPlayer(r).search) : '<span class="note">—</span>'}</td>
         <td>${settled
-              ? `<span class="${green ? 'named' : 'asdrawn'}">${esc(shown)}</span>`
-                + `<button class="pencil" data-i="${i}" title="change this name">✎</button>`
+              ? `<span class="nmtext ${green ? 'named' : 'asdrawn'}" title="${esc(shown)}">${esc(shown)}</span>`
+                + `<button class="pencil" data-i="${i}" title="change this name">✎ Edit</button>`
                 + (!green ? `<button class="ghost tickok" data-i="${i}"`
                     + ` title="this name is right as it is"`
                     + ` style="width:auto;padding:4px 9px;margin-left:6px">✓</button>` : '')
-              : `<input data-i="${i}" class="pickbox" data-row="${i}" placeholder="type to search…"
-                        value="${esc(r.pick || (r.editing ? shown : ''))}" spellcheck="false">`}</td>
+              : (r.editing ? '<span class="field">' : '')
+                + `<input data-i="${i}" class="pickbox" data-row="${i}" placeholder="type to search…"
+                        value="${esc(r.pick || (r.editing ? shown : ''))}" spellcheck="false">`
+                + (r.editing ? `<button class="keepbtn" type="button" title="keep this name">✓ Done</button></span>` : '')}</td>
         <td>${alli ? esc(alli) : '<span class="note">—</span>'}</td>
         <td>${r.points}</td>
         <td>${r.skipped ? '<span class="pill p-new">excluded</span>'
@@ -1701,12 +2278,12 @@ function render(roster) {
     render(lastRoster);
   });
   $('tbl').querySelectorAll('.pickbox').forEach(inp => {
-    wirePicker(inp, (v, committed) => {
+    // Typing decides nothing. Writing each keystroke into r.pick meant abandoning an edit
+    // left the half-typed fragment behind as the row's answer — "Peez" where ChiGrub had
+    // been — so the escape below could not actually put anything back.
+    // A name is decided by choosing it from the menu, or by ✓ Done, which keeps what is typed.
+    const choose = v => {
       const r = rows[+inp.dataset.i];
-      // Typing decides nothing. Writing each keystroke into r.pick meant abandoning an edit
-      // left the half-typed fragment behind as the row's answer — "Peez" where ChiGrub had
-      // been — so the escape below could not actually put anything back.
-      if (!committed) return;
       r.pick = v;
       // a row being edited no longer rides on its original match, nor on the excluded player
       // it used to be taken for — choosing a name here is choosing to put the row in the sheet
@@ -1719,7 +2296,8 @@ function render(roster) {
       }
       closeMenu();
       setTimeout(() => render(lastRoster), 0);
-    });
+    };
+    wirePicker(inp, (v, committed) => { if (committed) choose(v); });
     const r = rows[+inp.dataset.i];
     // A box that is not an edit — one you discarded and are refilling, say —
     // has no earlier state to go back to, so whatever is in it when you leave is the answer.
@@ -1730,8 +2308,15 @@ function render(roster) {
     // An edit opened by accident should cost nothing. A mousedown anywhere outside the box
     // puts the row back exactly as it was. The suggestion menu is excepted, because it hangs
     // off the body rather than the row, so clicking an option is otherwise "outside".
+    const field = inp.closest('.field') || inp;
+    const done = field.querySelector('.keepbtn');
+    if (done) done.onclick = () => {
+      document.removeEventListener('mousedown', escape, true);
+      if (inp.value.trim()) choose(inp.value.trim());
+      else { r.editing = false; closeMenu(); render(lastRoster); }
+    };
     const escape = ev => {
-      if (inp.contains(ev.target) || (menuEl && menuEl.contains(ev.target))) return;
+      if (field.contains(ev.target) || (menuEl && menuEl.contains(ev.target))) return;
       document.removeEventListener('mousedown', escape, true);
       if (!r.editing) return;
       r.editing = false;
@@ -1896,25 +2481,33 @@ function outPlayer(r) {
 }
 const outName = r => outPlayer(r).ingame;
 
-// Input-RawData, columns B to J, in the sheet's own formats: the load stamp as 9/28/2026 14:46:46
-// and the date alone as 2026-09-30.
+// Input-RawData, columns B to J. Both dates come from the clock when the rows go out, not from a
+// picker: the load stamp as 9/28/2026 14:46:46, and the month as Sep26 (see monthTag).
 const OUT_HEADERS = ['kartz_load_date', 'kartz_submitter', 'kartz_search_name', 'kartz_ign_name',
   'kartz_alliance', 'kartz_month', 'kartz_day', 'kartz_rank', 'kartz_score'];
-function loadStamp(ymd, at = new Date()) {
-  const [y, m, d] = ymd.split('-').map(Number);
+function loadStamp(at = new Date()) {
   const p = n => String(n).padStart(2, '0');
-  return `${m}/${d}/${y} ${p(at.getHours())}:${p(at.getMinutes())}:${p(at.getSeconds())}`;
+  return `${at.getMonth() + 1}/${at.getDate()}/${at.getFullYear()} `
+       + `${p(at.getHours())}:${p(at.getMinutes())}:${p(at.getSeconds())}`;
 }
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// The event's month, not the upload's: a Kartz event can finish in the first days of the next
+// month, so a Day 7 recording sent on 3 October belongs to September. A week back from the send
+// date always lands inside the event's own month.
+const monthTag = (at = new Date()) => {
+  const d = new Date(at.getFullYear(), at.getMonth(), at.getDate() - 7);
+  return MONTHS[d.getMonth()] + String(d.getFullYear()).slice(-2);
+};
 // The game's own rank, not this row's position in the list. They agree only when every
 // player was captured, and when they disagree it is the position that is wrong: one player
 // missed near the top used to shift every rank beneath them, which is how sixty correct names
 // went into the sheet against ranks that were three too small.
 function outRows() {
-  const date = $('datestr').value, stamp = date ? loadStamp(date) : '';
+  const at = new Date(), stamp = loadStamp(at), month = monthTag(at);
   return rows.filter(r => !r.dropped && !r.skipped).map(r => {
     const p = outPlayer(r);
-    return [stamp, $('submitter').value, p.search, p.ingame, $('alliance').value,
-            date, $('kday').value, r.rank, r.points];
+    return [stamp, $('submitter').value.trim(), p.search, p.ingame, $('alliance').value,
+            month, $('kday').value, r.rank, r.points];
   });
 }
 
@@ -1926,9 +2519,8 @@ function sendBlockers() {
   const open = rows.filter(r => !r.dropped && (r.editing
     || (!r.match && !r.skipped && !r.confirmed && !r.pick))).length;
   if (open) out.push(`${open} row${open > 1 ? 's' : ''} to confirm`);
-  const missing = [['datestr', 'load date'], ['submitter', 'submitter'],
-                   ['alliance', 'alliance'], ['kday', 'day']]
-    .filter(([id]) => !$(id).value).map(([, name]) => name);
+  const missing = [['submitter', 'submitter'], ['alliance', 'alliance'], ['kday', 'day']]
+    .filter(([id]) => !$(id).value.trim()).map(([, name]) => name);
   if (missing.length) out.push('choose a ' + missing.join(', '));
   if (!outRows().length) out.push('no rows to send');
   return out;
@@ -1937,10 +2529,145 @@ function refreshSend() {
   const why = sendBlockers();
   const n = rows.filter(r => !r.dropped && !r.skipped).length;
   $('send').disabled = why.length > 0 || sending;
-  if (!sending) $('send').textContent = `Send ${n} row${n === 1 ? '' : 's'} to sheet`;
+  // Once sent, the button says where the rows went and stays that way — the confirmation, so
+  // nobody has to leave the page to check. Any change to the rows makes them unsent again.
+  const sent = !sending && lastSent && sendKey() === lastSent;
+  if (!sending) $('send').textContent = sent ? sentLabel : `Send ${n} row${n === 1 ? '' : 's'} to sheet`;
+  $('send').classList.toggle('done', !!sent);
+  $('sheetLink').classList.toggle('hide', !sent);
   $('sendNote').textContent = why.length ? 'Before sending: ' + why.join(' · ') : '';
 }
+// what identifies a send: every cell but the stamp, which moves with the clock
+const sendKey = (values = outRows()) => JSON.stringify(values.map(v => v.slice(1)));
+let sentLabel = '';
 let sending = false;
+// The recording goes to the Kartz recordings folder on Google Drive. It is silent by design: no
+// message, no retry — the sheet is what matters, and the video is a record kept alongside it. The
+// Worker hands out a one-time upload link (see apps-script/VideoUpload.gs) and the file goes
+// straight from here to Drive.
+//
+// The upload starts when the file is chosen, not at Send. A page cannot keep uploading once it is
+// closed, so a video that only began at Send held the button on "Sending…" for as long as the
+// upload took. Instead the file goes up in pieces while the run is read and checked, all but its
+// last few hundred kilobytes; Drive does not create a file until its last piece arrives, so a run
+// that is never sent leaves nothing in the folder — the unfinished upload simply expires. Send then
+// only has that last piece to deliver, names the file after the run, and sends the rows.
+//
+// If the early upload went wrong, Send falls back to uploading the whole file there and then.
+// A recording already saved this visit is not saved again when the same run is re-sent.
+let videoSaved = null;
+const VIDEO_WAIT = 5 * 60 * 1000;      // a recording still uploading after this is given up on
+const VIDEO_PIECE = 8 * 1024 * 1024;   // per request while uploading early
+const VIDEO_QUANTUM = 256 * 1024;      // Drive takes pieces in multiples of this, but for the last
+let early = null;                      // the early upload under way: { file, url, sent, held, done }
+
+const videoType = f => /^video\//.test(f.type) ? f.type : 'video/quicktime';
+// 2026-10-05 Day 4 · 698W · peach.mov — sorts by date in the folder
+function videoName(f) {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  const ext = (f.name.match(/\.[a-z0-9]{2,5}$/i) || ['.mov'])[0];
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${$('kday').value}`
+       + ` · ${$('alliance').value} · ${$('submitter').value.trim()}${ext}`;
+}
+async function videoLink(name, f) {
+  const r = await fetch(API_BASE + '/video-session', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name, type: videoType(f), size: f.size }) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.url) throw new Error(j?.error?.message || `no upload link (${r.status})`);
+  return j.url;
+}
+// one piece of a resumable upload; Drive answers 308 for "more to come", 200/201 for the last
+async function videoPiece(url, f, from, to, signal) {
+  const r = await fetch(url, { method: 'PUT', signal, body: f.slice(from, to),
+    headers: { 'content-range': `bytes ${from}-${to - 1}/${f.size}` } });
+  if (r.status !== 308 && !r.ok) throw new Error(`Drive refused part of the upload (${r.status})`);
+  return r;
+}
+
+// From the moment the file is chosen, in the background. First choice: straight into the B2 staging bucket through a
+// signed link; the Worker takes it on to Drive after Send, so the page can then be closed at once.
+// If staging is not set up, the upload goes to Drive itself, all but its tail (below).
+function startVideoUpload(f) {
+  if (!f || videoSaved === f || (early && early.file === f)) return;
+  const up = { file: f, mode: 'b2', key: null, failed: false };
+  early = up;
+  up.done = (async () => {
+    try {
+      const type = videoType(f);
+      const r = await fetch(API_BASE + '/video-stage', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ type, size: f.size }) });
+      if (r.status === 501) { if (early === up) startDriveUpload(f); return; }   // no B2: Drive
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.url) throw new Error(j?.error?.message || `no staging link (${r.status})`);
+      const put = await fetch(j.url, { method: 'PUT', headers: { 'content-type': type }, body: f });
+      if (!put.ok) throw new Error(`B2 refused the upload (${put.status})`);
+      up.key = j.key;
+    } catch (e) { up.failed = true; console.warn('staging upload stopped:', e); }
+  })();
+}
+// The fallback when B2 is not set up: straight to Drive, everything but the tail.
+function startDriveUpload(f) {
+  // what is held back for Send: under 256 KB, and never nothing, so the file is not finished early
+  const held = Math.floor((f.size - 1) / VIDEO_QUANTUM) * VIDEO_QUANTUM;
+  const up = { file: f, mode: 'drive', url: null, sent: 0, held, failed: false };
+  early = up;
+  up.done = (async () => {
+    try {
+      up.url = await videoLink(`uploading — ${f.name}`, f);
+      while (up.sent < held) {
+        if (early !== up) return;        // another recording was chosen: let this one expire
+        const to = Math.min(up.sent + VIDEO_PIECE, held);
+        await videoPiece(up.url, f, up.sent, to);
+        up.sent = to;
+      }
+    } catch (e) { up.failed = true; console.warn('early upload stopped:', e); }
+  })();
+}
+
+// At Send. Staged in B2: hand back where it is, for the Worker to copy to Drive once the rows are
+// in. Otherwise: finish the Drive upload and name it, or failing that upload the whole file now.
+async function saveVideo() {
+  const f = videoFile;
+  if (!f || videoSaved === f) return null;
+  const stop = new AbortController(), timer = setTimeout(() => stop.abort(), VIDEO_WAIT);
+  const giveUp = new Promise(r => stop.signal.addEventListener('abort', r));
+  try {
+    const name = videoName(f);
+    // started for B2 and switched to Drive (B2 not set up) shows up as the Drive upload by now
+    let up = early && early.file === f ? early : null;
+    if (up) await Promise.race([up.done, giveUp]);
+    up = early && early.file === f ? early : null;
+    if (up && up.mode === 'drive' && up.done) await Promise.race([up.done, giveUp]);
+    if (stop.signal.aborted) throw new Error('upload took too long');
+    if (up && up.mode === 'b2' && up.key) {
+      videoSaved = f; early = null;
+      return { key: up.key, name };
+    }
+    if (up && up.mode === 'b2') up = null;       // staging failed: send the whole file to Drive below
+    if (up && !up.failed && up.url && up.sent === up.held) {
+      const r = await videoPiece(up.url, f, up.held, f.size, stop.signal);
+      const made = await r.json().catch(() => ({}));
+      videoSaved = f; early = null;
+      // the file exists now, under its placeholder name; a failed rename leaves just that
+      const rn = await fetch(API_BASE + '/video-rename', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ fileId: made.id, name }) });
+      if (!rn.ok) console.warn('recording saved but not renamed:', await rn.text());
+      return null;
+    }
+    // the fallback: the whole file, under its final name, in one go
+    const url = await videoLink(name, f);
+    const r = await fetch(url, { method: 'PUT', headers: { 'content-type': videoType(f) },
+                                 body: f, signal: stop.signal });
+    if (!r.ok) throw new Error(`Drive refused the upload (${r.status})`);
+    videoSaved = f; early = null;
+  } catch (e) {
+    console.warn('recording not saved to Drive:', e);
+  } finally { clearTimeout(timer); }
+  return null;
+}
 // The same run sent twice doubles every player's score in the tracker, and pressing a button
 // again because the phone seemed slow is the easiest way to do it. The stamp is left out of the
 // comparison, since it moves with the clock.
@@ -1948,24 +2675,55 @@ let lastSent = '';
 $('send').onclick = async () => {
   if (sendBlockers().length) return refreshSend();
   const values = outRows();
-  const key = JSON.stringify(values.map(v => v.slice(1)));
+  const key = sendKey(values);
   if (key === lastSent
       && !confirm('These exact rows were already sent to the sheet. Send them again?')) return;
   sending = true; $('send').disabled = true; $('send').textContent = 'Sending…';
-  let ok = false;
+  // The rows first, and the button goes green the moment the sheet has them. The recording follows
+  // on its own (afterSend, below) — it never holds the rows back.
+  let sentOk = false;
   try {
+    // Sheets would read "Sep26" as the 26th of September; the leading apostrophe keeps it the
+    // text it is, and is not itself stored
+    const body = JSON.stringify({ target: 'kartz',
+                                  values: values.map(r => r.map((v, i) => i === 5 ? "'" + v : v)) });
+    // keepalive lets the request finish even if the page is closed straight after Send. Browsers
+    // allow it only for small bodies (64 KB); a run's rows are a fraction of that.
     const r = await fetch(API_BASE + '/append', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ values }) });
+      method: 'POST', headers: { 'content-type': 'application/json' }, body,
+      keepalive: body.length < 60000 });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j?.error?.message || `sheet refused the rows (${r.status})`);
     log(`appended ${values.length} rows to Input-RawData${j.range ? ' at ' + j.range : ''}`);
-    ok = true; lastSent = key;
+    lastSent = key;
+    sentLabel = `Sent ${values.length} row${values.length === 1 ? '' : 's'} to Kartz Tracker → Input-RawData`;
+    // straight to the rows just written: the Worker reports them as 'Input-RawData'!C548:K700
+    // as written, colon and all: Sheets reads the range straight out of the link's #fragment
+    const cells = (j.range || '').replace(/^.*!/, '');
+    $('sheetLink').href = RAWDATA_TAB + (/^[A-Z]+\d+(:[A-Z]+\d+)?$/.test(cells) ? '&range=' + cells : '');
+    sentOk = true;
   } catch (e) { log('✗ ' + e.message); }
   sending = false;
   refreshSend();
-  if (ok) flash($('send'), `Sent ${values.length} rows ✓`, 2400);
+  if (sentOk) saveAfterSend();
 };
+// The recording, once the rows are in. Staged in B2 (normally already uploaded, since it started
+// when the file was chosen), it is handed to the Worker with one small request that survives the
+// page closing, and the Worker copies it to Drive by itself. Without B2 it goes to Drive from here,
+// which needs the page open until it is done. Silent either way.
+async function saveAfterSend() {
+  const video = await saveVideo();
+  if (!video) return;
+  try {
+    const r = await fetch(API_BASE + '/video-commit', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(video), keepalive: true });
+    if (!r.ok) throw new Error(`the Worker refused the recording (${r.status})`);
+  } catch (e) {
+    videoSaved = null;          // so a re-send of the run tries again
+    console.warn('recording not handed over for Drive:', e);
+  }
+}
 
 $('copy').onclick = async () => {
   const tsv = outRows().map(r => r.join('\t')).join('\n');
@@ -1980,7 +2738,7 @@ $('csv').onclick = () => {
     + outRows().map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a = Object.assign(document.createElement('a'), {
     href: URL.createObjectURL(new Blob([csv], { type: 'text/csv' })),
-    download: `kartz-${$('datestr').value || 'export'}.csv` });
+    download: `kartz-${new Date().toLocaleDateString('en-CA')}.csv` });
   a.click(); URL.revokeObjectURL(a.href);
   flash($('csv'), 'Downloaded ✓');
 };
@@ -2001,7 +2759,48 @@ $('learn').onclick = () => {
 
 
 
+/* ---------------- theme and jump buttons ---------------- */
+const SUN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>';
+const MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>';
+const prefersDark = matchMedia('(prefers-color-scheme: dark)');
+const isDark = () => document.documentElement.dataset.theme
+  ? document.documentElement.dataset.theme === 'dark' : prefersDark.matches;
+// the button shows where it goes, not where it is: a sun in dark mode, a moon in light
+function paintTheme() {
+  const dark = isDark();
+  for (const b of [$('theme'), $('themeHome')]) {
+    b.innerHTML = dark ? SUN : MOON;
+    b.title = dark ? 'Switch to light mode' : 'Switch to dark mode';
+    b.setAttribute('aria-label', b.title);
+  }
+}
+$('theme').onclick = $('themeHome').onclick = () => {
+  const next = isDark() ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  store.set('theme', next);
+  paintTheme();
+};
+prefersDark.addEventListener('change', paintTheme);
+paintTheme();
+
+let jumpIdle = null;
+function showJump() {
+  const max = document.documentElement.scrollHeight - innerHeight;
+  if (max < 60) return $('jump').classList.remove('on');       // nothing to jump across
+  $('toTop').hidden = scrollY < 80;
+  $('toBottom').hidden = scrollY > max - 80;
+  $('jump').classList.add('on');
+  clearTimeout(jumpIdle);
+  jumpIdle = setTimeout(() => $('jump').classList.remove('on'), 2500);
+}
+addEventListener('scroll', showJump, { passive: true });
+$('toTop').onclick = () => scrollTo({ top: 0, behavior: 'smooth' });
+$('toBottom').onclick = () => scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+
 loadSetup();
 </script>
+<script src="cp.js"></script>
+<!-- TEST ONLY: Kartz extraction by stitching -->
+<script src="stitch.js"></script>
 </body>
 </html>
