@@ -468,6 +468,50 @@ export default {
 
     // /api/gemini/<model>: the Base CP tab, on Gemini instead of Ollama. The page already
     // speaks Gemini's own request shape, so this adds the key and forwards it untouched.
+    // Gemini's file storage, for reading a whole recording as a video (test.html). The video itself
+    // never comes through here — it can be hundreds of MB, past a Worker's request limit. This only
+    // opens an upload session with the key, and hands back the session's own link, which the page
+    // then uploads to directly (Google accepts uploads from the site's origin). The link is good for
+    // that one upload and nothing else, so the key stays here. Gemini deletes files after 48 hours.
+    const fileRoute = url.pathname.replace(/^\/+/, '');
+    if (fileRoute === 'api/gemini-upload-start' || fileRoute === 'api/gemini-file' || fileRoute === 'api/gemini-models') {
+      if (!env.GEMINI_API_KEY) return reply({ error: 'Worker has no GEMINI_API_KEY secret set.' }, 500);
+      const key = env.GEMINI_API_KEY, GB = 'https://generativelanguage.googleapis.com';
+      const j = await request.json().catch(() => ({}));
+      if (fileRoute === 'api/gemini-upload-start') {
+        const size = Number(j.size);
+        const type = /^video\/[\w.+-]{1,40}$/.test(j.type || '') ? j.type : 'video/quicktime';
+        if (!(size > 0 && size <= 2 * 1024 ** 3)) return reply({ error: 'the recording size is missing or over 2 GB' }, 400);
+        const r = await fetch(`${GB}/upload/v1beta/files`, {
+          method: 'POST',
+          headers: {
+            'x-goog-api-key': key, 'content-type': 'application/json',
+            'x-goog-upload-protocol': 'resumable', 'x-goog-upload-command': 'start',
+            'x-goog-upload-header-content-length': String(size), 'x-goog-upload-header-content-type': type,
+            // the page's own origin, so the session takes the upload from the page (as Drive needed)
+            ...(origin ? { origin } : {}),
+          },
+          body: JSON.stringify({ file: { display_name: String(j.name || 'recording').slice(0, 120) } }),
+        });
+        const link = r.headers.get('x-goog-upload-url');
+        if (!link) return reply({ error: `Gemini would not open an upload: ${r.status} ${(await r.text()).slice(0, 200)}` }, 502);
+        return reply({ url: link, type,
+                       granularity: +(r.headers.get('x-goog-upload-chunk-granularity') || 0) || 8 * 1024 * 1024 }, 200);
+      }
+      if (fileRoute === 'api/gemini-file') {
+        // whether an uploaded video has finished processing (state ACTIVE) and can be read
+        if (!/^files\/[\w-]{1,80}$/.test(j.name || '')) return reply({ error: 'bad file name' }, 400);
+        const r = await fetch(`${GB}/v1beta/${j.name}`, { headers: { 'x-goog-api-key': key } });
+        return new Response(await r.text(), { status: r.status, headers: { ...cors, 'content-type': 'application/json' } });
+      }
+      // the models this key can use, so the test page can offer the right names
+      const r = await fetch(`${GB}/v1beta/models?pageSize=1000`, { headers: { 'x-goog-api-key': key } });
+      const m = await r.json().catch(() => ({}));
+      return reply({ models: (m.models || [])
+        .filter(x => (x.supportedGenerationMethods || []).includes('generateContent'))
+        .map(x => ({ name: String(x.name || '').replace(/^models\//, ''), label: x.displayName || '' })) }, r.ok ? 200 : r.status);
+    }
+
     const gem = url.pathname.replace(/^\/+/, '').match(/^api\/gemini\/([a-zA-Z0-9._\-]{1,80})$/);
     if (gem) {
       if (!env.GEMINI_API_KEY)
