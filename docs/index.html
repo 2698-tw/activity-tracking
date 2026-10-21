@@ -989,6 +989,8 @@ function pickFile(f) {
   // Extract, checking rows — to get there before Send. A recording swapped for another, or never
   // sent, is cleared by the staging bucket's lifecycle rule.
   startVideoUpload(f);
+  // And it starts being read straight away too (kartz.js): sampling needs no roster or form.
+  if (typeof kzSample === 'function') kzSample(f);
 }
 
 const once = (el, ev) => new Promise(res => el.addEventListener(ev, res, { once: true }));
@@ -1619,44 +1621,6 @@ const rateGate = (() => {
   };
 })();
 
-async function callModel(frames) {
-  const sheet = $('sheetimg').checked ? rosterSheet(currentRoster()) : null;
-  const batches = [];
-  const B = batchSize(frames.length);
-  for (let i = 0; i < frames.length; i += B) batches.push(frames.slice(i, i + B));
-  let done = 0;
-  const switched = new Set();
-  callModel.slowest = 0;
-  const one = async (b, bi) => {
-    // No rate gate: on the paid key a run is a few dozen requests against 4,000 a minute.
-    const rows = await withFallback(async m => {
-                                      const t0 = Date.now();
-                                      const got = await callProxy(sheet ? [sheet, ...b] : b,
-                                                                  m, MODEL_BASE);
-                                      callModel.slowest = Math.max(callModel.slowest, Date.now() - t0);
-                                      return got;
-                                    },
-                                    modelChain(), m => switched.add(m), true);
-    done++; setProg(0.5 + 0.5 * done / batches.length);
-    log(`read ${done} of ${batches.length} batches…`
-        + (switched.size ? `  (fell back to ${[...switched].join(', ')})` : ''));
-    // Which of the run's frames each row was read from, so the gap fill knows where in the video
-    // each rank was. The model counts the reference sheet as image 1 when it is sent, so that is
-    // taken off first. Where it leaves the number out, which it often does, the row's place in
-    // its reply stands in: rows come back in image order, which places a row within a frame or
-    // two, close enough for a stretch of video that is padded either side anyway.
-    rows.forEach((r, i) => {
-      let k = typeof r.img === 'number' ? r.img - 1 - (sheet ? 1 : 0) : -1;
-      if (!(k >= 0 && k < b.length))
-        k = Math.round(rows.length > 1 ? i / (rows.length - 1) * (b.length - 1) : 0);
-      r.frame = bi * B + k;
-    });
-    return rows;
-  };
-  // every batch at once: a run takes as long as its slowest answer
-  return (await inTurn(batches, one, batches.length)).flat();
-}
-
 // Run fn over items with no more than `limit` in flight, keeping results in item order.
 // Used by both tabs for their model requests, so neither can overrun Ollama's free tier.
 async function inTurn(items, fn, limit = PARALLEL) {
@@ -2001,142 +1965,10 @@ function makeMatcher(index, skipIndex, aliases) {
 // gaps costs nothing extra. Measured, a missed rank is most often a single row, and the ask for it
 // comes to roughly 15,000 tokens.
 const GAP_MAX = 8, GAP_MOMENTS = 5, GAP_REACH = 3;
-async function fillGaps(sightings, frames, file) {
-  if (!frames.times) return { asked: 0, found: 0, rows: [] };
-  const at = s => s.frame != null ? frames.times[s.frame] : null;
-  const when = new Map();                  // rank -> times it was seen
-  for (const s of sightings) {
-    if (!(s.rank > 0)) continue;
-    if (!when.has(s.rank)) when.set(s.rank, []);
-    const t = at(s);
-    if (t != null) when.get(s.rank).push(t);
-  }
-  if (!when.size) return { asked: 0, found: 0, rows: [] };
-  const top = Math.max(...when.keys());
-  const ranges = [];
-  for (let k = 1; k <= top; k++) {
-    if (when.has(k)) continue;
-    const last = ranges[ranges.length - 1];
-    if (last && last[1] === k - 1) last[1] = k; else ranges.push([k, k]);
-  }
-  if (!ranges.length) return { asked: 0, found: 0, rows: [] };
-  const todo = ranges.slice(0, GAP_MAX);
-  const missing = todo.reduce((n, [a, b]) => n + b - a + 1, 0);
-  log(`filling ${missing} missing rank${missing > 1 ? 's' : ''}…`);
-
-  // the stretch of video between the nearest ranks either side that were seen
-  const seenNear = (from, step) => {
-    for (let k = from, i = 0; i < GAP_REACH; k += step, i++) {
-      const ts = when.get(k);
-      if (ts && ts.length) return step < 0 ? Math.max(...ts) : Math.min(...ts);
-    }
-    return null;
-  };
-  const moments = todo.map(([a, b]) => {
-    let t0 = seenNear(a - 1, -1) ?? 0, t1 = seenNear(b + 1, 1) ?? frames.duration;
-    if (t1 < t0) [t0, t1] = [t1, t0];
-    t0 = Math.max(0, t0 - 0.3); t1 = Math.min(frames.duration, t1 + 0.3);
-    return Array.from({ length: GAP_MOMENTS }, (_, i) => t0 + (t1 - t0) * i / (GAP_MOMENTS - 1));
-  });
-  const shots = await grabStrips(file, moments.flat());
-  let found = 0;
-  const rows = (await Promise.all(todo.map(async ([a, b], gi) => {
-    const imgs = shots.slice(gi * GAP_MOMENTS, (gi + 1) * GAP_MOMENTS).flat();
-    const spec = {
-      prompt: buildPrompt(false) + `
-
-These images were taken to find rows the first reading missed. Report ONLY the rows ranked
-${a === b ? a : `${a} to ${b}`}, and nothing else.`,
-      schema: RANKING_SCHEMA, parse: parseJSON, config: KARTZ.config,
-    };
-    try {
-      const got = await withFallback(m => callProxy(imgs, m, MODEL_BASE, spec), modelChain(), () => {}, true);
-      const hit = got.filter(r => r.rank >= a && r.rank <= b);
-      found += new Set(hit.map(r => r.rank)).size;
-      return hit;
-    } catch { return []; }                 // a failed fill leaves the gap reported, as before
-  }))).flat();
-  return { asked: missing, found, rows };
-}
 
 /* ---------------- run ---------------- */
 let rows = [], index = [], skipIndex = [], aliases = {};
-$('go').onclick = async () => {
-  $('go').disabled = true; $('out').classList.add('hide');
-  try {
-    startVideoUpload(videoFile);       // normally already under way since the file was chosen
-    const roster = await freshRoster();
-    index = buildIndex(roster);
-    skipIndex = buildIndex(skippedRoster());
-    aliases = store.get('aliases') || {};
-
-    log('decoding video…'); setProg(0);
-    const spentBefore = callProxy.spent || 0;
-    const frames = await extractFrames(videoFile, +$('sens').value,
-      (p, n) => { setProg(p * 0.5); log(`sampling video — ${n} frames kept`); });
-    if (!frames.length) throw new Error('no frames captured');
-    $('strip').innerHTML = frames.slice(0, 24)
-      .map(f => `<img src="data:image/jpeg;base64,${f}">`).join('');
-    log(`${frames.length} frames (${(frames.join('').length * 0.75 / 1024 | 0)} KB) — sending…`);
-    let sightings = await callModel(frames);
-    const frameCount = frames.length;
-
-    sightings = dropForeignRows(sightings);
-    const fill = await fillGaps(sightings, frames, videoFile);
-    sightings = sightings.concat(fill.rows);
-    const base = consolidate(sightings, frameCount);
-    rows = base.map(makeMatcher(index, skipIndex, aliases));
-    // Two rows resolving to one player means at least one of them is wrong, and neither the
-    // model nor the fuzzy match can tell which. Surface both rather than silently emitting a
-    // duplicate the sheet would then double-count.
-    const claims = new Map();
-    for (const r of rows) {
-      if (!r.match || r.skipped) continue;
-      const k = fold(r.match.search);
-      if (!claims.has(k)) claims.set(k, []);
-      claims.get(k).push(r);
-    }
-    // The collision is still worth catching — two rows entered under one roster name would be
-    // double-counted — but it is no longer a question put to you. The pair is nearly always a
-    // main and an alt sharing a display name, and in both cases the answer is the same one it
-    // is for any unmatched row: the name the video actually showed. So neither keeps the match,
-    // and both carry their own names on, flagged for confirmation like anything else.
-    for (const [, group] of claims) {
-      if (group.length < 2) continue;
-      for (const r of group) { r.match = null; r.pick = ''; r.score = 0; }
-    }
-    // The rank the game printed is the rank. It is also the single most reliable thing on the
-    // card — the numerals are the largest, boldest, highest-contrast marks in the frame and
-    // survive even the motion-blurred frames that reduce names to strokes.
-    //
-    // Renumbering by position instead looked tidier and was quietly destructive. Three players
-    // in the eighties that the sampling never photographed pushed every row beneath them up by
-    // three, so Amp came out as 138 where the game plainly showed 142, and roughly sixty rows
-    // went into the sheet with the wrong rank against the right name. A gap in the numbering is
-    // honest and the banner below points straight at it; a silent off-by-three is not.
-    let n = 0;
-    for (const r of rows) {
-      if (r.skipped) { r.rank = null; continue; }
-      r.rank = r.seenRank > 0 ? r.seenRank : ++n;
-      if (r.rank > n) n = r.rank;
-    }
-    render(roster);
-    const spent = (callProxy.spent || 0) - spentBefore;
-    log(`done — ${sightings.length} readings → ${rows.length} players · `
-        + (fill.asked ? `gap fill found ${fill.found} of ${fill.asked} · ` : '')
-        + `${Math.round(spent / 1000)}k tokens · slowest answer ${Math.round(callModel.slowest / 1000)}s`
-        + (spent > 250000 ? ' (over the 250k budget)' : ''));
-    setProg(1);
-  } catch (e) {
-    const m = e.message;
-    log(/\b429\b/.test(m) && /quota|per day/i.test(m)
-      ? '✗ Daily free-tier quota used up (Gemini allows 20 requests a day). Each run costs '
-        + Math.ceil(+$('sens').value * STRIPS / batchSize(+$('sens').value * STRIPS)) + ' of them. Wait for the reset, '
-        + 'or enable billing on the key.'
-      : '✗ ' + m);
-  }
-  $('go').disabled = false;
-};
+// Extract is in kartz.js: sampling, packing and reading the recording.
 
 let lastRoster = [];
 // One alliance for the whole run, chosen in the Alliance field above the recording. A recording
@@ -2774,5 +2606,8 @@ $('toBottom').onclick = () => scrollTo({ top: document.documentElement.scrollHei
 loadSetup();
 </script>
 <script src="cp.js"></script>
+<!-- Kartz: decoding the recording, then packing and reading it -->
+<script src="decode.js"></script>
+<script src="kartz.js"></script>
 </body>
 </html>
