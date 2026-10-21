@@ -296,6 +296,8 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
       <select id="gvModel"><option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option></select></div>
     <div><label for="gvFps">Frames a second (whole video)</label>
       <select id="gvFps"><option>0.5</option><option selected>1</option><option>2</option><option>3</option><option>4</option><option>6</option></select></div>
+    <div><label for="gvParts">Parts read at once</label>
+      <select id="gvParts"><option>1</option><option>2</option><option>3</option><option selected>4</option><option>6</option></select></div>
     <div><label for="gvRes">Detail per frame</label>
       <select id="gvRes"><option value="MEDIA_RESOLUTION_MEDIUM">medium</option><option value="MEDIA_RESOLUTION_HIGH" selected>high</option></select></div>
   </div>
@@ -2801,6 +2803,6 @@ loadSetup();
 </script>
 <script src="cp.js"></script>
 <!-- TEST ONLY: Kartz read from the whole video by Gemini -->
-<script src="video.js?v=3"></script>
+<script src="video.js?v=6"></script>
 </body>
 </html>
