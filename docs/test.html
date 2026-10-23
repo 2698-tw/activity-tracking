@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>2698 Data Extractor — TEST (Gemini video)</title>
+<title>2698 Data Extractor — TEST (frames vs video)</title>
 <!-- the Server 2698 badge: browser tab, Home Screen, and beside the title -->
 <link rel="icon" type="image/png" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
@@ -197,6 +197,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .hcard .go{background:#fff;color:#7b1a31}
 .hcard.cp .go{color:#c2410c}
 .hcard .open{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.55);color:#fff}
+#pkImgs img{height:120px;border:1px solid var(--line);border-radius:4px;background:#fff}
 </style>
 </head>
 <body>
@@ -290,6 +291,17 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   <p class="note" style="margin:0 0 8px">Choosing a recording above sends it straight to Gemini (then to Backblaze in the
     background). Extract has Gemini watch the whole video, checks the ranks for gaps and re-reads only those stretches.
     Nothing is saved to the Drive folder from this page, but <strong>Send to sheet still writes real rows</strong>.</p>
+  <div class="row">
+    <div><label for="gvMethod">Method (choose before picking the recording)</label>
+      <select id="gvMethod">
+        <option value="frames" selected>Sampled frames, packed (live sampler, ~32 images)</option>
+        <option value="video">Whole video to Gemini</option>
+      </select></div>
+    <div><label for="pkPer">Frames per image (sampled frames)</label>
+      <select id="pkPer"><option>1</option><option selected>2</option><option>3</option></select></div>
+    <div><label for="pkReq">Images per request (sampled frames)</label>
+      <select id="pkReq"><option>4</option><option selected>8</option><option>16</option></select></div>
+  </div>
   <div class="note" id="gvUpLog" style="margin:0 0 8px">no recording chosen yet</div>
   <div class="row">
     <div><label for="gvModel">Model</label>
@@ -307,6 +319,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
     <div><button class="ghost" id="gvModels" style="margin-top:10px">Load the models this key can use</button>
       <div class="note" id="gvModelNote"></div></div>
   </div>
+  <div id="pkImgs" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px"></div>
   <h2 style="margin-top:14px">Runs so far</h2>
   <ol id="gvRuns" class="note" style="margin:0;padding-left:18px"></ol>
 </section>
@@ -2803,6 +2816,8 @@ loadSetup();
 </script>
 <script src="cp.js"></script>
 <!-- TEST ONLY: Kartz read from the whole video by Gemini -->
-<script src="video.js?v=6"></script>
+<script src="video.js?v=7"></script>
+<script src="decode.js?v=3"></script>
+<script src="packed.js?v=5"></script>
 </body>
 </html>

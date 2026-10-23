@@ -12,13 +12,20 @@
 //   pass 1 — decode the whole video, keeping a small greyscale picture and the motion measures
 //            eight times a second of video: exactly what the live sampler's scan collects, so its
 //            own logic then chooses the frames and the crop.
-//   pass 2 — decode again from the keyframe before the first chosen frame to the last, and keep
-//            the chosen frames, cropped as the live sampler crops them.
+//   pass 2 — decode only the stretch each chosen frame needs (from the keyframe before it), and
+//            keep the chosen frames, cropped as the live sampler crops them.
+//
+// Both passes run several decoders side by side (DC_LANES), each on its own stretch of the file.
 //
 // Anything this cannot handle (an older browser without WebCodecs, an unusual file) goes to the
 // live sampler instead, so the result is never worse than today's.
 
 const DC_STEP = 1 / 8;                    // seconds of video between frames measured in pass 1
+// Decoders run side by side, each on its own stretch of the file starting at a keyframe (a frame
+// that decodes on its own). A long, high-frame-rate recording — 90 seconds at 57 frames a second
+// is 5,090 frames — otherwise goes through one decoder frame by frame, which took 9 seconds a pass
+// in Firefox on a Mac.
+const DC_LANES = Math.max(2, Math.min(4, (navigator.hardwareConcurrency || 4) >> 1));
 
 /* the recording's index */
 function dcBoxes(view, start, end) {
@@ -163,6 +170,7 @@ async function dcDecode(file, ix, from, to, each) {
 // the live gap fill then uses.
 async function dcExtract(file, budget, onProg) {
   if (!('VideoDecoder' in window)) throw new Error('this browser has no WebCodecs');
+  const tA = performance.now();
   const ix = await dcIndex(file);
   const ok = await VideoDecoder.isConfigSupported({ codec: ix.codec, description: ix.description, codedWidth: ix.width, codedHeight: ix.height });
   if (!ok.supported) throw new Error(`this browser cannot decode ${ix.codec}`);
@@ -173,20 +181,29 @@ async function dcExtract(file, budget, onProg) {
   const tcv = Object.assign(document.createElement('canvas'), { width: TW, height: TH });
   const tc = tcv.getContext('2d', { willReadFrequently: true });
 
-  // pass 1: what the live scan collects, eight times a second of video
+  const tB = performance.now();
+  // pass 1: what the live scan collects, eight times a second of video — the file cut into
+  // DC_LANES stretches at keyframes, all decoded at once
+  const keys = ix.samples.map((s, i) => (s.key ? i : -1)).filter(i => i >= 0);
+  const cuts = [...new Set(Array.from({ length: DC_LANES }, (_, j) => keys[Math.floor(j * keys.length / DC_LANES)]))];
   const seen = [];
-  let next = 0;
-  await dcDecode(file, ix, 0, ix.samples.length - 1, f => {
-    const t = f.timestamp / 1e6;
-    if (t + 1e-6 < next) return;
-    next = t + DC_STEP;
-    cx.drawImage(f, 0, 0, W, H);
-    tc.drawImage(cv, 0, 0, W, H, 0, 0, TW, TH);
-    const px = tc.getImageData(0, 0, TW, TH).data, grey = new Uint8Array(TW * TH);
-    for (let i = 0; i < grey.length; i++) grey[i] = (px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114) | 0;
-    seen.push({ t, grid: motionGrid(cx, W, H), map: motionMap(cx, W, H), grey });
-    onProg(0.6 * Math.min(1, t / ix.duration), 0);
-  });
+  let done1 = 0;
+  await Promise.all(cuts.map((from, j) => {
+    const to = j + 1 < cuts.length ? cuts[j + 1] - 1 : ix.samples.length - 1;
+    let next = 0;
+    return dcDecode(file, ix, from, to, f => {
+      const t = f.timestamp / 1e6;
+      if (t + 1e-6 < next) return;
+      next = t + DC_STEP;
+      // drawn, measured and let go in one step, so the stretches can share the canvases
+      cx.drawImage(f, 0, 0, W, H);
+      tc.drawImage(cv, 0, 0, W, H, 0, 0, TW, TH);
+      const px = tc.getImageData(0, 0, TW, TH).data, grey = new Uint8Array(TW * TH);
+      for (let i = 0; i < grey.length; i++) grey[i] = (px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114) | 0;
+      seen.push({ t, grid: motionGrid(cx, W, H), map: motionMap(cx, W, H), grey });
+      onProg(0.6 * Math.min(1, (++done1 * DC_STEP) / ix.duration), 0);
+    });
+  }));
   seen.sort((a, b) => a.t - b.t);
   const times = [], motion = [], thumbs = [], accum = new Float32Array(GW * GH);
   let total = 0;
@@ -223,26 +240,41 @@ async function dcExtract(file, budget, onProg) {
     if (bestT !== null) chosen.push(bestT);
   }
 
-  // pass 2: only from the keyframe before the first chosen frame to the last chosen one
+  const tC = performance.now();
+  // pass 2: each chosen frame needs only its own stretch decoded — from the keyframe before it up
+  // to it — not the whole file again. Chosen frames that share a keyframe share the stretch, and
+  // the stretches are decoded several at once.
+  const byTime = new Map(ix.samples.map((s, i) => [Math.round(s.t * 1e6), i]));
   const want = new Map(chosen.map((t, i) => [Math.round(t * 1e6), i]));
-  const firstT = Math.min(...chosen), lastT = Math.max(...chosen);
-  let from = 0, to = ix.samples.length - 1;
-  for (let i = 0; i < ix.samples.length; i++) if (ix.samples[i].key && ix.samples[i].t <= firstT + 1e-6) from = i;
-  // and up to a little past the last one, since frames shown in one order can be stored in another
-  for (let i = 0; i < ix.samples.length; i++) if (ix.samples[i].t > lastT + 0.5) { to = i; break; }
+  const stretches = new Map();               // keyframe index -> last sample index needed
+  for (const t of chosen) {
+    const at = byTime.get(Math.round(t * 1e6));
+    if (at == null) continue;
+    let k = at;
+    while (k > 0 && !ix.samples[k].key) k--;
+    // a few past it, since frames shown in one order can be stored in another
+    stretches.set(k, Math.max(stretches.get(k) ?? 0, Math.min(ix.samples.length - 1, at + 4)));
+  }
   const shots = new Array(chosen.length);
-  let got = 0;
-  await dcDecode(file, ix, from, Math.max(to, from), f => {
-    const i = want.get(f.timestamp);
-    if (i == null || shots[i]) return;
-    cx.drawImage(f, 0, 0, W, H);
-    shots[i] = sliceStrips(cropFrame(cv, W, H, box), 1)[0];
-    onProg(0.6 + 0.4 * (++got) / chosen.length, got);
-  });
+  let got = 0, decoded2 = 0;
+  await inTurn([...stretches], ([from, to]) => {
+    decoded2 += to - from + 1;
+    return dcDecode(file, ix, from, to, f => {
+      const i = want.get(f.timestamp);
+      if (i == null || shots[i]) return;
+      cx.drawImage(f, 0, 0, W, H);
+      shots[i] = sliceStrips(cropFrame(cv, W, H, box), 1)[0];
+      onProg(0.6 + 0.4 * (++got) / chosen.length, got);
+    });
+  }, DC_LANES);
   const frames = [], frameTimes = [];
   shots.forEach((s, i) => { if (s) { frames.push(s); frameTimes.push(chosen[i]); } });
   frames.times = frameTimes;
   frames.duration = ix.duration;
   frames.mode = 'decoded';
+  // where the time went, for the test page
+  const tD = performance.now(), sec = ms => (ms / 1000).toFixed(1) + 's';
+  frames.detail = `${ix.codec}, ${ix.samples.length} frames, ${DC_LANES} decoders — index ${sec(tB - tA)}, `
+    + `pass 1 ${sec(tC - tB)}, pass 2 ${sec(tD - tC)} (${decoded2} frames in ${stretches.size} stretches)`;
   return frames;
 }
