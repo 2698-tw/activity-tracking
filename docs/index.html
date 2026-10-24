@@ -152,8 +152,12 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
    an inline display:block outranked the class and showed the link before anything was sent. */
 .sheetlink{display:block;text-align:center;font-size:13px;color:var(--accent);margin-top:6px}
 .sheetlink.hide{display:none}
-.homelink{display:inline-block;margin:0 0 12px;color:var(--accent);text-decoration:none;font-weight:600;font-size:14px}
-.homelink:hover{text-decoration:underline}
+/* the way back to the home page: a crimson pill in the home cards' colours */
+.homelink{display:inline-flex;align-items:center;gap:6px;margin:0 0 12px;padding:5px 14px 5px 11px;border-radius:999px;
+  background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b);color:#fff;text-decoration:none;font-weight:600;font-size:14px;
+  box-shadow:0 2px 8px rgba(195,20,65,.25);transition:filter .12s ease, transform .06s ease}
+.homelink:hover{filter:brightness(1.08)}
+.homelink:active{transform:translateY(1px)}
 .edited{margin-left:6px}
 /* the Global CP credit; Nass's name in his site's heading font (Orbitron) */
 .source{margin:12px 0 0;font-size:13px;color:var(--muted)}
@@ -229,7 +233,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   <button type="button" class="themebtn" id="theme"></button>
 </header>
 
-<a class="homelink" id="homeLink" href="./">← Home</a>
+<a class="homelink" id="homeLink" href="./"><span aria-hidden="true">←</span>Home</a>
 
 <div id="tab-kartz">
 <section>
