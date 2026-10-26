@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>2698 Ranking Bookmark</title>
+<link rel="icon" type="image/png" href="icon.png">
+<style>
+:root{--bg:#f4f5f8;--panel:#fff;--ink:#15181f;--muted:#666e7d;--line:#dfe3ea;--accent:#3b5bdb;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12141a;--panel:#1a1d25;--ink:#e8eaef;--muted:#98a0b0;--line:#2b303c;--accent:#748ffc;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12141a;--panel:#1a1d25;--ink:#e8eaef;--muted:#98a0b0;--line:#2b303c;--accent:#748ffc;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:16px 16px 64px}
+.wrap{max-width:720px;margin:0 auto}
+h1{font-size:22px;margin:8px 0 4px;letter-spacing:-.3px}
+.sub{color:var(--muted);margin:0 0 18px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:12px}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0 0 10px;font-weight:600}
+.drag{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:999px;text-decoration:none;font-weight:700;color:#fff;cursor:grab;
+  background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b);box-shadow:0 2px 8px rgba(195,20,65,.25)}
+ol{margin:0;padding-left:20px}
+li{margin:4px 0}
+.muted{color:var(--muted);font-size:13.5px}
+code{background:var(--bg);border-radius:5px;padding:1px 5px;font-size:13px}
+button{font:inherit;font-size:13px;border:1px solid var(--line);background:transparent;color:var(--accent);border-radius:8px;padding:6px 12px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Ranking bookmark</h1>
+  <p class="sub">One click on a Top War ranking screen sends Rank, Name and Points to the Game rankings sheet.</p>
+
+  <section>
+    <h2>1 · Install (once, on a computer)</h2>
+    <p style="margin:0 0 12px">Drag this onto your bookmarks bar:</p>
+    <a class="drag" id="bm" href="#">2698 Extract</a>
+    <p class="muted" style="margin:12px 0 0">No bookmarks bar? Press Ctrl+Shift+B (Mac: Cmd+Shift+B) to show it.
+      Can't drag? <button type="button" id="copy">Copy the bookmark code</button>, then make a new bookmark and paste it as the URL.</p>
+  </section>
+
+  <section>
+    <h2>2 · Use</h2>
+    <ol>
+      <li>Open <a href="https://h5.topwargame.com/h5game/" target="_blank" rel="noopener">the Top War web game</a> and the ranking you want.</li>
+      <li>Scroll to the bottom of the list once — the game only loads about 30 rows until you do.</li>
+      <li>Click <b>2698 Extract</b> in the bookmarks bar, check the count, and press <b>Send to sheet</b>.</li>
+    </ol>
+    <p class="muted" style="margin:10px 0 0">Each send replaces the list in the sheet. The bookmark only reads what the game has
+      already loaded on your screen: it sends nothing to the game and taps nothing.</p>
+  </section>
+</div>
+
+<!-- The bookmark's code. The page turns it into the javascript: link above. -->
+<script type="text/plain" id="src">
+(() => {
+  const API = 'https://data-collection.jk06nm04.workers.dev/api/game-ranking';
+  const SHEET = 'https://docs.google.com/spreadsheets/d/12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc/edit#gid=0';
+  if (!window.cc || !cc.director || !cc.director.getScene) {
+    alert('2698 Extract: open the Top War web game (h5.topwargame.com) and a ranking screen first.');
+    return;
+  }
+
+  /* read: the biggest open list with a rank and a score, the screen's title, the entrant count */
+  const lists = [], labels = [];
+  const walk = n => {
+    if (!n || !n.activeInHierarchy) return;
+    for (const c of n._components || []) {
+      if (c instanceof cc.Label && c.string) labels.push([n.name, c.string]);
+      for (const k of Object.keys(c)) {
+        const v = c[k];
+        if (Array.isArray(v) && v.length && v[0] && typeof v[0] === 'object' && 'rank' in v[0] && 'score' in v[0]) lists.push(v);
+      }
+    }
+    (n.children || []).forEach(walk);
+  };
+  walk(cc.director.getScene());
+  const title = (labels.filter(([n, s]) => n === 'TITLE' && !/^ranking$/i.test(s.trim())).pop() || [, 'Ranking'])[1];
+  const entrants = (labels.map(([, s]) => s.match(/^([\d,]+)\s+Commanders/)).find(Boolean) || [])[1];
+  const list = lists.sort((a, b) => b.length - a.length)[0] || [];
+  const name = e => {
+    try { const p = typeof e.playerInfo === 'string' ? JSON.parse(e.playerInfo) : e.playerInfo || {}; return String(p.username || p.nickname || e.name || ''); }
+    catch { return String(e.name || ''); }
+  };
+  const rows = list.map(e => [Number(e.rank), name(e).slice(0, 80), Number(e.score)])
+    .filter(r => Number.isFinite(r[0]) && Number.isFinite(r[2])).sort((a, b) => a[0] - b[0]);
+  const last = rows.length ? rows[rows.length - 1][0] : 0;
+  const gaps = rows.length && (rows[0][0] !== 1 || last !== rows.length);
+  const short = entrants && rows.length < Number(entrants.replace(/,/g, ''));
+
+  /* the panel: in its own shadow root, so the game's page styles cannot reach it */
+  document.getElementById('rank2698')?.remove();
+  const host = Object.assign(document.createElement('div'), { id: 'rank2698' });
+  host.style.cssText = 'position:fixed;top:16px;right:16px;z-index:2147483647';
+  const root = host.attachShadow({ mode: 'open' });
+  root.innerHTML = `<style>
+    .p{all:initial;display:block;text-align:left;width:300px;max-width:calc(100vw - 32px);box-sizing:border-box;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f3f3f7;
+      background:rgba(24,24,32,.94);border-radius:18px;padding:14px 16px;box-shadow:0 10px 30px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.12)}
+    .h{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+    .h b{flex:1;font-size:15px}
+    .x{background:rgba(255,255,255,.1);border:0;color:#bbb;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:15px;line-height:1}
+    .t{color:rgba(235,235,245,.65);font-size:12.5px;margin-bottom:8px}
+    .n{font-size:22px;font-weight:700}
+    .w{background:rgba(255,159,67,.15);color:#ffc078;border-radius:10px;padding:7px 10px;font-size:12.5px;margin:8px 0}
+    table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
+    td{padding:3px 0;border-bottom:1px solid rgba(255,255,255,.08)} td:first-child{width:34px;color:rgba(235,235,245,.6)} td:last-child{text-align:right}
+    .a{display:flex;gap:8px;margin-top:10px}
+    .a button{flex:1;border:0;border-radius:999px;padding:9px 10px;font:inherit;font-weight:700;cursor:pointer}
+    .s{background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b);color:#fff}
+    .s:disabled{opacity:.55;cursor:default}
+    .c{background:rgba(255,255,255,.12);color:#fff}
+    .m{margin-top:8px;font-size:12.5px;min-height:1em}
+    .m a{color:#9ec5ff}
+  </style>
+  <div class="p">
+    <div class="h"><b>2698 Extract</b><button class="x" title="Close">×</button></div>
+    <div class="t"></div>
+    <div><span class="n"></span> players</div>
+    <div class="w" hidden></div>
+    <table></table>
+    <div class="a"><button class="s">Send to sheet</button><button class="c">Copy</button></div>
+    <div class="m"></div>
+  </div>`;
+  const $ = s => root.querySelector(s);
+  $('.t').textContent = title;
+  $('.n').textContent = rows.length.toLocaleString();
+  const warn = !rows.length ? 'No ranking list found. Open a ranking screen, then click the bookmark again.'
+    : gaps || short ? `Only ranks ${rows[0][0]}–${last} are loaded${entrants ? ` of ${entrants}` : ''}. Scroll to the bottom of the list, then click the bookmark again.`
+    : '';
+  if (warn) { $('.w').hidden = false; $('.w').textContent = warn; }
+  const pick = rows.length > 6 ? [...rows.slice(0, 3), null, ...rows.slice(-2)] : rows;
+  for (const r of pick) {
+    const tr = document.createElement('tr');
+    (r ? [r[0], r[1], r[2].toLocaleString()] : ['', '…', '']).forEach(v => tr.appendChild(document.createElement('td')).textContent = v);
+    $('table').appendChild(tr);
+  }
+  if (!rows.length) { $('.s').disabled = true; $('.c').disabled = true; }
+  $('.x').onclick = () => host.remove();
+  $('.c').onclick = async () => {
+    const tsv = ['Rank\tName\tPoints', ...rows.map(r => r.join('\t'))].join('\n');
+    try { await navigator.clipboard.writeText(tsv); $('.m').textContent = 'Copied — paste into Sheets.'; }
+    catch { $('.m').textContent = 'Copying was blocked by the browser.'; }
+  };
+  $('.s').onclick = async () => {
+    if (warn && !confirm(warn + '\n\nSend the rows that are loaded anyway?')) return;
+    $('.s').disabled = true; $('.m').textContent = 'Sending…';
+    try {
+      const r = await fetch(API, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rows }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `the sheet did not accept it (${r.status})`);
+      $('.m').innerHTML = `✓ ${Number(j.rows).toLocaleString()} rows sent. <a target="_blank" rel="noopener">Open the sheet ↗</a>`;
+      $('.m a').href = j.link || SHEET;
+    } catch (e) {
+      $('.m').textContent = '✗ ' + (e.message || e);
+      $('.s').disabled = false;
+    }
+  };
+  document.body.appendChild(host);
+})();
+</script>
+<script>
+const src = document.getElementById('src').textContent.trim();
+const href = 'javascript:' + encodeURIComponent(src);
+const bm = document.getElementById('bm');
+bm.href = href;
+bm.onclick = e => { e.preventDefault(); alert('Drag this onto your bookmarks bar, then click it on a Top War ranking screen.'); };
+document.getElementById('copy').onclick = async () => {
+  try { await navigator.clipboard.writeText(href); document.getElementById('copy').textContent = 'Copied ✓'; }
+  catch { prompt('Copy this and paste it as the bookmark URL:', href); }
+};
+try { const t = JSON.parse(localStorage.getItem('kartz.theme')); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
+</script>
+</body>
+</html>

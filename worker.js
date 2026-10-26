@@ -21,6 +21,19 @@ const ALLOWED_ORIGINS = [
   'https://data-extractor.jk06nm04.workers.dev',
 ];
 
+// What the ask bar may read (api/ask-data), table by table. Columns are chosen to leave out the
+// free-text Notes and the Discord names, since anyone can use the ask bar.
+const KARTZ_BOOK = '1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE', ROSTER_BOOK = '1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8';
+const ASK_MONTHS = ['January 2026', 'February 2026', 'March 2026', 'April 2026', 'May 2026', 'June 2026', 'August 2026', 'September 2026'];
+const ASK_TABLES = {
+  kartz_scores:  { book: KARTZ_BOOK,  ranges: ["'Input-RawData'!C:K"] },
+  kartz_monthly: { book: KARTZ_BOOK,  ranges: ASK_MONTHS.map(m => `'${m}'!A:N`) },
+  kartz_ratings: { book: KARTZ_BOOK,  ranges: ["'Kartz Tracker'!A2:J"] },
+  roster:        { book: ROSTER_BOOK, ranges: ["'Alliance Rosters'!A:I", "'Alliance Rosters'!K:L", "'Alliance Rosters'!U:V"] },
+  cp_history:    { book: ROSTER_BOOK, ranges: ["'RawData-CP'!A:I"] },
+  left_roster:   { book: ROSTER_BOOK, ranges: ["'Roster-Removed/Left'!A:I", "'Roster-Removed/Left'!K:L"] },
+};
+
 // Every player's power on every server, refreshed about every ten minutes (see api/global-cp).
 const GLOBAL_CP = 'https://www.topwarfandom.com/api/global-cp';
 
@@ -125,6 +138,12 @@ const TARGETS = {
   cp:    { id: '1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8', gid: 237521468,
            from: 'A', to: 'I', book: 'Alliance Rosters' },
 };
+// The game's ranking lists (tools/rank-bookmark.js, run on the Top War web game): Rank, Name and
+// Points in A to C of the first tab, under the header row. Each send replaces the list there, since
+// a ranking is a snapshot of the current scores. Only this route accepts the game page's origin.
+const RANKING = { id: '12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc', gid: 0, book: 'Game rankings' };
+const RANKING_ORIGIN = 'https://h5.topwargame.com';
+const RANKING_MAX = 3000;
 const SHEET_COLS = 9;                   // both targets take nine columns
 const MAX_ROWS = 1000;
 
@@ -215,6 +234,27 @@ async function appendRows(env, values, name = 'kartz') {
   // where the rows went, by name as well as cells, for the page's confirmation and its link
   return { range: out.updatedRange || range, rows: out.updatedRows || values.length,
            book: target.book, tab: title, id: target.id, gid: target.gid };
+}
+
+async function writeRanking(env, rows) {
+  if (!Array.isArray(rows) || !rows.length)
+    throw Object.assign(new Error('No rows to send.'), { status: 400 });
+  if (rows.length > RANKING_MAX)
+    throw Object.assign(new Error(`At most ${RANKING_MAX} rows at a time.`), { status: 400 });
+  if (!rows.every(r => Array.isArray(r) && r.length === 3 && Number.isFinite(r[0])
+                       && typeof r[1] === 'string' && r[1].length <= 80 && Number.isFinite(r[2])))
+    throw Object.assign(new Error('Every row must be [rank, name, points].'), { status: 400 });
+
+  const token = await googleToken(env);
+  const tab = `'${(await tabTitle(token, RANKING)).replace(/'/g, "''")}'`;
+  // the old list goes first, so a shorter list leaves nothing behind; the header row stays
+  await sheetsCall(token, 'POST', `/values/${encodeURIComponent(`${tab}!A2:C`)}:clear`, {}, RANKING);
+  const range = `${tab}!A2:C${rows.length + 1}`;
+  // RAW: names go in exactly as written, even one starting with = or +
+  const out = await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
+    { range, majorDimension: 'ROWS', values: rows }, RANKING);
+  return { rows: out.updatedRows || rows.length, range: out.updatedRange || range,
+           link: `https://docs.google.com/spreadsheets/d/${RANKING.id}/edit#gid=${RANKING.gid}` };
 }
 
 async function sheetsCall(token, method, path, body, target) {
@@ -354,7 +394,9 @@ export default {
       && (origin === new URL(request.url).origin || ALLOWED_ORIGINS.includes(origin));
     const hasPass = !!env.SHARED_PASS
       && request.headers.get('x-kartz-pass') === env.SHARED_PASS;
-    const allowed = knownOrigin || hasPass;
+    // the game page may reach the ranking route, and nothing else
+    const rankingCall = origin === RANKING_ORIGIN && url.pathname.replace(/^\/+/, '') === 'api/game-ranking';
+    const allowed = knownOrigin || hasPass || rankingCall;
 
     if (request.method === 'OPTIONS') {
       return new Response(null, {
@@ -372,11 +414,48 @@ export default {
 
     if (request.method !== 'POST') return reply({ error: 'POST only' }, 405);
 
+    // The ask bar's data (docs/ask.js): a fixed set of read-only tables, each a named list of tab
+    // ranges, read with the service account (Alliance Rosters is not readable by link). Nothing
+    // else in either workbook can be asked for — no Notes, no Discord names — and nothing is
+    // written. The Sheets answer is passed on as it comes, unparsed, so a 10,000-row tab costs the
+    // Worker next to no time; the page turns it into a table. Each table is kept for five minutes.
+    if (url.pathname.replace(/^\/+/, '') === 'api/ask-data') {
+      const { table } = await request.json().catch(() => ({}));
+      const spec = ASK_TABLES[table];
+      if (!spec) return reply({ error: 'no such table' }, 400);
+      const cache = caches.default, key = new Request(`https://ask-data.cache/${table}`);
+      const hit = await cache.match(key);
+      if (hit) return new Response(hit.body, { headers: { ...cors, 'content-type': 'application/json' } });
+      let token;
+      try { token = await googleToken(env); }
+      catch (e) { return reply({ error: String(e.message || e) }, 500); }
+      const q = spec.ranges.map(r => 'ranges=' + encodeURIComponent(r)).join('&');
+      const up = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spec.book}/values:batchGet?${q}&majorDimension=ROWS`,
+        { headers: { authorization: 'Bearer ' + token } });
+      if (!up.ok) return reply({ error: `the sheet refused: ${up.status} ${(await up.text()).slice(0, 200)}` }, 502);
+      const body = await up.text();
+      ctx.waitUntil(cache.put(key, new Response(body, { headers: { 'content-type': 'application/json', 'cache-control': 'max-age=300' } })));
+      return new Response(body, { headers: { ...cors, 'content-type': 'application/json' } });
+    }
+
     // The Global CP list (topwarfandom.com), for the Base CP tab. That site does not let other
     // pages read it, so it comes through here — passed on unchanged rather than filtered: it is
     // 28 MB, more than a free-plan Worker has the time to sort through, and the page keeps its
     // own server and alliance. Cloudflare keeps a copy for ten minutes, which is as often as the
     // list itself changes, so repeated fetches do not go back to the site.
+    // A ranking list read from the game by the bookmark (tools/rank-bookmark.js): written over the
+    // last one in the Game rankings sheet. The sheet and columns are fixed above.
+    if (url.pathname.replace(/^\/+/, '') === 'api/game-ranking') {
+      const body = await request.text();
+      if (body.length > 512 * 1024) return reply({ error: 'Request too large.' }, 413);
+      try {
+        return reply(await writeRanking(env, JSON.parse(body).rows), 200);
+      } catch (e) {
+        const status = e.status || (e instanceof SyntaxError ? 400 : 502);
+        return reply({ error: String(e && e.message || e) }, status);
+      }
+    }
+
     if (url.pathname.replace(/^\/+/, '') === 'api/global-cp') {
       let up;
       try {
