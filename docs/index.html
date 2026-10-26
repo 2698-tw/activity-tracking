@@ -1044,6 +1044,18 @@ function movingRegion(accum) {
     if (y < y0) y0 = y; if (y > y1) y1 = y;
   }
   if (hits < GW * GH * 0.02 || x1 < 0) return null;
+  // The sides come from the motion summed down each column, within those rows. The right part
+  // of every row is plain background with a short number in it, so few of its cells pass the
+  // threshold above — with fewer samples (the seeking sampler) the edge landed on the points
+  // and cut 616 down to 6. Summed per column, the row borders scrolling past keep that whole
+  // stretch well above the still surroundings, out to the rows' real edges.
+  const col = new Float32Array(GW);
+  for (let x = 0; x < GW; x++) for (let y = y0; y <= y1; y++) col[x] += accum[y*GW + x];
+  let colMax = 0;
+  for (const v of col) if (v > colMax) colMax = v;
+  const moving = x => col[x] >= colMax * 0.05;
+  for (x0 = 0; x0 < GW - 1 && !moving(x0); x0++);
+  for (x1 = GW - 1; x1 > x0 && !moving(x1); x1--);
   const pad = 0.006;
   const box = { x0: Math.max(0, x0/GW - pad), x1: Math.min(1, (x1+1)/GW + pad),
                 y0: Math.max(0, y0/GH - pad), y1: Math.min(1, (y1+1)/GH + pad) };
@@ -1090,6 +1102,12 @@ async function openVideo(file) {
   await once(video, 'loadedmetadata');
   // iOS refuses to paint into a canvas until the pipeline has decoded at least once
   try { await video.play(); video.pause(); } catch {}
+  // A browser that cannot decode the picture but can play the sound opens the file without an
+  // error and reports it as 0×0 — iPhone recordings are HEVC (H.265), which many browsers on
+  // Windows and Firefox cannot decode. Say so, rather than fail later on an empty canvas.
+  if (!video.videoWidth || !video.videoHeight)
+    throw new Error("this browser can't show this recording's picture — it's HEVC (H.265), the iPhone's "
+      + 'video format. Open the site in Safari, on the phone that recorded it, or in Chrome or Edge on a Mac.');
   return video;
 }
 const seek = async (video, t) => {
@@ -2612,6 +2630,6 @@ loadSetup();
 <script src="cp.js"></script>
 <!-- Kartz: decoding the recording, then packing and reading it -->
 <script src="decode.js?v=2"></script>
-<script src="kartz.js?v=2"></script>
+<script src="kartz.js?v=4"></script>
 </body>
 </html>

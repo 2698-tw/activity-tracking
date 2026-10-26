@@ -76,7 +76,7 @@ async function kzPack(frames) {
 /* 3. read */
 // The page's own prompt for frames, told what these images now are, with the short row format.
 function kzPrompt() {
-  const p = buildPrompt(false).replace(
+  const p = buildPrompt(false, false).replace(
     'These are frames from a screen recording of a mobile game leaderboard called "Ranking".',
     `These are frames from a screen recording of a mobile game leaderboard called "Ranking", cropped
 to the list. The players' avatar pictures have been cut out, so each row shows the rank number on the
@@ -110,7 +110,11 @@ function kzParse(text) {
 // Images in requests of KZ.perRequest, all at once. Each row is tagged with the run-wide index of
 // the image it came from (`frame`), which the gap fill uses to know when a rank was on screen.
 async function kzAsk(images, usage, extra = '') {
-  const sheet = $('sheetimg').checked ? rosterSheet(currentRoster()) : null;
+  // No roster picture here. With it, the model copies the roster's plain spelling in place of what
+  // is drawn — JAY☠️DEE came back as "JAYxV", Ƥ€ΔĆĦ as "P", B•B as "B" — which then matches the
+  // wrong player. Read from the screen alone, the page's own matching finds them all (tested on
+  // a 131-player Day 1 recording in Chrome: 8 to confirm instead of 16, and fewer tokens).
+  const sheet = null;
   const prompt = kzPrompt() + extra;
   const groups = [];
   for (let i = 0; i < images.length; i += KZ.perRequest) groups.push(images.slice(i, i + KZ.perRequest));
