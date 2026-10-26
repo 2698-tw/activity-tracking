@@ -145,7 +145,7 @@ async function dcDecode(file, ix, from, to, each) {
   const dec = new VideoDecoder({ output: f => { try { each(f); } catch (e) { failed = e; } finally { f.close(); } },
                                  error: e => { failed = e; } });
   dec.configure({ codec: ix.codec, description: ix.description, codedWidth: ix.width, codedHeight: ix.height,
-                  hardwareAcceleration: 'prefer-hardware', optimizeForLatency: false });
+                  hardwareAcceleration: ix.accel || 'prefer-hardware', optimizeForLatency: false });
   const BLOCK = 8 * 1024 * 1024;
   let blockAt = -1, block = null;
   for (let i = from; i <= to; i++) {
@@ -168,12 +168,21 @@ async function dcDecode(file, ix, from, to, each) {
 // The live sampler's choosing, fed by decoding. Returns what extractFrames(file, budget, onProg, 1)
 // returns — one cropped picture per chosen moment, with .times and .duration — and sets the crop
 // the live gap fill then uses.
-async function dcExtract(file, budget, onProg) {
+//
+// The graphics chip is used when it can take the video, and the browser's own software decoder
+// when it cannot: many PC chips decode H.264 only up to 2304 pixels tall, and Android recordings
+// are often 2340 or more. Insisting on the chip there failed the whole fast route, and the slow
+// fallback took 23 s where the software decoder needs a few. `soft` forces software, for a retry
+// after the chip said yes and then failed partway.
+async function dcExtract(file, budget, onProg, soft = false) {
   if (!('VideoDecoder' in window)) throw new Error('this browser has no WebCodecs');
   const tA = performance.now();
   const ix = await dcIndex(file);
-  const ok = await VideoDecoder.isConfigSupported({ codec: ix.codec, description: ix.description, codedWidth: ix.width, codedHeight: ix.height });
-  if (!ok.supported) throw new Error(`this browser cannot decode ${ix.codec}`);
+  const base = { codec: ix.codec, description: ix.description, codedWidth: ix.width, codedHeight: ix.height };
+  const can = async accel => (await VideoDecoder.isConfigSupported({ ...base, hardwareAcceleration: accel })).supported;
+  ix.accel = !soft && await can('prefer-hardware') ? 'prefer-hardware'
+    : await can('prefer-software') ? 'prefer-software' : null;
+  if (!ix.accel) throw new Error(`this browser cannot decode ${ix.codec}`);
   const W = Math.min(ix.width, 1080), H = Math.round(W * ix.height / ix.width);
   const cv = Object.assign(document.createElement('canvas'), { width: W, height: H });
   const cx = cv.getContext('2d', { willReadFrequently: true });
@@ -274,7 +283,7 @@ async function dcExtract(file, budget, onProg) {
   frames.mode = 'decoded';
   // where the time went, for the test page
   const tD = performance.now(), sec = ms => (ms / 1000).toFixed(1) + 's';
-  frames.detail = `${ix.codec}, ${ix.samples.length} frames, ${DC_LANES} decoders — index ${sec(tB - tA)}, `
+  frames.detail = `${ix.codec}, ${ix.samples.length} frames, ${DC_LANES} ${ix.accel === 'prefer-software' ? 'software' : 'hardware'} decoders — index ${sec(tB - tA)}, `
     + `pass 1 ${sec(tC - tB)}, pass 2 ${sec(tD - tC)} (${decoded2} frames in ${stretches.size} stretches)`;
   return frames;
 }

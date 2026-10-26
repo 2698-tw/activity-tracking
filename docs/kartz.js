@@ -32,17 +32,29 @@ function kzSample(f) {
   note('reading the recording…');
   job.promise = (async () => {
     let frames;
+    const prog = p => note(`reading the recording… ${Math.round(p * 100)}%`);
     try {
-      frames = await dcExtract(f, KZ.budget, p => note(`reading the recording… ${Math.round(p * 100)}%`));
+      frames = await dcExtract(f, KZ.budget, prog);
     } catch (e) {
       job.why = e.message;               // no WebCodecs, or a format this browser cannot decode
-      frames = await extractFrames(f, KZ.budget, p => note(`reading the recording… ${Math.round(p * 100)}%`), 1);
-      frames.mode = extractFrames.mode;
+      // the graphics chip may accept a video and then fail on it partway: try the software
+      // decoder before the much slower fallback
+      if (/no WebCodecs|cannot decode/.test(e.message)) frames = null;
+      else frames = await dcExtract(f, KZ.budget, prog, true).catch(e2 => { job.why = e2.message; return null; });
+      if (!frames) {
+        frames = await extractFrames(f, KZ.budget, prog, 1);
+        frames.mode = extractFrames.mode;
+      }
     }
     if (!frames.length) throw new Error('no frames could be taken from this recording');
     job.secs = (Date.now() - job.t0) / 1000;
     job.mode = frames.mode;
-    note(`recording read (${frames.length} frames, ${job.secs.toFixed(1)}s) — ready to Extract`);
+    // which way it was read, so a slow read can be explained: the fast decoder, or the slower
+    // playing/seeking fallback and why (e.g. a PC whose graphics chip cannot decode this size)
+    const how = frames.mode === 'decoded' ? 'fast route'
+      : `slower route${job.why ? ' — ' + job.why : ''}`;
+    if (frames.detail) console.log('[kartz] ' + frames.detail);
+    note(`recording read (${frames.length} frames, ${job.secs.toFixed(1)}s, ${how}) — ready to Extract`);
     return frames;
   })();
   job.promise.catch(e => note('✗ ' + e.message));
