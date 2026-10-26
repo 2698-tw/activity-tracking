@@ -28,7 +28,7 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
 <body>
 <div class="wrap">
   <h1>Ranking bookmark</h1>
-  <p class="sub">One click on a Top War ranking screen adds Date, Name, Points, Rank and Alliance to the Game rankings sheet — the four main alliances, or everyone else.</p>
+  <p class="sub">One click on a Top War ranking screen adds Date, Name, Points and Alliance to the Game rankings sheet — the four main alliances, or everyone else.</p>
 
   <section>
     <h2>1 · Install (once, on a computer)</h2>
@@ -41,7 +41,7 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
   <section>
     <h2>2 · Use</h2>
     <ol>
-      <li>Open <a href="https://h5.topwargame.com/h5game/" target="_blank" rel="noopener">the Top War web game</a> and the Whitebeard ranking.</li>
+      <li>Open <a href="https://h5.topwargame.com/h5game/" target="_blank" rel="noopener">the Top War web game</a> and the ranking you want.</li>
       <li>Click <b>2698 Data Extractor</b> in the bookmarks bar. The game only loads about 30 rows at first: press <b>Load all</b> in the panel to load the rest (or scroll to the bottom yourself).</li>
       <li>In the panel, pick 698N, W, S, C or Other, check the count, and press <b>Send to sheet</b>.</li>
     </ol>
@@ -137,14 +137,14 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
   const opts = [['ALL4', `698N, W, S, C (${four})`], ['OTHER', `Other (${rows.length - four})`]];
   opts.forEach(([v, t]) => $('.f').appendChild(Object.assign(document.createElement('option'), { value: v, textContent: t })));
   // the rows to copy or send: the four main alliances, or the rest. Sorted by alliance — 698N, W, S
-  // and C in that order, or the others A to Z with no alliance last — and by rank within each. The game's rank is not
-  // kept: the Rank column is numbered 1, 2, 3… down the list as sent.
+  // and C in that order, or the others A to Z with no alliance last — and by rank within each. The game's
+  // rank is not sent: each row is [name, points, alliance].
   const allyOrder = t => t ? (MAIN.indexOf(t) + 1 || 99) : 100;
   const chosen = () => {
     const f = $('.f').value;
     return (f === 'ALL4' ? rows.filter(r => MAIN.includes(r[3])) : rows.filter(r => !MAIN.includes(r[3])))
       .slice().sort((a, b) => allyOrder(a[3]) - allyOrder(b[3]) || a[3].localeCompare(b[3]) || a[0] - b[0])
-      .map(([, name, points, ally], i) => [i + 1, name, points, ally]);
+      .map(([, name, points, ally]) => [name, points, ally]);
   };
   const warn = !rows.length ? 'No ranking list found. Open a ranking screen, then click the bookmark again.'
     : gaps || short ? `Only ranks ${rows[0][0]}–${last} are loaded${entrants ? ` of ${entrants}` : ''}. `
@@ -181,10 +181,12 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
     const sel = chosen();
     $('.n').textContent = sel.length.toLocaleString();
     $('table').textContent = '';
-    const pick = sel.length > 6 ? [...sel.slice(0, 3), null, ...sel.slice(-2)] : sel;
+    // numbered down the list for the preview only; the numbers are not sent
+    const numbered = sel.map((r, i) => Object.assign(r.slice(), { n: i + 1 }));
+    const pick = numbered.length > 6 ? [...numbered.slice(0, 3), null, ...numbered.slice(-2)] : numbered;
     for (const r of pick) {
       const tr = document.createElement('tr');
-      (r ? [r[0], r[1], r[2].toLocaleString()] : ['', '…', '']).forEach(v => tr.appendChild(document.createElement('td')).textContent = v);
+      (r ? [r.n, r[0], r[1].toLocaleString()] : ['', '…', '']).forEach(v => tr.appendChild(document.createElement('td')).textContent = v);
       $('table').appendChild(tr);
     }
     // a new choice can be sent, even after a send
@@ -196,7 +198,7 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
   $('.x').onclick = () => host.remove();
   $('.c').onclick = async () => {
     const date = new Date().toISOString().slice(0, 10);          // the game's day (UTC), as the sheet has it
-    const tsv = ['Date\tName\tPoints\tRank\tAlliance', ...chosen().map(([rank, n, points, ally]) => [date, n, points, rank, ally].join('\t'))].join('\n');
+    const tsv = ['Date\tName\tPoints\tAlliance', ...chosen().map(([n, points, ally]) => [date, n, points, ally].join('\t'))].join('\n');
     try { await navigator.clipboard.writeText(tsv); $('.m').textContent = 'Copied — paste into Sheets.'; }
     catch { $('.m').textContent = 'Copying was blocked by the browser.'; }
   };
@@ -224,7 +226,7 @@ const src = document.getElementById('src').textContent.trim();
 const href = 'javascript:' + encodeURIComponent(src);
 const bm = document.getElementById('bm');
 bm.href = href;
-bm.onclick = e => { e.preventDefault(); alert('Drag this onto your bookmarks bar, then click it on the Whitebeard ranking screen.'); };
+bm.onclick = e => { e.preventDefault(); alert('Drag this onto your bookmarks bar, then click it on a Top War ranking screen.'); };
 document.getElementById('copy').onclick = async () => {
   try { await navigator.clipboard.writeText(href); document.getElementById('copy').textContent = 'Copied ✓'; }
   catch { prompt('Copy this and paste it as the bookmark URL:', href); }

@@ -138,8 +138,8 @@ const TARGETS = {
   cp:    { id: '1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8', gid: 237521468,
            from: 'A', to: 'I', book: 'Alliance Rosters' },
 };
-// The game's ranking lists (docs/bookmark.html, run on the Top War web game): Date, Name, Points,
-// Rank and Alliance, in A to E of the first tab. Each send is added below the lists already there.
+// The game's ranking lists (docs/bookmark.html, run on the Top War web game): Date, Name, Points
+// and Alliance, in A to D of the first tab. Each send is added below the lists already there.
 // Only this route accepts the game page's origin.
 const RANKING = { id: '12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc', gid: 0, book: 'Game rankings' };
 const RANKING_ORIGIN = 'https://h5.topwargame.com';
@@ -241,16 +241,15 @@ async function writeRanking(env, rows) {
     throw Object.assign(new Error('No rows to send.'), { status: 400 });
   if (rows.length > RANKING_MAX)
     throw Object.assign(new Error(`At most ${RANKING_MAX} rows at a time.`), { status: 400 });
-  if (!rows.every(r => Array.isArray(r) && r.length === 4 && Number.isFinite(r[0])
-                       && typeof r[1] === 'string' && r[1].length <= 80 && Number.isFinite(r[2])
-                       && typeof r[3] === 'string' && r[3].length <= 20))
-    throw Object.assign(new Error('Every row must be [rank, name, points, alliance].'), { status: 400 });
+  if (!rows.every(r => Array.isArray(r) && r.length === 3 && typeof r[0] === 'string' && r[0].length <= 80
+                       && Number.isFinite(r[1]) && typeof r[2] === 'string' && r[2].length <= 20))
+    throw Object.assign(new Error('Every row must be [name, points, alliance].'), { status: 400 });
 
   const token = await googleToken(env);
   const tab = `'${(await tabTitle(token, RANKING)).replace(/'/g, "''")}'`;
   // Each list goes below the last one, the way appendRows does it: find the last row with
-  // anything in A to E and write directly under it.
-  const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(`${tab}!A:E`)}`
+  // anything in A to D and write directly under it.
+  const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(`${tab}!A:D`)}`
     + '?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', null, RANKING);
   const seen = got.values || [];
   let filled = seen.length;
@@ -258,15 +257,11 @@ async function writeRanking(env, rows) {
   // The date the list was sent, by the game's day: Top War runs on UTC. USER_ENTERED makes it a
   // real date in the sheet; asCell keeps a name starting with = or + as plain text.
   const date = new Date().toISOString().slice(0, 10);
-  // the alliance column is newer than the others: give it its heading if it has none
-  if (!(seen[0] || [])[4])
-    await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(`${tab}!E1`)}?valueInputOption=RAW`,
-      { values: [['Alliance']] }, RANKING);
   const first = Math.max(filled, 1) + 1, last = first + rows.length - 1;
-  const range = `${tab}!A${first}:E${last}`;
+  const range = `${tab}!A${first}:D${last}`;
   const out = await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
     { range, majorDimension: 'ROWS',
-      values: rows.map(([rank, name, points, ally]) => [date, asCell(name), points, rank, asCell(ally)]) }, RANKING);
+      values: rows.map(([name, points, ally]) => [date, asCell(name), points, asCell(ally)]) }, RANKING);
   return { rows: out.updatedRows || rows.length, range: out.updatedRange || range, date,
            link: `https://docs.google.com/spreadsheets/d/${RANKING.id}/edit#gid=${RANKING.gid}&range=A${first}` };
 }
