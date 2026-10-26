@@ -42,8 +42,8 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
     <h2>2 · Use</h2>
     <ol>
       <li>Open <a href="https://h5.topwargame.com/h5game/" target="_blank" rel="noopener">the Top War web game</a> and the ranking you want.</li>
-      <li>Scroll to the bottom of the list once — the game only loads about 30 rows until you do.</li>
-      <li>Click <b>2698 Extract</b> in the bookmarks bar, pick 698N, W, S, C or Other, check the count, and press <b>Send to sheet</b>.</li>
+      <li>Click <b>2698 Extract</b> in the bookmarks bar. The game only loads about 30 rows at first: press <b>Load all</b> in the panel to load the rest (or scroll to the bottom yourself).</li>
+      <li>In the panel, pick 698N, W, S, C or Other, check the count, and press <b>Send to sheet</b>.</li>
     </ol>
     <p class="muted" style="margin:10px 0 0">Each send is added below the lists already in the sheet, dated by the game's day (UTC). The bookmark only reads what the game has
       already loaded on your screen: it sends nothing to the game and taps nothing.</p>
@@ -52,7 +52,7 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
 
 <!-- The bookmark's code. The page turns it into the javascript: link above. -->
 <script type="text/plain" id="src">
-(() => {
+(function run() {
   const API = 'https://data-collection.jk06nm04.workers.dev/api/game-ranking';
   const SHEET = 'https://docs.google.com/spreadsheets/d/12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc/edit#gid=0';
   if (!window.cc || !cc.director || !cc.director.getScene) {
@@ -61,14 +61,14 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
   }
 
   /* read: the biggest open list with a rank and a score, the screen's title, the entrant count */
-  const lists = [], labels = [];
+  const lists = [], labels = [];               // lists: [the array, the component holding it]
   const walk = n => {
     if (!n || !n.activeInHierarchy) return;
     for (const c of n._components || []) {
       if (c instanceof cc.Label && c.string) labels.push([n.name, c.string]);
       for (const k of Object.keys(c)) {
         const v = c[k];
-        if (Array.isArray(v) && v.length && v[0] && typeof v[0] === 'object' && 'rank' in v[0] && 'score' in v[0]) lists.push(v);
+        if (Array.isArray(v) && v.length && v[0] && typeof v[0] === 'object' && 'rank' in v[0] && 'score' in v[0]) lists.push([v, c]);
       }
     }
     (n.children || []).forEach(walk);
@@ -76,7 +76,8 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
   walk(cc.director.getScene());
   const title = (labels.filter(([n, s]) => n === 'TITLE' && !/^ranking$/i.test(s.trim())).pop() || [, 'Ranking'])[1];
   const entrants = (labels.map(([, s]) => s.match(/^([\d,]+)\s+Commanders/)).find(Boolean) || [])[1];
-  const list = lists.sort((a, b) => b.length - a.length)[0] || [];
+  const [list, owner] = lists.sort((a, b) => b[0].length - a[0].length)[0] || [[], null];
+  const scroller = owner && owner.node.getComponentInChildren(cc.ScrollView);
   const name = e => {
     try { const p = typeof e.playerInfo === 'string' ? JSON.parse(e.playerInfo) : e.playerInfo || {}; return String(p.username || p.nickname || e.name || ''); }
     catch { return String(e.name || ''); }
@@ -113,6 +114,9 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
     .s{background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b);color:#fff}
     .s:disabled{opacity:.55;cursor:default}
     .c{background:rgba(255,255,255,.12);color:#fff}
+    .l{display:block;margin-top:7px;border:0;border-radius:999px;padding:6px 12px;font:inherit;font-weight:700;font-size:12.5px;
+      cursor:pointer;color:#2a1600;background:#ffc078}
+    .l:disabled{opacity:.6;cursor:default}
     .m{margin-top:8px;font-size:12.5px;min-height:1em}
     .m a{color:#9ec5ff}
   </style>
@@ -143,9 +147,36 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
       .map(([, name, points, ally], i) => [i + 1, name, points, ally]);
   };
   const warn = !rows.length ? 'No ranking list found. Open a ranking screen, then click the bookmark again.'
-    : gaps || short ? `Only ranks ${rows[0][0]}–${last} are loaded${entrants ? ` of ${entrants}` : ''}. Scroll to the bottom of the list, then click the bookmark again.`
+    : gaps || short ? `Only ranks ${rows[0][0]}–${last} are loaded${entrants ? ` of ${entrants}` : ''}. `
+      + (scroller ? 'Press Load all to get the rest.' : 'Scroll to the bottom of the list, then click the bookmark again.')
     : '';
   if (warn) { $('.w').hidden = false; $('.w').textContent = warn; }
+  // Load all: the rest of the list, a page at a time, the way scrolling to the end loads it. Each
+  // step glides the list to its bottom and tells it it got there, as a finger scroll does; the
+  // game then asks for its next 30 itself. The pace is that of a quick, uneven flick through the
+  // list: a glide of 0.2–0.45 s, a pause of 0.25–0.9 s, and now and then a longer one of 1–2 s.
+  // Stops at the entrant count, when no more arrive, or when the panel is closed.
+  if ((gaps || short) && scroller) {
+    const btn = $('.w').appendChild(Object.assign(document.createElement('button'), { className: 'l', textContent: 'Load all' }));
+    btn.onclick = async () => {
+      btn.disabled = true;
+      const want = entrants ? Number(entrants.replace(/,/g, '')) : Infinity;
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      const between = (lo, hi) => lo + Math.random() * (hi - lo);
+      for (let stuck = 0; list.length < want && stuck < 2 && host.isConnected; ) {
+        const before = list.length, glide = between(0.2, 0.45);
+        scroller.scrollToBottom(glide);
+        await wait(glide * 1000 + 50);
+        if (!host.isConnected) break;
+        scroller.node.emit('scroll-to-bottom', scroller);
+        for (const t0 = Date.now(); list.length === before && Date.now() - t0 < 6000; ) await wait(150);
+        stuck = list.length === before ? stuck + 1 : 0;
+        btn.textContent = `Loading… ${list.length.toLocaleString()}${entrants ? ' of ' + entrants : ''}`;
+        await wait(Math.random() < 0.12 ? between(1000, 2000) : between(250, 900));
+      }
+      if (host.isConnected) run();                // read the now complete list again
+    };
+  }
   const show = () => {
     const sel = chosen();
     $('.n').textContent = sel.length.toLocaleString();
