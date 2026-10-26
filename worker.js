@@ -138,9 +138,9 @@ const TARGETS = {
   cp:    { id: '1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8', gid: 237521468,
            from: 'A', to: 'I', book: 'Alliance Rosters' },
 };
-// The game's ranking lists (tools/rank-bookmark.js, run on the Top War web game): Rank, Name and
-// Points in A to C of the first tab, under the header row. Each send replaces the list there, since
-// a ranking is a snapshot of the current scores. Only this route accepts the game page's origin.
+// The game's ranking lists (docs/bookmark.html, run on the Top War web game): Rank, Name, Points
+// and the date sent, in A to D of the first tab. Each send is added below the lists already there.
+// Only this route accepts the game page's origin.
 const RANKING = { id: '12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc', gid: 0, book: 'Game rankings' };
 const RANKING_ORIGIN = 'https://h5.topwargame.com';
 const RANKING_MAX = 3000;
@@ -247,14 +247,26 @@ async function writeRanking(env, rows) {
 
   const token = await googleToken(env);
   const tab = `'${(await tabTitle(token, RANKING)).replace(/'/g, "''")}'`;
-  // the old list goes first, so a shorter list leaves nothing behind; the header row stays
-  await sheetsCall(token, 'POST', `/values/${encodeURIComponent(`${tab}!A2:C`)}:clear`, {}, RANKING);
-  const range = `${tab}!A2:C${rows.length + 1}`;
-  // RAW: names go in exactly as written, even one starting with = or +
-  const out = await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(range)}?valueInputOption=RAW`,
-    { range, majorDimension: 'ROWS', values: rows }, RANKING);
-  return { rows: out.updatedRows || rows.length, range: out.updatedRange || range,
-           link: `https://docs.google.com/spreadsheets/d/${RANKING.id}/edit#gid=${RANKING.gid}` };
+  // Each list goes below the last one, the way appendRows does it: find the last row with
+  // anything in A to D and write directly under it.
+  const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(`${tab}!A:D`)}`
+    + '?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', null, RANKING);
+  const seen = got.values || [];
+  let filled = seen.length;
+  while (filled > 0 && !(seen[filled - 1] || []).some(v => v !== '' && v != null)) filled--;
+  // the date column is new: give it its heading if it has none
+  if (!(seen[0] || [])[3])
+    await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(`${tab}!D1`)}?valueInputOption=RAW`,
+      { values: [['Date']] }, RANKING);
+  // The date the list was sent, by the game's day: Top War runs on UTC. USER_ENTERED makes it a
+  // real date in the sheet; asCell keeps a name starting with = or + as plain text.
+  const date = new Date().toISOString().slice(0, 10);
+  const first = Math.max(filled, 1) + 1, last = first + rows.length - 1;
+  const range = `${tab}!A${first}:D${last}`;
+  const out = await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
+    { range, majorDimension: 'ROWS', values: rows.map(([rank, name, points]) => [rank, asCell(name), points, date]) }, RANKING);
+  return { rows: out.updatedRows || rows.length, range: out.updatedRange || range, date,
+           link: `https://docs.google.com/spreadsheets/d/${RANKING.id}/edit#gid=${RANKING.gid}&range=A${first}` };
 }
 
 async function sheetsCall(token, method, path, body, target) {
@@ -443,8 +455,8 @@ export default {
     // 28 MB, more than a free-plan Worker has the time to sort through, and the page keeps its
     // own server and alliance. Cloudflare keeps a copy for ten minutes, which is as often as the
     // list itself changes, so repeated fetches do not go back to the site.
-    // A ranking list read from the game by the bookmark (tools/rank-bookmark.js): written over the
-    // last one in the Game rankings sheet. The sheet and columns are fixed above.
+    // A ranking list read from the game by the bookmark (docs/bookmark.html): added below the lists
+    // already in the Game rankings sheet. The sheet and columns are fixed above.
     if (url.pathname.replace(/^\/+/, '') === 'api/game-ranking') {
       const body = await request.text();
       if (body.length > 512 * 1024) return reply({ error: 'Request too large.' }, 413);

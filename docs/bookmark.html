@@ -28,7 +28,7 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
 <body>
 <div class="wrap">
   <h1>Ranking bookmark</h1>
-  <p class="sub">One click on a Top War ranking screen sends Rank, Name and Points to the Game rankings sheet.</p>
+  <p class="sub">One click on a Top War ranking screen adds Rank, Name, Points and today's date to the Game rankings sheet.</p>
 
   <section>
     <h2>1 · Install (once, on a computer)</h2>
@@ -45,7 +45,7 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
       <li>Scroll to the bottom of the list once — the game only loads about 30 rows until you do.</li>
       <li>Click <b>2698 Extract</b> in the bookmarks bar, check the count, and press <b>Send to sheet</b>.</li>
     </ol>
-    <p class="muted" style="margin:10px 0 0">Each send replaces the list in the sheet. The bookmark only reads what the game has
+    <p class="muted" style="margin:10px 0 0">Each send is added below the lists already in the sheet, dated by the game's day (UTC). The bookmark only reads what the game has
       already loaded on your screen: it sends nothing to the game and taps nothing.</p>
   </section>
 </div>
@@ -147,7 +147,9 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
       const r = await fetch(API, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rows }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `the sheet did not accept it (${r.status})`);
-      $('.m').innerHTML = `✓ ${Number(j.rows).toLocaleString()} rows sent. <a target="_blank" rel="noopener">Open the sheet ↗</a>`;
+      // stays disabled: sending again would add the same list a second time
+      $('.s').textContent = 'Sent ✓';
+      $('.m').innerHTML = `✓ ${Number(j.rows).toLocaleString()} rows added, dated ${j.date}. <a target="_blank" rel="noopener">Open the sheet ↗</a>`;
       $('.m a').href = j.link || SHEET;
     } catch (e) {
       $('.m').textContent = '✗ ' + (e.message || e);
