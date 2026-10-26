@@ -28,7 +28,7 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
 <body>
 <div class="wrap">
   <h1>Ranking bookmark</h1>
-  <p class="sub">One click on a Top War ranking screen adds Date, Name, Points and Rank to the Game rankings sheet.</p>
+  <p class="sub">One click on a Top War ranking screen adds Date, Name, Points, Rank and Alliance to the Game rankings sheet — the four main alliances, or everyone else.</p>
 
   <section>
     <h2>1 · Install (once, on a computer)</h2>
@@ -41,9 +41,9 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
   <section>
     <h2>2 · Use</h2>
     <ol>
-      <li>Open <a href="https://h5.topwargame.com/h5game/" target="_blank" rel="noopener">the Top War web game</a> and the Whitebeard ranking.</li>
-      <li>Scroll to the bottom of the list once (the game only loads about 30 rows until you do).</li>
-      <li>Click <b>2698 Extract</b> in the bookmarks bar, check the count, and press <b>Send to sheet</b>.</li>
+      <li>Open <a href="https://h5.topwargame.com/h5game/" target="_blank" rel="noopener">the Top War web game</a> and the ranking you want.</li>
+      <li>Scroll to the bottom of the list once — the game only loads about 30 rows until you do.</li>
+      <li>Click <b>2698 Extract</b> in the bookmarks bar, pick 698N, W, S, C or Other, check the count, and press <b>Send to sheet</b>.</li>
     </ol>
     <p class="muted" style="margin:10px 0 0">Each send is added below the lists already in the sheet, dated by the game's day (UTC). The bookmark only reads what the game has
       already loaded on your screen: it sends nothing to the game and taps nothing.</p>
@@ -81,8 +81,10 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
     try { const p = typeof e.playerInfo === 'string' ? JSON.parse(e.playerInfo) : e.playerInfo || {}; return String(p.username || p.nickname || e.name || ''); }
     catch { return String(e.name || ''); }
   };
-  const rows = list.map(e => [Number(e.rank), name(e).slice(0, 80), Number(e.score)])
+  // [rank, name, points, alliance]: the alliance tag comes with each entry (698N, 698S, …)
+  const rows = list.map(e => [Number(e.rank), name(e).slice(0, 80), Number(e.score), String(e.allianceTag || '').slice(0, 20)])
     .filter(r => Number.isFinite(r[0]) && Number.isFinite(r[2])).sort((a, b) => a[0] - b[0]);
+  const MAIN = ['698N', '698W', '698S', '698C'];
   const last = rows.length ? rows[rows.length - 1][0] : 0;
   const gaps = rows.length && (rows[0][0] !== 1 || last !== rows.length);
   const short = entrants && rows.length < Number(entrants.replace(/,/g, ''));
@@ -100,6 +102,9 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
     .x{background:rgba(255,255,255,.1);border:0;color:#bbb;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:15px;line-height:1}
     .t{color:rgba(235,235,245,.65);font-size:12.5px;margin-bottom:8px}
     .n{font-size:22px;font-weight:700}
+    .f{display:block;width:100%;margin:8px 0 2px;padding:7px 10px;border-radius:10px;border:0;font:inherit;font-size:13.5px;
+      color:#f3f3f7;background:rgba(255,255,255,.1);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
+    .f option{color:#111}
     .w{background:rgba(255,159,67,.15);color:#ffc078;border-radius:10px;padding:7px 10px;font-size:12.5px;margin:8px 0}
     table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
     td{padding:3px 0;border-bottom:1px solid rgba(255,255,255,.08)} td:first-child{width:34px;color:rgba(235,235,245,.6)} td:last-child{text-align:right}
@@ -115,6 +120,7 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
     <div class="h"><b>2698 Extract</b><button class="x" title="Close">×</button></div>
     <div class="t"></div>
     <div><span class="n"></span> players</div>
+    <select class="f" aria-label="Alliance"></select>
     <div class="w" hidden></div>
     <table></table>
     <div class="a"><button class="s">Send to sheet</button><button class="c">Copy</button></div>
@@ -122,22 +128,44 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
   </div>`;
   const $ = s => root.querySelector(s);
   $('.t').textContent = title;
-  $('.n').textContent = rows.length.toLocaleString();
+  // two choices: the four main alliances, or everyone else (other alliances and none)
+  const four = rows.filter(r => MAIN.includes(r[3])).length;
+  const opts = [['ALL4', `698N, W, S, C (${four})`], ['OTHER', `Other (${rows.length - four})`]];
+  opts.forEach(([v, t]) => $('.f').appendChild(Object.assign(document.createElement('option'), { value: v, textContent: t })));
+  // the rows to copy or send: the four main alliances, or the rest. Sorted by alliance — 698N, W, S
+  // and C in that order, or the others A to Z with no alliance last — and by rank within each. The game's rank is not
+  // kept: the Rank column is numbered 1, 2, 3… down the list as sent.
+  const allyOrder = t => t ? (MAIN.indexOf(t) + 1 || 99) : 100;
+  const chosen = () => {
+    const f = $('.f').value;
+    return (f === 'ALL4' ? rows.filter(r => MAIN.includes(r[3])) : rows.filter(r => !MAIN.includes(r[3])))
+      .slice().sort((a, b) => allyOrder(a[3]) - allyOrder(b[3]) || a[3].localeCompare(b[3]) || a[0] - b[0])
+      .map(([, name, points, ally], i) => [i + 1, name, points, ally]);
+  };
   const warn = !rows.length ? 'No ranking list found. Open a ranking screen, then click the bookmark again.'
     : gaps || short ? `Only ranks ${rows[0][0]}–${last} are loaded${entrants ? ` of ${entrants}` : ''}. Scroll to the bottom of the list, then click the bookmark again.`
     : '';
   if (warn) { $('.w').hidden = false; $('.w').textContent = warn; }
-  const pick = rows.length > 6 ? [...rows.slice(0, 3), null, ...rows.slice(-2)] : rows;
-  for (const r of pick) {
-    const tr = document.createElement('tr');
-    (r ? [r[0], r[1], r[2].toLocaleString()] : ['', '…', '']).forEach(v => tr.appendChild(document.createElement('td')).textContent = v);
-    $('table').appendChild(tr);
-  }
+  const show = () => {
+    const sel = chosen();
+    $('.n').textContent = sel.length.toLocaleString();
+    $('table').textContent = '';
+    const pick = sel.length > 6 ? [...sel.slice(0, 3), null, ...sel.slice(-2)] : sel;
+    for (const r of pick) {
+      const tr = document.createElement('tr');
+      (r ? [r[0], r[1], r[2].toLocaleString()] : ['', '…', '']).forEach(v => tr.appendChild(document.createElement('td')).textContent = v);
+      $('table').appendChild(tr);
+    }
+    // a new choice can be sent, even after a send
+    if (rows.length) { $('.s').disabled = !sel.length; $('.s').textContent = 'Send to sheet'; }
+  };
+  $('.f').onchange = show;
+  show();
   if (!rows.length) { $('.s').disabled = true; $('.c').disabled = true; }
   $('.x').onclick = () => host.remove();
   $('.c').onclick = async () => {
     const date = new Date().toISOString().slice(0, 10);          // the game's day (UTC), as the sheet has it
-    const tsv = ['Date\tName\tPoints\tRank', ...rows.map(([rank, n, points]) => [date, n, points, rank].join('\t'))].join('\n');
+    const tsv = ['Date\tName\tPoints\tRank\tAlliance', ...chosen().map(([rank, n, points, ally]) => [date, n, points, rank, ally].join('\t'))].join('\n');
     try { await navigator.clipboard.writeText(tsv); $('.m').textContent = 'Copied — paste into Sheets.'; }
     catch { $('.m').textContent = 'Copying was blocked by the browser.'; }
   };
@@ -145,7 +173,7 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
     if (warn && !confirm(warn + '\n\nSend the rows that are loaded anyway?')) return;
     $('.s').disabled = true; $('.m').textContent = 'Sending…';
     try {
-      const r = await fetch(API, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rows }) });
+      const r = await fetch(API, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rows: chosen() }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || `the sheet did not accept it (${r.status})`);
       // stays disabled: sending again would add the same list a second time
