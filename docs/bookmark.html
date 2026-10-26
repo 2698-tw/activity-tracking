@@ -33,7 +33,7 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
   <section>
     <h2>1 · Install (once, on a computer)</h2>
     <p style="margin:0 0 12px">Drag this onto your bookmarks bar:</p>
-    <a class="drag" id="bm" href="#">2698 Data Extractor</a>
+    <a class="drag" id="bm" href="#">Whitebeard Extractor</a>
     <p class="muted" style="margin:12px 0 0">No bookmarks bar? Press Ctrl+Shift+B (Mac: Cmd+Shift+B) to show it.
       Can't drag? <button type="button" id="copy">Copy the bookmark code</button>, then make a new bookmark and paste it as the URL.</p>
   </section>
@@ -41,12 +41,12 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
   <section>
     <h2>2 · Use</h2>
     <ol>
-      <li>Open <a href="https://h5.topwargame.com/h5game/" target="_blank" rel="noopener">the Top War web game</a> and the ranking you want.</li>
-      <li>Click <b>2698 Data Extractor</b> in the bookmarks bar. The game only loads about 30 rows at first: press <b>Load all</b> in the panel to load the rest (or scroll to the bottom yourself).</li>
+      <li>Open <a href="https://h5.topwargame.com/h5game/" target="_blank" rel="noopener">the Top War web game</a> and the Whitebeard ranking.</li>
+      <li>Click <b>Whitebeard Extractor</b> in the bookmarks bar. The game only loads about 30 rows at first: press <b>Load all</b> in the panel to load the rest (or scroll to the bottom yourself).</li>
       <li>In the panel, pick 698N, W, S, C or Other, check the count, and press <b>Send to sheet</b>.</li>
     </ol>
     <p class="muted" style="margin:10px 0 0">Each send is added below the lists already in the sheet, dated by the game's day (UTC). The bookmark only reads what the game has
-      already loaded on your screen: it sends nothing to the game and taps nothing.</p>
+      already loaded on your screen: it sends nothing to the game.</p>
   </section>
 </div>
 
@@ -56,7 +56,7 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
   const API = 'https://data-collection.jk06nm04.workers.dev/api/game-ranking';
   const SHEET = 'https://docs.google.com/spreadsheets/d/12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc/edit#gid=0';
   if (!window.cc || !cc.director || !cc.director.getScene) {
-    alert('2698 Data Extractor: open the Top War web game (h5.topwargame.com) and a ranking screen first.');
+    alert('Whitebeard Extractor: open the Top War web game (h5.topwargame.com) and a ranking screen first.');
     return;
   }
 
@@ -121,7 +121,7 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
     .m a{display:inline-block;margin-top:4px;color:#9ec5ff;font-weight:600}
   </style>
   <div class="p">
-    <div class="h"><b>2698 Data Extractor</b><button class="x" title="Close">×</button></div>
+    <div class="h"><b>Whitebeard Extractor</b><button class="x" title="Close">×</button></div>
     <div class="t"></div>
     <div><span class="n"></span> players</div>
     <select class="f" aria-label="Alliance"></select>
