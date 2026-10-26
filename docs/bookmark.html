@@ -28,7 +28,7 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
 <body>
 <div class="wrap">
   <h1>Ranking bookmark</h1>
-  <p class="sub">One click on a Top War ranking screen adds Rank, Name, Points and today's date to the Game rankings sheet.</p>
+  <p class="sub">One click on a Top War ranking screen adds Date, Name, Points and Rank to the Game rankings sheet.</p>
 
   <section>
     <h2>1 · Install (once, on a computer)</h2>
@@ -136,7 +136,8 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
   if (!rows.length) { $('.s').disabled = true; $('.c').disabled = true; }
   $('.x').onclick = () => host.remove();
   $('.c').onclick = async () => {
-    const tsv = ['Rank\tName\tPoints', ...rows.map(r => r.join('\t'))].join('\n');
+    const date = new Date().toISOString().slice(0, 10);          // the game's day (UTC), as the sheet has it
+    const tsv = ['Date\tName\tPoints\tRank', ...rows.map(([rank, n, points]) => [date, n, points, rank].join('\t'))].join('\n');
     try { await navigator.clipboard.writeText(tsv); $('.m').textContent = 'Copied — paste into Sheets.'; }
     catch { $('.m').textContent = 'Copying was blocked by the browser.'; }
   };

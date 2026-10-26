@@ -138,8 +138,8 @@ const TARGETS = {
   cp:    { id: '1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8', gid: 237521468,
            from: 'A', to: 'I', book: 'Alliance Rosters' },
 };
-// The game's ranking lists (docs/bookmark.html, run on the Top War web game): Rank, Name, Points
-// and the date sent, in A to D of the first tab. Each send is added below the lists already there.
+// The game's ranking lists (docs/bookmark.html, run on the Top War web game): Date, Name, Points
+// and Rank, in A to D of the first tab. Each send is added below the lists already there.
 // Only this route accepts the game page's origin.
 const RANKING = { id: '12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc', gid: 0, book: 'Game rankings' };
 const RANKING_ORIGIN = 'https://h5.topwargame.com';
@@ -254,17 +254,13 @@ async function writeRanking(env, rows) {
   const seen = got.values || [];
   let filled = seen.length;
   while (filled > 0 && !(seen[filled - 1] || []).some(v => v !== '' && v != null)) filled--;
-  // the date column is new: give it its heading if it has none
-  if (!(seen[0] || [])[3])
-    await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(`${tab}!D1`)}?valueInputOption=RAW`,
-      { values: [['Date']] }, RANKING);
   // The date the list was sent, by the game's day: Top War runs on UTC. USER_ENTERED makes it a
   // real date in the sheet; asCell keeps a name starting with = or + as plain text.
   const date = new Date().toISOString().slice(0, 10);
   const first = Math.max(filled, 1) + 1, last = first + rows.length - 1;
   const range = `${tab}!A${first}:D${last}`;
   const out = await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
-    { range, majorDimension: 'ROWS', values: rows.map(([rank, name, points]) => [rank, asCell(name), points, date]) }, RANKING);
+    { range, majorDimension: 'ROWS', values: rows.map(([rank, name, points]) => [date, asCell(name), points, rank]) }, RANKING);
   return { rows: out.updatedRows || rows.length, range: out.updatedRange || range, date,
            link: `https://docs.google.com/spreadsheets/d/${RANKING.id}/edit#gid=${RANKING.gid}&range=A${first}` };
 }
