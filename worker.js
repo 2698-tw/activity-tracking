@@ -460,13 +460,11 @@ export default {
       let read;
       try { read = checkRosterRead(JSON.parse(body)); }
       catch (e) { return reply({ error: String(e.message || e) }, 400); }
-      const stub = env.ROSTER.get(env.ROSTER.idFromName('roster'));
-      return reply(await stub.update(read), 200);
+      return rosterCall(env, '/update', read, reply);
     }
     if (url.pathname.replace(/^\/+/, '') === 'api/roster') {
       if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
-      const stub = env.ROSTER.get(env.ROSTER.idFromName('roster'));
-      return reply(await stub.list(), 200);
+      return rosterCall(env, '/list', null, reply);
     }
 
     // Base CP from the extractor's alliance reads, in the Base CP tab's own format: Alliance Rosters,
@@ -805,11 +803,35 @@ function checkRosterRead(b) {
   };
 }
 
+// The store is asked with a plain request (stub.fetch) rather than by calling its methods: that works
+// for any Durable Object class. Any failure comes back as a JSON error with the CORS headers, never as
+// Cloudflare's bare error page (which a browser reports only as a CORS block).
+async function rosterCall(env, path, body, reply) {
+  try {
+    const stub = env.ROSTER.get(env.ROSTER.idFromName('roster'));
+    const r = await stub.fetch('https://roster' + path, { method: 'POST', body: JSON.stringify(body || {}) });
+    const j = await r.json();
+    return reply(j, r.ok ? 200 : 500);
+  } catch (e) {
+    return reply({ error: 'the roster store failed: ' + String(e && e.message || e) }, 500);
+  }
+}
+
 // One store for the whole roster, keyed by UID. A read of an alliance adds its new players, updates
 // the ones already there, marks the alliance's players who are missing as Left (with the date) and
 // brings back anyone who returns. Rows are never deleted.
 export class RosterStore {
   constructor(state) { this.state = state; }
+  async fetch(request) {
+    try {
+      const path = new URL(request.url).pathname;
+      if (path === '/update') return Response.json(await this.update(await request.json()));
+      if (path === '/list') return Response.json(await this.list());
+      return Response.json({ error: 'unknown roster call' }, { status: 404 });
+    } catch (e) {
+      return Response.json({ error: String(e && e.message || e) }, { status: 500 });
+    }
+  }
   async load() { return (await this.state.storage.get('rows')) || {}; }
   async update(read) {
     const rows = await this.load(), now = Date.now(), seen = new Set();
