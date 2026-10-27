@@ -144,6 +144,8 @@ const TARGETS = {
 const RANKING = { id: '12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc', gid: 0, book: 'Game rankings' };
 const RANKING_ORIGIN = 'https://h5.topwargame.com';
 const RANKING_MAX = 3000;
+// The alliances that take part in a Kartz round (api/round-*).
+const ROUND_ALLIANCES = ['698N', '698S', '698W', '698C'];
 const SHEET_COLS = 9;                   // both targets take nine columns
 const MAX_ROWS = 1000;
 
@@ -403,8 +405,9 @@ export default {
       && (origin === new URL(request.url).origin || ALLOWED_ORIGINS.includes(origin));
     const hasPass = !!env.SHARED_PASS
       && request.headers.get('x-kartz-pass') === env.SHARED_PASS;
-    // the game page may reach the ranking route, and nothing else
-    const rankingCall = origin === RANKING_ORIGIN && url.pathname.replace(/^\/+/, '') === 'api/game-ranking';
+    // the game page may reach the ranking route and the roster's MM/CE list, and nothing else
+    const rankingCall = origin === RANKING_ORIGIN
+      && ['api/game-ranking', 'api/roster-class'].includes(url.pathname.replace(/^\/+/, ''));
     const allowed = knownOrigin || hasPass || rankingCall;
 
     if (request.method === 'OPTIONS') {
@@ -444,6 +447,29 @@ export default {
       if (!up.ok) return reply({ error: `the sheet refused: ${up.status} ${(await up.text()).slice(0, 200)}` }, 502);
       const body = await up.text();
       ctx.waitUntil(cache.put(key, new Response(body, { headers: { 'content-type': 'application/json', 'cache-control': 'max-age=300' } })));
+      return new Response(body, { headers: { ...cors, 'content-type': 'application/json' } });
+    }
+
+    // MM/CE for the extractor (docs/extractor.js): search name, in-game name, alliance, MM/CE and
+    // Base CP (to tell apart two players with one name) from the Alliance Rosters tab — those five
+    // columns only, nothing else from the sheet. Kept for ten minutes, so opening the extractor again
+    // does not go back to the sheet.
+    if (url.pathname.replace(/^\/+/, '') === 'api/roster-class') {
+      const cache = caches.default, key = new Request('https://ask-data.cache/roster-class');
+      const hit = await cache.match(key);
+      if (hit) return new Response(hit.body, { headers: { ...cors, 'content-type': 'application/json' } });
+      let token;
+      try { token = await googleToken(env); }
+      catch (e) { return reply({ error: String(e.message || e) }, 500); }
+      const range = encodeURIComponent("'Alliance Rosters'!A2:E");
+      const up = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${ROSTER_BOOK}/values/${range}?majorDimension=ROWS`,
+        { headers: { authorization: 'Bearer ' + token } });
+      if (!up.ok) return reply({ error: `the sheet refused: ${up.status}` }, 502);
+      const rows = ((await up.json()).values || [])
+        .map(r => [r[0] || '', r[1] || '', r[2] || '', r[4] || '', r[3] || ''].map(v => String(v).trim()))
+        .filter(r => (r[0] || r[1]) && /^(MM|CE)$/.test(r[3]));
+      const body = JSON.stringify({ rows });
+      ctx.waitUntil(cache.put(key, new Response(body, { headers: { 'content-type': 'application/json', 'cache-control': 'max-age=600' } })));
       return new Response(body, { headers: { ...cors, 'content-type': 'application/json' } });
     }
 
@@ -523,6 +549,70 @@ export default {
       }
     }
     // A signed link for uploading the recording straight into B2 (see "Staging in Backblaze B2").
+    // Kartz rounds (docs/batch.js): each alliance uploads its recording for the day into a shared
+    // place in the B2 staging bucket, and one person reads all of them at once. A round is a month
+    // and day, e.g. Oct26-Day-1; each alliance has one recording in it, under a fixed key, beside a
+    // small note of who sent it and whether it has been read and sent:
+    //   kartz/round-Oct26-Day-1-698S.mov    kartz/round-Oct26-Day-1-698S.json
+    // A second upload for the same alliance and day replaces the first. The keys sit under kartz/ so
+    // api/video-commit can copy them on to Drive after the rows are sent, like any other recording,
+    // and the bucket's lifecycle rule clears whatever is left.
+    //   round-stage   a signed upload link for one alliance's recording
+    //   round-done    the note, written once the upload has finished (and again when it is sent)
+    //   round-status  each alliance's note for a round, or nothing
+    //   round-video   a signed link to read one recording back, for Extract all
+    if (['api/round-stage', 'api/round-done', 'api/round-status', 'api/round-video'].includes(videoRoute)) {
+      if (!stagingReady(env)) return reply({ error: { code: 501, message: 'B2 staging is not set up.' } }, 501);
+      try {
+        const b = JSON.parse(await request.text());
+        const round = String(b.round || '');
+        if (!/^[A-Z][a-z]{2}\d{2}-Day-[147]$/.test(round))
+          return reply({ error: { code: 400, message: 'Bad round.' } }, 400);
+        const base = a => `kartz/round-${round}-${a}`;
+        const note = async a => {
+          const r = await fetch(await presignB2(env, 'GET', base(a) + '.json', 300));
+          return r.ok ? r.json().catch(() => null) : null;
+        };
+        if (videoRoute === 'api/round-status') {
+          const out = {};
+          await Promise.all(ROUND_ALLIANCES.map(async a => { out[a] = await note(a); }));
+          return reply({ round, alliances: out }, 200);
+        }
+        const a = String(b.alliance || '');
+        if (!ROUND_ALLIANCES.includes(a)) return reply({ error: { code: 400, message: 'Bad alliance.' } }, 400);
+        if (videoRoute === 'api/round-stage') {
+          const { type, size } = b;
+          if (!/^video\//.test(type || '') || !(size > 0 && size < 5e9))
+            return reply({ error: { code: 400, message: 'Bad recording details.' } }, 400);
+          const ext = /mp4/.test(type) ? 'mp4' : /webm/.test(type) ? 'webm' : 'mov';
+          const key = `${base(a)}.${ext}`;
+          return reply({ key, url: await presignB2(env, 'PUT', key, 7200) }, 200);
+        }
+        if (videoRoute === 'api/round-video') {
+          const n = await note(a);
+          if (!n || !n.key) return reply({ error: { code: 404, message: `No recording for ${a} yet.` } }, 404);
+          return reply({ ...n, url: await presignB2(env, 'GET', n.key, 3600) }, 200);
+        }
+        // round-done: who sent it, when, and later that it was read and sent
+        const old = await note(a) || {};
+        const clip = (v, n) => String(v == null ? '' : v).slice(0, n);
+        const next = {
+          key: /^kartz\/round-[\w.-]{1,120}$/.test(b.key || '') ? b.key : old.key,
+          submitter: clip(b.submitter ?? old.submitter, 40), file: clip(b.file ?? old.file, 120),
+          size: Number(b.size ?? old.size) || 0,
+          uploadedAt: b.sent ? old.uploadedAt : new Date().toISOString(),
+          sentAt: b.sent ? new Date().toISOString() : (b.key ? null : old.sentAt || null),
+          rows: b.sent ? Number(b.rows) || 0 : (b.key ? null : old.rows ?? null),
+        };
+        if (!next.key) return reply({ error: { code: 400, message: 'No recording key.' } }, 400);
+        const put = await fetch(await presignB2(env, 'PUT', base(a) + '.json', 300),
+          { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(next) });
+        if (!put.ok) return reply({ error: { code: 502, message: `B2 refused the note (${put.status})` } }, 502);
+        return reply(next, 200);
+      } catch (e) {
+        return reply({ error: { code: 500, message: String(e && e.message || e) } }, 500);
+      }
+    }
     if (videoRoute === 'api/video-stage') {
       if (!stagingReady(env)) return reply({ error: { code: 501, message: 'B2 staging is not set up.' } }, 501);
       try {
