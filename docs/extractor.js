@@ -122,7 +122,7 @@
   /* ---------------- saved reads and MM/CE ---------------- */
   var S = (function () { try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) { return {}; } })();
   S.members = S.members || {}; S.prev = S.prev || {};
-  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev })); } catch (e) {} }
+  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null })); } catch (e) {} }
   var fold = function (s) { return String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, ''); };
   // MM/CE from the roster. Names repeat ("Woody" is 698S's in-game name and 698C's search name; 698S
   // has two Gikeys), so the candidates are tried in order: in-game name in the player's own alliance,
@@ -137,7 +137,7 @@
         var add = function (k, row) { if (!k) return; (CLASS.keys[k] = CLASS.keys[k] || []).push(row); };
         // r: [search name, in-game name, alliance, MM/CE, Base CP in millions]
         (j.rows || []).forEach(function (r) {
-          var row = { cls: r[3], cp: Number(r[4]) || 0 };
+          var row = { cls: r[3], cp: Number(r[4]) || 0, search: r[0] || r[1] };
           add('ia|' + r[2] + '|' + r[1], row); add('sa|' + r[2] + '|' + r[0], row); add('i|' + r[1], row); add('s|' + r[0], row);
           var seenF = {};
           [r[1], r[0]].forEach(function (n) { var f = fold(n); if (f && !seenF[f]) { seenF[f] = 1; add('fa|' + r[2] + '|' + f, row); add('f|' + f, row); } });
@@ -145,17 +145,31 @@
       })
       .catch(function () { CLASS = { keys: {}, failed: true }; });
   }
-  function classOf(name, ally, power) {
-    if (!CLASS) return '';
+  function matchOf(name, ally, power) {
+    if (!CLASS) return null;
     var k = CLASS.keys, f = fold(name), cp = (power || 0) / 1e6;
     var order = ['ia|' + ally + '|' + name, 'sa|' + ally + '|' + name, 'i|' + name, 's|' + name].concat(f ? ['fa|' + ally + '|' + f, 'f|' + f] : []);
     for (var i = 0; i < order.length; i++) {
       var c = k[order[i]];
       if (!c) continue;
-      if (c.length === 1) return c[0].cls;
-      return c.slice().sort(function (a, b) { return Math.abs(a.cp - cp) - Math.abs(b.cp - cp); })[0].cls;
+      return c.length === 1 ? c[0] : c.slice().sort(function (a, b) { return Math.abs(a.cp - cp) - Math.abs(b.cp - cp); })[0];
     }
-    return '';
+    return null;
+  }
+  function classOf(name, ally, power) { var m = matchOf(name, ally, power); return m ? m.cls : ''; }
+  // the roster's search name, as the Base CP tab sends it; the in-game name when the roster has none
+  function searchOf(name, ally, power) { var m = matchOf(name, ally, power); return (m && m.search) || name; }
+  var READY = loadClasses();
+
+  // one alliance read into the site's Alliance Roster card (api/roster-update): its rows are updated
+  // in place, matched by UID on the Worker; players missing from the read are marked Left there
+  function pushRoster(tag, list) {
+    var members = list.map(function (m) {
+      return { uid: m.uid, name: m.name, search: searchOf(m.name, tag, m.power), rank: m.rank, power: m.power, level: m.level,
+               join: m.join, last: m.last, online: m.online, cls: classOf(m.name, tag, m.power) };
+    });
+    return fetch(API + '/roster-update', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ alliance: tag, members: members }) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); });
   }
 
   /* ---------------- the panel ---------------- */
@@ -210,7 +224,7 @@
   function tagEl(t) { var s = el('span', 'tag t' + t, t || '—'); return s; }
   function msg(t, link) { var m = $('#msg'); m.textContent = t; if (link) { m.appendChild(document.createElement('br')); var a = el('a', '', 'Open in Sheets ↗'); a.href = link; a.target = '_blank'; a.rel = 'noopener'; m.appendChild(a); } }
   var busy = false;
-  var V = { tab: 'members', ally: '', cls: '', away: false, sort: 'power', asc: false, wbFilter: 'ALL4', wb: null };
+  var V = { tab: 'members', ally: '', cls: '', away: false, sort: 'power', asc: false, wbFilter: 'ALL4', wb: S.wb || null };   // the last Whitebeard read, kept like the member lists
 
   $('#close').onclick = function () { host.style.display = 'none'; };
   window.__x2698 = { toggle: function () { host.style.display = host.style.display === 'none' ? '' : 'none'; } };
@@ -243,6 +257,10 @@
     });
     var all = el('button', 'go', 'Read all five'); all.disabled = busy; all.onclick = function () { run(Object.keys(ALLY)); }; bar.appendChild(all);
     var csv = el('button', 'go ghost', 'Download CSV'); csv.onclick = downloadMembers; bar.appendChild(csv);
+    var n = cpRows().length;
+    var send = el('button', 'go', 'Send Base CP to sheet (' + n + ')'); send.disabled = busy || !n;
+    send.title = 'Base CP of ' + (V.ally || 'every alliance read') + ' to Alliance Rosters → RawData-CP';
+    send.onclick = sendCp; bar.appendChild(send);
     bar.appendChild(el('span', 'dim', ''));
     var f = el('div', ''); f.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;width:100%';
     [''].concat(Object.keys(ALLY)).forEach(function (t) { var c = el('button', 'chip' + (V.ally === t ? ' on' : ''), t || 'All alliances'); c.onclick = function () { V.ally = t; render(); }; f.appendChild(c); });
@@ -298,8 +316,9 @@
     var tot = allMembers().length;
     $('#bar').querySelector('span.dim').textContent = rows.length + ' of ' + tot + ' shown' + (CLASS && CLASS.failed ? ' · MM/CE: roster unavailable' : '');
   }
+  var cardNotes = [];
   async function run(tags) {
-    if (busy) return; busy = true; render();
+    if (busy) return; busy = true; render(); cardNotes = [];
     try {
       for (var i = 0; i < tags.length; i++) {
         var t = tags[i];
@@ -308,9 +327,12 @@
         if (S.members[t]) S.prev[t] = S.members[t];
         S.members[t] = { at: Date.now(), list: list };
         save(); render();
+        await READY;
+        try { var u = await pushRoster(t, list); cardNotes.push(t + ': ' + u.added + ' new, ' + u.left + ' left' + (u.rejoined ? ', ' + u.rejoined + ' back' : '')); }
+        catch (e) { cardNotes.push(t + ': card not updated (' + (e.message || e) + ')'); }
         if (i < tags.length - 1) await wait(between(1200, 2600));   // a person's pause between alliances
       }
-      msg('Read ' + tags.join(', ') + ' — ' + tags.reduce(function (s, t) { return s + S.members[t].list.length; }, 0) + ' members.');
+      msg('Read ' + tags.join(', ') + ' — ' + tags.reduce(function (s, t) { return s + S.members[t].list.length; }, 0) + ' members. Roster card: ' + cardNotes.join(' · '));
     } catch (e) { msg('✗ ' + (e.message || e)); }
     busy = false; render();
   }
@@ -324,6 +346,33 @@
     a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], { type: 'text/csv' }));
     a.download = 'alliance-members-' + new Date().toISOString().slice(0, 10) + '.csv';
     document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  /* Base CP to Alliance Rosters → RawData-CP, in the Base CP tab's format (cp.js cpSheetRows):
+     date, submitter ("Data Extractor"), search name, in-game name, alliance, base CP in millions rounded
+     (171,460,968 → 171) */
+  var SUBMITTER = 'Data Extractor';                     // the submitter column: where the rows came from
+  function stamp(at) {
+    var p = function (n) { return String(n).padStart(2, '0'); };
+    return (at.getMonth() + 1) + '/' + at.getDate() + '/' + at.getFullYear() + ' ' + p(at.getHours()) + ':' + p(at.getMinutes()) + ':' + p(at.getSeconds());
+  }
+  // the alliance chosen above (all of them when none is), whatever the other filters
+  function cpRows() {
+    return allMembers().filter(function (m) { return !V.ally || m.ally === V.ally; });
+  }
+  async function sendCp() {
+    var at = stamp(new Date());
+    var rows = cpRows().map(function (m) { return [at, SUBMITTER, searchOf(m.name, m.ally, m.power), m.name, m.ally, Math.round(m.power / 1e6)]; });
+    if (!rows.length) return;
+    busy = true; render(); msg('Sending ' + rows.length + ' Base CP rows…');
+    try {
+      var r = await fetch(API + '/game-cp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rows: rows }) });
+      var j = await r.json().catch(function () { return {}; });
+      if (!r.ok) throw new Error((j.error && j.error.message) || j.error || 'the sheet did not accept it (' + r.status + ')');
+      msg('✓ ' + Number(j.rows || rows.length).toLocaleString() + ' Base CP rows added to ' + (j.tab || 'RawData-CP') + '.',
+          'https://docs.google.com/spreadsheets/d/1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8/edit#gid=237521468');
+    } catch (e) { msg('✗ ' + (e.message || e)); }
+    busy = false; render();
   }
 
   /* whitebeard tab */
@@ -341,7 +390,8 @@
       [['ALL4', '698N, W, S, C (' + four + ')'], ['OTHER', 'Other (' + (V.wb.rows.length - four) + ')']].forEach(function (o) { var op = el('option', '', o[1]); op.value = o[0]; s.appendChild(op); });
       s.value = V.wbFilter; s.onchange = function () { V.wbFilter = s.value; render(); }; bar.appendChild(s);
       var send = el('button', 'go', 'Send to sheet'); send.disabled = busy; send.onclick = sendWb; bar.appendChild(send);
-      bar.appendChild(el('span', 'dim', V.wb.title + ' · ' + V.wb.rows.length + (isFinite(V.wb.want) ? ' of ' + V.wb.want : '') + ' players'));
+      bar.appendChild(el('span', 'dim', V.wb.title + ' · ' + V.wb.rows.length + (V.wb.want > 0 ? ' of ' + V.wb.want : '') + ' players'
+        + (V.wb.at ? ' · read ' + ago(V.wb.at / 1000) : '')));
     }
   }
   function wbTable() {
@@ -366,6 +416,9 @@
     try {
       msg('Opening the Whitebeard ranking…');
       V.wb = await readWhitebeard(function (n, want) { msg('Loading… ' + n + (isFinite(want) ? ' of ' + want : '')); });
+      V.wb.at = Date.now();
+      if (!isFinite(V.wb.want)) V.wb.want = null;            // unknown total: saved as null, not Infinity
+      S.wb = V.wb; save();
       msg(V.wb.rows.length < V.wb.want && isFinite(V.wb.want) ? 'Loaded ' + V.wb.rows.length + ' of ' + V.wb.want + ' — some pages did not arrive; Read again to retry.' : 'Loaded all ' + V.wb.rows.length + ' players.');
     } catch (e) { msg('✗ ' + (e.message || e)); }
     busy = false; render();
@@ -388,5 +441,5 @@
     changes();
   }
   render();
-  loadClasses().then(render);
+  READY.then(render);
 })();

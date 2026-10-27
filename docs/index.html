@@ -15,7 +15,7 @@
 try { const t = JSON.parse(localStorage.getItem('kartz.theme'));
       if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
 // No #kartz or #cp in the address: the home page, shown from the first paint (cp.js takes over).
-if (!/^#(kartz|cp)$/.test(location.hash)) document.documentElement.classList.add('athome');
+if (!/^#(kartz|cp|roster)$/.test(location.hash)) document.documentElement.classList.add('athome');
 </script>
 <style>
 /* Light by default, dark when the device prefers it — unless the toggle by the title has chosen,
@@ -201,6 +201,20 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .hcard .go{background:#fff;color:#7b1a31}
 .hcard.cp .go{color:#c2410c}
 .hcard .open{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.55);color:#fff}
+/* ---------------- alliance roster (roster.js) ---------------- */
+.rchip{width:auto;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:5px 12px;font:inherit;font-size:13px;font-weight:500;cursor:pointer}
+.rchip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.rtag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;background:var(--line)}
+.t698N{background:#dbe7ff;color:#1d3f8a}.t698S{background:#f3defa;color:#6b2381}.t698W{background:#d9f3e3;color:#1e6b3c}.t698C{background:#fde9cf;color:#8a4b00}.t698X{background:#e6e6e6;color:#444}
+:root[data-theme="dark"] .t698N{background:#22324f;color:#9ec5ff}:root[data-theme="dark"] .t698S{background:#3b2340;color:#e9a8ff}:root[data-theme="dark"] .t698W{background:#203d33;color:#7ee2a8}:root[data-theme="dark"] .t698C{background:#45321b;color:#ffc078}:root[data-theme="dark"] .t698X{background:#3a3a3a;color:#ddd}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .t698N{background:#22324f;color:#9ec5ff}:root:not([data-theme="light"]) .t698S{background:#3b2340;color:#e9a8ff}:root:not([data-theme="light"]) .t698W{background:#203d33;color:#7ee2a8}:root:not([data-theme="light"]) .t698C{background:#45321b;color:#ffc078}:root:not([data-theme="light"]) .t698X{background:#3a3a3a;color:#ddd}}
+.rtable{width:100%;border-collapse:collapse;font-size:14px}
+.rtable th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer;white-space:nowrap;position:sticky;top:0;background:var(--panel)}
+.rtable td{padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+.rtable td.n{text-align:right;font-variant-numeric:tabular-nums}
+.rtable td.CE{color:#c2410c;font-weight:700}.rtable td.MM{color:var(--accent);font-weight:700}
+.rtable tr.left td{opacity:.5}
+.dim{color:var(--muted)}
 </style>
 </head>
 <body>
@@ -218,8 +232,8 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
     <div class="homecards">
       <div class="hcard"><b>Kartz ranking</b>
         <div class="acts"><a class="go" href="#kartz">Extract</a><a class="open" href="https://docs.google.com/spreadsheets/d/1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE/edit#gid=1243524383" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
-      <div class="hcard cp"><b>Base and March CP</b>
-        <div class="acts"><a class="go" href="#cp">Extract</a><a class="open" href="https://docs.google.com/spreadsheets/d/1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8/edit#gid=237521468" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
+      <div class="hcard cp"><b>Alliance roster</b>
+        <div class="acts"><a class="go" href="#roster">Open</a><a class="open" href="extractor.html">Get the bookmark ↗</a></div></div>
     </div>
   </div>
 </div>
@@ -366,6 +380,22 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
     <button class="ghost" id="cpCsv">Download CSV</button>
     <button class="ghost" id="cpLearn">Remember my fixes</button>
   </div>
+</section>
+</div>
+
+<!-- Alliance roster: what the 2698 Data Extractor bookmark has read in the game (roster.js) -->
+<div id="tab-roster" class="hide">
+<section>
+  <h2>Alliance roster</h2>
+  <div class="note" id="rosterReads" style="margin:0 0 10px"></div>
+  <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+    <input id="rosterQ" type="text" placeholder="Search a name" autocomplete="off" style="flex:1;min-width:160px">
+    <button type="button" class="ghost" id="rosterReload" style="width:auto;flex:none">Reload</button>
+  </div>
+  <div id="rosterChips" style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0"></div>
+  <div id="rosterView"></div>
+  <p class="note" style="margin-top:10px">Updated by the <a href="extractor.html">2698 Data Extractor</a> bookmark: each time an alliance is read in the game,
+    its rows here are updated. Players no longer in the alliance stay, marked Left.</p>
 </section>
 </div>
 </div>
@@ -2627,7 +2657,9 @@ $('toBottom').onclick = () => scrollTo({ top: document.documentElement.scrollHei
 
 loadSetup();
 </script>
-<script src="cp.js"></script>
+<script src="cp.js?v=2"></script>
+<!-- the Alliance roster view -->
+<script src="roster.js?v=2"></script>
 <!-- Kartz: decoding the recording, then packing and reading it -->
 <script src="decode.js?v=4"></script>
 <script src="kartz.js?v=5"></script>

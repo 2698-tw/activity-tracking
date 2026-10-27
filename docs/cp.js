@@ -13,17 +13,19 @@ let cpFile = null, cpRows = [], cpHeaders = [];
 let cpSource = '';
 
 /* views */
-// Three views on one page: the home page (the address with no #), Kartz (#kartz) and Base CP (#cp).
+// Views on one page: the home page (the address with no #), Kartz (#kartz), the Alliance roster
+// (#roster) and Base CP (#cp, no longer on the home page but still there by its address).
 // The address carries the view, so a link, a reload or the phone's back button lands on the right one.
 function showTab(name) {
   $('home').classList.toggle('hide', name !== 'home');
   $('app').classList.toggle('hide', name === 'home');
   $('tab-kartz').classList.toggle('hide', name !== 'kartz');
   $('tab-cp').classList.toggle('hide', name !== 'cp');
+  $('tab-roster').classList.toggle('hide', name !== 'roster');
   document.documentElement.classList.remove('athome');
   closeMenu();
 }
-const viewFromAddress = () => location.hash === '#cp' ? 'cp' : location.hash === '#kartz' ? 'kartz' : 'home';
+const viewFromAddress = () => ({ '#cp': 'cp', '#kartz': 'kartz', '#roster': 'roster' })[location.hash] || 'home';
 function goTo(name) {
   if (name === viewFromAddress()) return;
   if (name === 'home') history.pushState(null, '', location.pathname + location.search);

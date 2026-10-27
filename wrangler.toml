@@ -20,3 +20,13 @@ binding = "AI"
 enabled = true
 invocation_logs = false
 persist = true
+
+# The Alliance Roster card's storage (RosterStore in worker.js): a Durable Object, so the roster lives
+# with the Worker and no Cloudflare dashboard setup is needed. Created by the first deploy with this.
+[[durable_objects.bindings]]
+name = "ROSTER"
+class_name = "RosterStore"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RosterStore"]

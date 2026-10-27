@@ -407,7 +407,8 @@ export default {
       && request.headers.get('x-kartz-pass') === env.SHARED_PASS;
     // the game page may reach the ranking route and the roster's MM/CE list, and nothing else
     const rankingCall = origin === RANKING_ORIGIN
-      && ['api/game-ranking', 'api/roster-class'].includes(url.pathname.replace(/^\/+/, ''));
+      && ['api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp']
+        .includes(url.pathname.replace(/^\/+/, ''));
     const allowed = knownOrigin || hasPass || rankingCall;
 
     if (request.method === 'OPTIONS') {
@@ -448,6 +449,46 @@ export default {
       const body = await up.text();
       ctx.waitUntil(cache.put(key, new Response(body, { headers: { 'content-type': 'application/json', 'cache-control': 'max-age=300' } })));
       return new Response(body, { headers: { ...cors, 'content-type': 'application/json' } });
+    }
+
+    // The Alliance Roster card (the site's #roster view): one alliance read by the extractor updates
+    // that alliance's rows, matched by UID, which stays here and is never sent to the site.
+    if (url.pathname.replace(/^\/+/, '') === 'api/roster-update') {
+      if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
+      const body = await request.text();
+      if (body.length > 256 * 1024) return reply({ error: 'Request too large.' }, 413);
+      let read;
+      try { read = checkRosterRead(JSON.parse(body)); }
+      catch (e) { return reply({ error: String(e.message || e) }, 400); }
+      const stub = env.ROSTER.get(env.ROSTER.idFromName('roster'));
+      return reply(await stub.update(read), 200);
+    }
+    if (url.pathname.replace(/^\/+/, '') === 'api/roster') {
+      if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
+      const stub = env.ROSTER.get(env.ROSTER.idFromName('roster'));
+      return reply(await stub.list(), 200);
+    }
+
+    // Base CP from the extractor's alliance reads, in the Base CP tab's own format: Alliance Rosters,
+    // RawData-CP, A to I: date, submitter, search name, in-game name, alliance, base CP, and the three
+    // march columns left empty. The rows are checked here; the tab is the existing 'cp' target.
+    if (url.pathname.replace(/^\/+/, '') === 'api/game-cp') {
+      const body = await request.text();
+      if (body.length > 512 * 1024) return reply({ error: { code: 413, message: 'Request too large.' } }, 413);
+      try {
+        const { rows } = JSON.parse(body);
+        if (!Array.isArray(rows) || !rows.length || rows.length > 1000
+            || !rows.every(r => Array.isArray(r) && r.length === 6
+              && /^\d{1,2}\/\d{1,2}\/\d{4} \d{2}:\d{2}:\d{2}$/.test(r[0])
+              && [1, 2, 3, 4].every(i => typeof r[i] === 'string' && r[i].length <= 80) && r[1].trim()
+              && Number.isFinite(r[5]) && r[5] >= 0 && r[5] < 10000))
+          return reply({ error: { code: 400, message: 'Every row must be [date, submitter, search name, in-game name, alliance, base CP].' } }, 400);
+        const out = await appendRows(env, rows.map(r => [...r, '', '', '']), 'cp');
+        return reply(out, 200);
+      } catch (e) {
+        const status = e.status || (e instanceof SyntaxError ? 400 : 502);
+        return reply({ error: { code: status, message: String(e && e.message || e) } }, status);
+      }
     }
 
     // MM/CE for the extractor (docs/extractor.js): search name, in-game name, alliance, MM/CE and
@@ -744,3 +785,55 @@ export default {
     }
   },
 };
+
+/* ---------------- the Alliance Roster card ---------------- */
+// What one alliance read may hold. Alliances are the five the extractor reads; every field is checked
+// so the store only ever holds what the card shows, plus the UID it matches on.
+const ROSTER_ALLIANCES = ['698N', '698S', '698W', '698C', '698X'];
+function checkRosterRead(b) {
+  if (!b || !ROSTER_ALLIANCES.includes(b.alliance)) throw new Error('unknown alliance');
+  const m = b.members;
+  if (!Array.isArray(m) || !m.length || m.length > 300) throw new Error('members must be 1 to 300 players');
+  const num = v => Number.isFinite(v) ? v : 0, str = (v, n) => String(v == null ? '' : v).slice(0, n);
+  return {
+    alliance: b.alliance,
+    members: m.map(x => {
+      if (!x || !/^\d{5,20}$/.test(String(x.uid))) throw new Error('every member needs its id');
+      return { uid: String(x.uid), name: str(x.name, 60), search: str(x.search, 60), rank: num(x.rank), power: num(x.power),
+               level: num(x.level), join: num(x.join), last: num(x.last), online: !!x.online, cls: /^(MM|CE)$/.test(x.cls) ? x.cls : '' };
+    }),
+  };
+}
+
+// One store for the whole roster, keyed by UID. A read of an alliance adds its new players, updates
+// the ones already there, marks the alliance's players who are missing as Left (with the date) and
+// brings back anyone who returns. Rows are never deleted.
+export class RosterStore {
+  constructor(state) { this.state = state; }
+  async load() { return (await this.state.storage.get('rows')) || {}; }
+  async update(read) {
+    const rows = await this.load(), now = Date.now(), seen = new Set();
+    let added = 0, updated = 0, rejoined = 0, left = 0;
+    for (const m of read.members) {
+      seen.add(m.uid);
+      const was = rows[m.uid];
+      if (!was) added++;
+      else { updated++; if (was.status === 'Left') rejoined++; }
+      rows[m.uid] = { ...was, ...m, alliance: read.alliance, status: 'Active', leftAt: 0, seenAt: now, firstAt: (was && was.firstAt) || now };
+    }
+    for (const uid of Object.keys(rows)) {
+      const r = rows[uid];
+      if (r.alliance === read.alliance && r.status === 'Active' && !seen.has(uid)) { r.status = 'Left'; r.leftAt = now; left++; }
+    }
+    const reads = (await this.state.storage.get('reads')) || {};
+    reads[read.alliance] = now;
+    await this.state.storage.put({ rows, reads });
+    return { alliance: read.alliance, added, updated, rejoined, left, total: Object.keys(rows).length };
+  }
+  // the card's view: every row without its UID, and when each alliance was last read
+  async list() {
+    const rows = await this.load(), reads = (await this.state.storage.get('reads')) || {};
+    return { reads, rows: Object.values(rows).map(({ uid, ...r }) => r) };
+  }
+}
+
