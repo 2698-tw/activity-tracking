@@ -14,7 +14,14 @@
  */
 (function () {
   'use strict';
-  if (window.__x2698 && window.__x2698.toggle) { window.__x2698.toggle(); return; }
+  // The bookmark hides a panel that is showing without downloading anything. Otherwise this, the
+  // copy just downloaded, takes the place of one already on the page, so an update shows up without
+  // reloading the game; but a panel in the middle of a read is only shown again, and left alone.
+  var oldHost = document.getElementById('x2698');
+  if (oldHost && window.__x2698 && window.__x2698.toggle) {
+    if (oldHost.style.display !== 'none' || (window.__x2698.busy && window.__x2698.busy())) { oldHost.style.display = ''; return; }
+    oldHost.remove();
+  }
 
   var API = 'https://data-collection.jk06nm04.workers.dev/api';
   var SHEET = 'https://docs.google.com/spreadsheets/d/12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc/edit#gid=0';
@@ -365,7 +372,7 @@
     // keep it on screen when the window gets smaller
     addEventListener('resize', function () { if (app.style.transform === 'none') place(parseFloat(app.style.left), parseFloat(app.style.top)); });
   })();
-  window.__x2698 = { toggle: function () { host.style.display = host.style.display === 'none' ? '' : 'none'; } };
+  window.__x2698 = { toggle: function () { host.style.display = host.style.display === 'none' ? '' : 'none'; }, busy: function () { return busy; } };
   $('#who').onchange = function () { V.wbFilter = $('#who').value; refresh(); };
 
   var ago = function (ts) {
