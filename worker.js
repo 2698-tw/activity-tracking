@@ -407,7 +407,7 @@ export default {
       && request.headers.get('x-kartz-pass') === env.SHARED_PASS;
     // the game page may reach the ranking route and the roster's MM/CE list, and nothing else
     const rankingCall = origin === RANKING_ORIGIN
-      && ['api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp']
+      && ['api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update']
         .includes(url.pathname.replace(/^\/+/, ''));
     const allowed = knownOrigin || hasPass || rankingCall;
 
@@ -465,6 +465,22 @@ export default {
     if (url.pathname.replace(/^\/+/, '') === 'api/roster') {
       if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
       return rosterCall(env, '/list', null, reply);
+    }
+    // The Whitebeard card (#whitebeard): each read the extractor makes is kept under its UTC date, so
+    // a read on a new day adds a column and another read the same day replaces that day's. Kept in
+    // the roster's store; the UIDs it matches players on stay here.
+    if (url.pathname.replace(/^\/+/, '') === 'api/wb-update') {
+      if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
+      const body = await request.text();
+      if (body.length > 512 * 1024) return reply({ error: 'Request too large.' }, 413);
+      let read;
+      try { read = checkWbRead(JSON.parse(body)); }
+      catch (e) { return reply({ error: String(e.message || e) }, 400); }
+      return rosterCall(env, '/wb-update', read, reply);
+    }
+    if (url.pathname.replace(/^\/+/, '') === 'api/wb') {
+      if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
+      return rosterCall(env, '/wb-list', null, reply);
     }
 
     // Base CP from the extractor's alliance reads, in the Base CP tab's own format: Alliance Rosters,
@@ -803,6 +819,21 @@ function checkRosterRead(b) {
   };
 }
 
+// One Whitebeard read: every player in the ranking, with the points the game showed. A player is
+// keyed by UID; one the game gave no UID is keyed by name instead.
+function checkWbRead(b) {
+  const r = b && b.rows;
+  if (!Array.isArray(r) || !r.length || r.length > 3000) throw new Error('rows must be 1 to 3000 players');
+  return {
+    rows: r.map(x => {
+      if (!x || !Number.isFinite(x.points)) throw new Error('every player needs points');
+      const name = String(x.name == null ? '' : x.name).slice(0, 60);
+      const key = /^\d{5,20}$/.test(String(x.uid)) ? String(x.uid) : 'n|' + name;
+      return { key, name, ally: String(x.ally == null ? '' : x.ally).slice(0, 20), points: x.points };
+    }),
+  };
+}
+
 // The store is asked with a plain request (stub.fetch) rather than by calling its methods: that works
 // for any Durable Object class. Any failure comes back as a JSON error with the CORS headers, never as
 // Cloudflare's bare error page (which a browser reports only as a CORS block).
@@ -827,6 +858,8 @@ export class RosterStore {
       const path = new URL(request.url).pathname;
       if (path === '/update') return Response.json(await this.update(await request.json()));
       if (path === '/list') return Response.json(await this.list());
+      if (path === '/wb-update') return Response.json(await this.wbUpdate(await request.json()));
+      if (path === '/wb-list') return Response.json(await this.wbList());
       return Response.json({ error: 'unknown roster call' }, { status: 404 });
     } catch (e) {
       return Response.json({ error: String(e && e.message || e) }, { status: 500 });
@@ -856,6 +889,29 @@ export class RosterStore {
   async list() {
     const rows = await this.load(), reads = (await this.state.storage.get('reads')) || {};
     return { reads, rows: Object.values(rows).filter(r => ROSTER_ALLIANCES.includes(r.alliance)).map(({ uid, ...r }) => r) };
+  }
+
+  // Whitebeard: each UTC day's points under a key of its own (wb:day:2026-10-27), so no one value
+  // grows with the number of days; names and alliances, latest first, under wb:who
+  async wbUpdate(read) {
+    const day = new Date().toISOString().slice(0, 10), pts = {};
+    const who = (await this.state.storage.get('wb:who')) || {};
+    for (const r of read.rows) { pts[r.key] = r.points; who[r.key] = { name: r.name, ally: r.ally }; }
+    const had = !!(await this.state.storage.get('wb:day:' + day));
+    await this.state.storage.put({ ['wb:day:' + day]: pts, 'wb:who': who });
+    return { day, players: read.rows.length, replaced: had };
+  }
+  // the card's view: one row per player, without its key, and the points per day
+  async wbList() {
+    const who = (await this.state.storage.get('wb:who')) || {};
+    const days = await this.state.storage.list({ prefix: 'wb:day:' });
+    const dates = [...days.keys()].map(k => k.slice(7)).sort();
+    const rows = Object.entries(who).map(([key, w]) => {
+      const p = {};
+      for (const d of dates) { const v = days.get('wb:day:' + d)[key]; if (v != null) p[d] = v; }
+      return { name: w.name, ally: w.ally, pts: p };
+    });
+    return { dates, rows };
   }
 }
 

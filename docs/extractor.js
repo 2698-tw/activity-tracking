@@ -6,9 +6,11 @@
  *     the game has it, and closed again. MM/CE comes from the Alliance Rosters sheet (api/roster-class).
  *   Whitebeard ranking: opened with the event's own Ranking call, every page loaded the way scrolling
  *     to the end loads it, then sent like the Whitebeard bookmark (api/game-ranking).
+ * The panel is buttons only. Each alliance read updates the site's Alliance roster card
+ * (api/roster-update) and each Whitebeard read the site's Whitebeard card (api/wb-update).
  * Nothing here sends anything to the game: the game makes its own usual requests for what it opens.
- * Reads are kept on this device (localStorage) so the next read can show who joined and who left.
- * UIDs are used only to match players between reads; they are never shown, copied or sent.
+ * Reads are kept on this device (localStorage), so Send works after the game is reloaded.
+ * UIDs go only to the Worker, to match players between reads; they are never shown or copied.
  */
 (function () {
   'use strict';
@@ -21,7 +23,10 @@
   var MAIN = ['698N', '698W', '698S', '698C'];
   var STORE = 'x2698.v1';
 
-  if (!window.cc || !window.__require) { alert('2698 Data Extractor: open the Top War web game (h5.topwargame.com) first.'); return; }
+  // anywhere but the game, go to the site instead (the bookmark itself does this too; this covers
+  // bookmarks saved before it did). On the game's own page before the game has loaded, just say so.
+  if (!/(^|\.)topwargame\.com$/.test(location.hostname)) { location.href = 'https://2698-tw.github.io/activity-tracking/'; return; }
+  if (!window.cc || !window.__require) { alert('2698 Data Extractor: the game has not finished loading yet. Try again in a moment.'); return; }
 
   /* ---------------- the game ---------------- */
   function req(n) { try { return window.__require(n); } catch (e) { return null; } }
@@ -114,7 +119,7 @@
     }
     var rows = list.map(function (e) {
       var p = parse(e.playerInfo);
-      return { rank: Number(e.rank), name: String(p.username || p.nickname || ''), points: Number(e.score), ally: String(e.allianceTag || '') };
+      return { rank: Number(e.rank), uid: String(e.uid || p.uid || ''), name: String(p.username || p.nickname || ''), points: Number(e.score), ally: String(e.allianceTag || '') };
     }).filter(function (r) { return isFinite(r.rank) && isFinite(r.points); }).sort(function (a, b) { return a.rank - b.rank; });
     return { title: title, want: want, rows: rows };
   }
@@ -175,180 +180,214 @@
   }
 
   /* ---------------- the panel ---------------- */
+  // Buttons only: what was read goes to the site (the Alliance roster and Whitebeard cards) and the
+  // sheets, not into a table here. Each button shows its own progress ring; the pill at the bottom
+  // says what is happening.
   var host = document.createElement('div');
   host.id = 'x2698';
   host.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none';
   var root = host.attachShadow({ mode: 'open' });
+  var RING = '<svg class="ic" viewBox="0 0 24 24"><circle class="trk" cx="12" cy="12" r="9"/><circle class="prg" cx="12" cy="12" r="9"/>' +
+    '<path class="plane" d="M3 11.5 20 4l-4.5 16-4-6.5z"/><path class="chk" d="M7.5 12.5l3 3 6-6.5"/><path class="crs" d="M8.5 8.5l7 7M15.5 8.5l-7 7"/></svg>';
+  function act(id, cls, title, sub, data) {
+    return '<button class="act ' + cls + '" id="' + id + '"' + (data ? ' data-a="' + data + '"' : '') + '><span class="fill"></span>' + RING +
+      '<span class="t">' + title + '</span><span class="s">' + sub + '</span></button>';
+  }
   root.innerHTML = '<style>' +
     '*{box-sizing:border-box}' +
-    '.app{all:initial;position:absolute;inset:12px;max-width:1080px;margin:0 auto;display:flex;flex-direction:column;pointer-events:auto;' +
-      'font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f3f3f7;background:rgba(22,22,30,.97);border-radius:18px;' +
-      'box-shadow:0 20px 60px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.1);overflow:hidden}' +
-    '.top{display:flex;align-items:center;gap:10px;padding:12px 14px 8px;flex-wrap:wrap}' +
-    '.top b{font-size:15.5px}' +
-    '.tabs{display:flex;gap:4px;background:rgba(255,255,255,.06);border-radius:999px;padding:3px}' +
-    '.tabs button{border:0;background:none;color:rgba(235,235,245,.6);font:inherit;font-weight:600;padding:6px 14px;border-radius:999px;cursor:pointer}' +
-    '.tabs button.on{background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b);color:#fff}' +
-    '.search{flex:1;min-width:160px;display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.08);border-radius:999px;padding:6px 14px}' +
-    '.search input{flex:1;min-width:0;border:0;outline:0;background:none;color:inherit;font:inherit}' +
-    '.x{border:0;background:rgba(255,255,255,.1);color:#bbb;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:16px;flex:none}' +
-    '.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:4px 14px 8px}' +
-    '.chip{border:0;background:rgba(255,255,255,.08);color:inherit;border-radius:999px;padding:5px 12px;font:inherit;font-size:12.5px;cursor:pointer}' +
-    '.chip.on{background:rgba(195,20,65,.35);box-shadow:inset 0 0 0 1px #e0457b}' +
-    '.go{border:0;border-radius:999px;padding:7px 14px;font:inherit;font-weight:700;color:#fff;cursor:pointer;background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b)}' +
-    '.go.ghost{background:rgba(255,255,255,.12)}' +
-    '.go:disabled{opacity:.5;cursor:default}' +
-    '.msg{font-size:12.5px;color:rgba(235,235,245,.65);padding:0 14px 6px;min-height:1.2em}' +
-    '.msg a{color:#9ec5ff}' +
-    '.body{flex:1;overflow:auto;padding:0 14px 14px}' +
-    'table{width:100%;border-collapse:collapse;font-size:13.5px}' +
-    'th{position:sticky;top:0;background:#20212c;text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:rgba(235,235,245,.6);padding:8px 10px;cursor:pointer;white-space:nowrap}' +
-    'td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap}' +
-    'td.n{text-align:right;font-variant-numeric:tabular-nums}' +
-    '.dim{color:rgba(235,235,245,.45)}' +
-    '.tag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;background:#333}' +
-    '.t698N{background:#22324f;color:#9ec5ff}.t698S{background:#3b2340;color:#e9a8ff}.t698W{background:#203d33;color:#7ee2a8}.t698C{background:#45321b;color:#ffc078}.t698X{background:#3a3a3a;color:#ddd}' +
-    '.CE{color:#ff9f6b;font-weight:700}.MM{color:#9ec5ff;font-weight:700}' +
-    '.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#7ee2a8;margin-right:6px}' +
-    '.chg{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12.5px;padding:0 14px 8px}' +
-    '.plus{color:#7ee2a8}.minus{color:#ff7a7a}' +
-    'select{background:rgba(255,255,255,.1);color:inherit;border:0;border-radius:999px;padding:6px 12px;font:inherit}' +
+    '.app{all:initial;display:block;box-sizing:border-box;position:absolute;top:12px;left:50%;transform:translateX(-50%);width:min(400px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;pointer-events:auto;' +
+      'font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f3f3f7;background:rgba(22,22,30,.97);border-radius:19px;padding:12px 14px 14px;' +
+      'box-shadow:0 20px 60px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.1)}' +
+    '.top{display:flex;align-items:center;gap:10px;margin-bottom:4px}' +
+    '.logo{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b);flex:none}' +
+    '.top b{font-size:15.5px;flex:1}' +
+    '.x{border:0;background:rgba(255,255,255,.1);color:#bbb;width:28px;height:28px;border-radius:50%;font-size:16px;cursor:pointer;flex:none}' +
+    'h3{margin:12px 2px 7px;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:rgba(235,235,245,.6);font-weight:700}' +
+    '.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}' +
+    '@media (max-width:380px){.grid{grid-template-columns:repeat(2,1fr)}}' +
+    '.stack{display:grid;gap:8px;margin-top:8px}.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}' +
+    'select{width:100%;background:rgba(255,255,255,.08);color:inherit;border:0;border-radius:12px;padding:9px 12px;font:inherit}' +
     'select option{color:#111}' +
-    '@media (max-width:640px){.app{inset:4px;border-radius:14px}.hs{display:none}}' +
+    '.act{position:relative;overflow:hidden;isolation:isolate;border:0;border-radius:14px;padding:10px 11px;min-height:58px;text-align:left;' +
+      'background:rgba(255,255,255,.07);color:inherit;font:inherit;cursor:pointer;transition:transform .15s,background .3s,opacity .3s}' +
+    '.act:active{transform:scale(.97)}' +
+    '.act.main{background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b)}' +
+    '.act .t{display:block;font-weight:800;font-size:15px;position:relative}' +
+    '.act .s{display:block;font-size:11.5px;color:rgba(235,235,245,.6);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative}' +
+    '.act.main .s{color:rgba(255,255,255,.75)}' +
+    '.grid .act .t{padding-right:14px}' +
+    '.grid .act .t::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:2px;background:var(--c)}' +
+    '.act[data-a="698N"]{--c:#9ec5ff}.act[data-a="698S"]{--c:#e9a8ff}.act[data-a="698W"]{--c:#7ee2a8}.act[data-a="698C"]{--c:#ffc078}' +
+    '.app.locked .act:not(.busy),.app.locked select{opacity:.45;pointer-events:none}' +
+    '.ic{position:absolute;right:9px;top:9px;width:22px;height:22px;overflow:visible}' +
+    '.grid .ic{width:16px;height:16px;right:7px;top:8px}' +
+    '.ic circle{fill:none;stroke-width:2.4}.ic .trk{stroke:rgba(255,255,255,.12)}' +
+    '.ic .prg{stroke:#e0457b;stroke-linecap:round;stroke-dasharray:56.55;stroke-dashoffset:56.55;transform:rotate(-90deg);transform-origin:12px 12px;transition:stroke-dashoffset .25s,stroke .3s}' +
+    '.act.main .ic .prg{stroke:#fff}' +
+    '.ic path{fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:20;stroke-dashoffset:20}' +
+    '.ic .chk{stroke:#7ee2a8}.ic .crs{stroke:#ff7a7a}' +
+    '.act.done .ic .prg{stroke:#7ee2a8;stroke-dashoffset:0}.act.done .ic .chk{animation:draw .45s .1s ease-out forwards}' +
+    '.act.err .ic .prg{stroke:#ff7a7a;stroke-dashoffset:0}.act.err .ic .crs{animation:draw .35s ease-out forwards}' +
+    '.act.err{animation:shake .45s}' +
+    '@keyframes draw{to{stroke-dashoffset:0}}' +
+    '@keyframes shake{20%,60%{transform:translateX(-5px)}40%,80%{transform:translateX(5px)}}' +
+    '.act .fill{position:absolute;inset:0;z-index:-1;opacity:0;pointer-events:none}' +
+    '.ic .plane{display:none;fill:#fff;stroke:none;stroke-dasharray:none;transform-origin:12px 12px;transition:transform .6s cubic-bezier(.5,-.4,.7,1),opacity .6s}' +
+    '.act.send .plane{display:block}.act.send .trk,.act.send .prg{display:none}' +
+    '.act.send.busy .plane{animation:bob .7s ease-in-out infinite}' +
+    '.act.send.done .plane{transform:translate(26px,-26px) rotate(-10deg) scale(.6);opacity:0}' +
+    '.act.send.done .chk{animation-delay:.45s}.act.send.err .plane{opacity:0}' +
+    '@keyframes bob{50%{transform:translate(2px,-3px) rotate(-6deg)}}' +
+    // the ring: a light runs round the busy button's edge
+    '.act.busy .fill{opacity:1;inset:-60%;background:conic-gradient(from 0deg,transparent 0 62%,#e0457b 82%,#fff 88%,transparent 92%);animation:rot 1.1s linear infinite}' +
+    '.act.busy::after{content:"";position:absolute;inset:2px;border-radius:12px;background:#1d1e28;z-index:-1}' +
+    '.act.main.busy::after{background:linear-gradient(135deg,#5c1325,#9e1035 60%,#b8365f)}' +
+    '.act.done{box-shadow:inset 0 0 0 1.5px rgba(126,226,168,.55)}' +
+    '@keyframes rot{to{transform:rotate(360deg)}}' +
+    '.spark{position:absolute;width:6px;height:6px;border-radius:50%;pointer-events:none;z-index:5;animation:fly .7s ease-out forwards}' +
+    '@keyframes fly{from{transform:translate(0,0) scale(1);opacity:1}to{transform:translate(var(--dx),var(--dy)) scale(.2);opacity:0}}' +
+    // the status pill
+    '.status{position:relative;overflow:hidden;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:10px;margin-top:14px;padding:9px 12px;border-radius:14px;' +
+      'background:rgba(255,255,255,.06);font-size:13px;min-height:42px;transition:background .3s}' +
+    '.status .si{width:18px;height:18px;flex:none;position:relative}' +
+    '.status.work::before{content:"";position:absolute;top:0;bottom:0;left:0;width:55%;pointer-events:none;' +
+      'background:linear-gradient(90deg,transparent,rgba(224,69,123,.18),transparent);animation:sweep 2.6s ease-in-out infinite}' +
+    '@keyframes sweep{from{transform:translateX(-100%)}to{transform:translateX(200%)}}' +
+    '.status .si i{display:none}' +
+    '.status.idle .si::before{content:"";position:absolute;inset:5px;border-radius:50%;background:rgba(255,255,255,.3)}' +
+    '.status.work .si{display:flex;align-items:center;justify-content:center;gap:3px}' +
+    '.status.work .si i{display:block;width:4.5px;height:4.5px;border-radius:50%;background:#e0457b;animation:wave 1.1s ease-in-out infinite}' +
+    '.status.work .si i:nth-child(2){animation-delay:.15s}.status.work .si i:nth-child(3){animation-delay:.3s}' +
+    '@keyframes wave{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-4px);opacity:1}}' +
+    '.pb{position:absolute;left:0;right:0;bottom:0;height:2.5px;background:rgba(255,255,255,.06);opacity:0;transition:opacity .3s}' +
+    '.status.work .pb{opacity:1}' +
+    '.pb b{display:block;height:100%;width:0;border-radius:0 2px 2px 0;background:linear-gradient(90deg,#c31441,#e0457b);box-shadow:0 0 8px #e0457b;transition:width .6s cubic-bezier(.4,0,.2,1)}' +
+    '.status.ok{background:rgba(126,226,168,.12)}' +
+    '.status.ok .si::before,.status.bad .si::before{position:absolute;inset:0;display:grid;place-items:center;border-radius:50%;font-weight:900;font-size:12px;animation:pop .4s cubic-bezier(.3,1.6,.5,1)}' +
+    '.status.ok .si::before{content:"✓";background:#7ee2a8;color:#10301f}' +
+    '.status.bad{background:rgba(255,122,122,.12)}' +
+    '.status.bad .si::before{content:"!";background:#ff7a7a;color:#3a0f0f}' +
+    '@keyframes pop{from{transform:scale(0)}}' +
+    '.status .tx{flex:1;min-width:0}' +
+    '.status .tx small{display:block;color:rgba(235,235,245,.6);font-size:11.5px}' +
+    '.status a{color:#9ec5ff}' +
+    '.tx-in{animation:txin .35s ease}@keyframes txin{from{opacity:0;transform:translateY(5px)}}' +
     '</style>' +
-    '<div class="app"><div class="top"><b>2698 Data Extractor</b>' +
-    '<div class="tabs"><button data-t="members" class="on">Alliance members</button><button data-t="wb">Whitebeard</button></div>' +
-    '<label class="search"><span>🔍</span><input id="q" placeholder="Search a name"></label><button class="x" id="close" title="Close">×</button></div>' +
-    '<div class="bar" id="bar"></div><div class="msg" id="msg"></div><div class="chg" id="chg"></div><div class="body" id="body"></div></div>';
+    '<div class="app"><div class="top"><span class="logo"></span><b>2698 Data Extractor</b><button class="x" id="close" title="Close">×</button></div>' +
+    '<h3>Alliance members</h3><div class="grid">' +
+      Object.keys(ALLY).map(function (t) { return act('a' + t, '', t, 'not read', t); }).join('') + '</div>' +
+    '<div class="stack">' + act('all', 'main', 'Read all four', 'Updates the roster card on the site') +
+      act('cp', 'send', 'Send Base CP to sheet', 'Read an alliance first') + '</div>' +
+    '<h3>Whitebeard ranking</h3><select id="who"><option value="ALL4">698N, W, S, C</option><option value="OTHER">Other</option></select>' +
+    '<div class="row2">' + act('wb', 'main', 'Read', 'Loads every rank') + act('wbs', 'send', 'Send to sheet', 'Read it first') + '</div>' +
+    '<div class="status idle" id="st"><span class="si"></span><span class="tx">Ready. Tap a button to start.</span></div></div>';
   document.body.appendChild(host);
   var $ = function (s) { return root.querySelector(s); };
-  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
-  function tagEl(t) { var s = el('span', 'tag t' + t, t || '—'); return s; }
-  function msg(t, link) { var m = $('#msg'); m.textContent = t; if (link) { m.appendChild(document.createElement('br')); var a = el('a', '', 'Open in Sheets ↗'); a.href = link; a.target = '_blank'; a.rel = 'noopener'; m.appendChild(a); } }
+  var app = $('.app'), st = $('#st');
   var busy = false;
-  var V = { tab: 'members', ally: '', cls: '', away: false, sort: 'power', asc: false, wbFilter: 'ALL4', wb: S.wb || null };   // the last Whitebeard read, kept like the member lists
+  var V = { wbFilter: 'ALL4', wb: S.wb || null };   // the last Whitebeard read, kept like the member lists
 
+  // closing only hides the panel: a read that is running carries on, and the bookmark brings it back
   $('#close').onclick = function () { host.style.display = 'none'; };
   window.__x2698 = { toggle: function () { host.style.display = host.style.display === 'none' ? '' : 'none'; } };
-  root.querySelectorAll('.tabs button').forEach(function (b) {
-    b.onclick = function () { V.tab = b.dataset.t; root.querySelectorAll('.tabs button').forEach(function (x) { x.classList.toggle('on', x === b); }); render(); };
-  });
-  $('#q').oninput = function () { render(); };
+  $('#who').onchange = function () { V.wbFilter = $('#who').value; refresh(); };
 
   var ago = function (ts) {
     if (!ts) return '—'; var m = (Date.now() / 1000 - ts) / 60;
     return m < 5 ? 'now' : m < 60 ? Math.round(m) + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago';
   };
-  var day = function (ts) { return ts ? new Date(ts * 1000).toISOString().slice(0, 10) : ''; };
-  var rankText = function (r) { return r >= 6 ? 'R4 ★' : r ? 'R' + r : ''; };
-  var pm = function (p) { return p ? (p / 1e6).toFixed(1) + 'M' : ''; };
+  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
 
-  function allMembers() {
-    var out = [];
-    Object.keys(S.members).forEach(function (tag) { (S.members[tag].list || []).forEach(function (m) { out.push(Object.assign({ ally: tag, cls: classOf(m.name, tag, m.power) }, m)); }); });
-    return out;
+  /* the buttons' looks */
+  function setP(b, p) { b.querySelector('.prg').style.strokeDashoffset = 56.55 * (1 - p); }
+  function sub(b, text) { b.querySelector('.s').textContent = text; }
+  function start(b) { b.classList.remove('done', 'err'); b.classList.add('busy'); setP(b, 0); }
+  function finish(b, ok) {
+    b.classList.remove('busy'); void b.offsetWidth; b.classList.add(ok ? 'done' : 'err');
+    if (ok) burst(b);
   }
-
-  /* members tab */
-  function membersBar() {
-    var bar = $('#bar'); bar.textContent = '';
+  function lock(on) { busy = on; app.classList.toggle('locked', on); }
+  function burst(b) {
+    var r = b.getBoundingClientRect(), f = app.getBoundingClientRect();
+    var cx = r.right - f.left + app.scrollLeft - 18, cy = r.top - f.top + app.scrollTop + 18;
+    var colors = ['#7ee2a8', '#e0457b', '#ffc078', '#9ec5ff', '#fff'];
+    for (var i = 0; i < 14; i++) {
+      var s = document.createElement('span'), a = Math.random() * Math.PI * 2, d = 22 + Math.random() * 34;
+      s.className = 'spark';
+      s.style.cssText = 'left:' + cx + 'px;top:' + cy + 'px;background:' + colors[i % 5] + ';--dx:' + Math.cos(a) * d + 'px;--dy:' + Math.sin(a) * d + 'px';
+      app.appendChild(s); setTimeout(s.remove.bind(s), 800);
+    }
+  }
+  // the pill is built once per state; while working only its text and bar change, and the text
+  // fades in only when the step changes (not on every count)
+  function status(kind, html, p) {
+    if (kind !== 'work' || st.dataset.kind !== 'work') {
+      st.className = 'status ' + kind; st.dataset.kind = kind; st.dataset.key = '';
+      st.innerHTML = '<span class="si"><i></i><i></i><i></i></span><span class="tx"></span><span class="pb"><b></b></span>';
+    }
+    var tx = st.querySelector('.tx'), key = html.replace(/<b>\d+<\/b>|\d+ of \d+ · /g, '#');
+    tx.innerHTML = html;
+    if (key !== st.dataset.key) { st.dataset.key = key; tx.classList.remove('tx-in'); void tx.offsetWidth; tx.classList.add('tx-in'); }
+    if (p != null) st.querySelector('.pb b').style.width = (p * 100).toFixed(1) + '%';
+  }
+  function nudge(b, html) { b.classList.remove('err'); void b.offsetWidth; b.classList.add('err'); setTimeout(function () { b.classList.remove('err'); }, 600); status('bad', html); }
+  // what each button says when nothing is running: the last read of each list, kept on this device
+  function refresh() {
     Object.keys(ALLY).forEach(function (t) {
-      var b = el('button', 'go ghost', 'Read ' + t); b.disabled = busy;
-      var have = S.members[t]; if (have) b.title = have.list.length + ' members, read ' + ago(have.at / 1000);
-      b.onclick = function () { run([t]); }; bar.appendChild(b);
+      var b = $('#a' + t), have = S.members[t];
+      if (!b.classList.contains('busy') && !b.classList.contains('err')) sub(b, have ? have.list.length + ' · ' + ago(have.at / 1000) : 'not read');
     });
-    var all = el('button', 'go', 'Read all four'); all.disabled = busy; all.onclick = function () { run(Object.keys(ALLY)); }; bar.appendChild(all);
-    var csv = el('button', 'go ghost', 'Download CSV'); csv.onclick = downloadMembers; bar.appendChild(csv);
-    var n = cpRows().length;
-    var send = el('button', 'go', 'Send Base CP to sheet (' + n + ')'); send.disabled = busy || !n;
-    send.title = 'Base CP of ' + (V.ally || 'every alliance read') + ' to Alliance Rosters → RawData-CP';
-    send.onclick = sendCp; bar.appendChild(send);
-    bar.appendChild(el('span', 'dim', ''));
-    var f = el('div', ''); f.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;width:100%';
-    [''].concat(Object.keys(ALLY)).forEach(function (t) { var c = el('button', 'chip' + (V.ally === t ? ' on' : ''), t || 'All alliances'); c.onclick = function () { V.ally = t; render(); }; f.appendChild(c); });
-    ['CE', 'MM'].forEach(function (k) { var c = el('button', 'chip' + (V.cls === k ? ' on' : ''), k); c.onclick = function () { V.cls = V.cls === k ? '' : k; render(); }; f.appendChild(c); });
-    var aw = el('button', 'chip' + (V.away ? ' on' : ''), 'Away 3+ days'); aw.onclick = function () { V.away = !V.away; render(); }; f.appendChild(aw);
-    bar.appendChild(f);
+    var n = cpRows().length, cp = $('#cp');
+    if (!cp.classList.contains('done') && !cp.classList.contains('busy')) sub(cp, n ? n + ' players ready' : 'Read an alliance first');
+    var wb = $('#wb'), wbs = $('#wbs');
+    if (!wb.classList.contains('busy') && !wb.classList.contains('err')) sub(wb, V.wb ? V.wb.rows.length + ' players · ' + ago(V.wb.at / 1000) : 'Loads every rank');
+    if (!wbs.classList.contains('busy')) { wbs.classList.remove('done'); sub(wbs, V.wb ? wbChosen().length + ' players ready' : 'Read it first'); }
   }
-  function changes() {
-    var box = $('#chg'); box.textContent = '';
-    if (V.tab !== 'members') return;
-    Object.keys(S.members).forEach(function (t) {
-      var now = S.members[t], before = S.prev[t];
-      if (!before) return;
-      var was = {}, is = {};
-      before.list.forEach(function (m) { was[m.uid] = m; }); now.list.forEach(function (m) { is[m.uid] = m; });
-      var joined = now.list.filter(function (m) { return !was[m.uid]; }).map(function (m) { return m.name; });
-      var left = before.list.filter(function (m) { return !is[m.uid]; }).map(function (m) { return m.name; });
-      if (!joined.length && !left.length) return;
-      var d = el('div', '');
-      d.appendChild(tagEl(t)); d.appendChild(document.createTextNode(' since ' + day(before.at / 1000) + ': '));
-      if (joined.length) d.appendChild(el('span', 'plus', '+ ' + joined.join(', ') + '  '));
-      if (left.length) d.appendChild(el('span', 'minus', '− ' + left.join(', ')));
-      box.appendChild(d);
-    });
-  }
-  function membersTable() {
-    var q = fold($('#q').value), now = Date.now() / 1000;
-    var rows = allMembers().filter(function (m) {
-      return (!q || fold(m.name).indexOf(q) >= 0) && (!V.ally || m.ally === V.ally) && (!V.cls || m.cls === V.cls) && (!V.away || now - m.last > 3 * 86400);
-    });
-    var k = V.sort, dir = V.asc ? 1 : -1;
-    rows.sort(function (a, b) { var x = a[k], y = b[k]; if (k === 'name' || k === 'ally' || k === 'cls') { x = String(x); y = String(y); return x.localeCompare(y) * dir; } return ((x || 0) - (y || 0)) * dir; });
-    var cols = [['name', 'Name'], ['ally', 'Alliance'], ['rank', 'Rank'], ['power', 'Power'], ['cls', 'MM/CE'], ['join', 'Joined', 'hs'], ['last', 'Last online']];
-    var t = el('table'), head = el('tr');
-    cols.forEach(function (c) { var th = el('th', c[2] || '', c[1] + (V.sort === c[0] ? (V.asc ? ' ▲' : ' ▼') : '')); th.onclick = function () { V.asc = V.sort === c[0] ? !V.asc : c[0] === 'name'; V.sort = c[0]; render(); }; head.appendChild(th); });
-    var th = el('thead'); th.appendChild(head); t.appendChild(th);
-    var tb = el('tbody');
-    rows.forEach(function (m) {
-      var tr = el('tr');
-      tr.appendChild(el('td', '', m.name));
-      var a = el('td'); a.appendChild(tagEl(m.ally)); tr.appendChild(a);
-      tr.appendChild(el('td', '', rankText(m.rank)));
-      tr.appendChild(el('td', 'n', pm(m.power)));
-      tr.appendChild(el('td', m.cls || 'dim', m.cls || '—'));
-      tr.appendChild(el('td', 'hs', day(m.join)));
-      var l = el('td', '', ''); if (m.online) l.appendChild(el('span', 'dot')); l.appendChild(document.createTextNode(m.online ? 'now' : ago(m.last))); tr.appendChild(l);
-      tb.appendChild(tr);
-    });
-    t.appendChild(tb);
-    var body = $('#body'); body.textContent = '';
-    if (!Object.keys(S.members).length) body.appendChild(el('p', 'dim', 'No alliance read yet. Tap Read 698S (or Read all four): the game opens each member list, the extractor reads it and closes it again.'));
-    else body.appendChild(t);
-    var tot = allMembers().length;
-    $('#bar').querySelector('span.dim').textContent = rows.length + ' of ' + tot + ' shown' + (CLASS && CLASS.failed ? ' · MM/CE: roster unavailable' : '');
-  }
-  var cardNotes = [];
-  async function run(tags) {
-    if (busy) return; busy = true; render(); cardNotes = [];
+
+  /* reading alliances */
+  async function run(tags, all) {
+    if (busy) return; lock(true);
+    var notes = [], total = 0;
+    if (all) start(all);
     try {
       for (var i = 0; i < tags.length; i++) {
-        var t = tags[i];
-        msg('Reading ' + t + '… (' + (i + 1) + ' of ' + tags.length + ')');
-        var list = await readAlliance(t);
+        var t = tags[i], b = $('#a' + t), pre = tags.length > 1 ? (i + 1) + ' of ' + tags.length + ' · ' : '';
+        var at = function (p) { return (i + p) / tags.length; };
+        start(b); sub(b, 'opening…');
+        if (all) sub(all, (i + 1) + ' of ' + tags.length + ' · ' + t);
+        status('work', pre + 'Opening the ' + t + ' member list…', at(.05));
+        // the list arrives in one go, so the ring creeps while the game fetches it
+        var p = .05, creep = setInterval(function () { p = Math.min(.6, p + .04); setP(b, p); if (all) setP(all, at(p)); }, 200);
+        var list;
+        try { list = await readAlliance(t); }
+        catch (e) { clearInterval(creep); finish(b, false); sub(b, 'tap to try again'); throw e; }
+        clearInterval(creep);
         if (S.members[t]) S.prev[t] = S.members[t];
         S.members[t] = { at: Date.now(), list: list };
-        save(); render();
+        save();
+        setP(b, .7); sub(b, 'matching…'); if (all) setP(all, at(.7));
+        status('work', pre + t + ': <b>' + list.length + '</b> members · matching MM/CE…', at(.7));
         await READY;
-        try { var u = await pushRoster(t, list); cardNotes.push(t + ': ' + u.added + ' new, ' + u.left + ' left' + (u.rejoined ? ', ' + u.rejoined + ' back' : '')); }
-        catch (e) { cardNotes.push(t + ': card not updated (' + (e.message || e) + ')'); }
+        setP(b, .85); sub(b, 'saving…'); if (all) setP(all, at(.85));
+        status('work', pre + 'Updating the roster card…', at(.85));
+        try { var u = await pushRoster(t, list); notes.push(t + ': ' + u.added + ' new, ' + u.left + ' left' + (u.rejoined ? ', ' + u.rejoined + ' back' : '')); }
+        catch (e) { notes.push(t + ': card not updated (' + (e.message || e) + ')'); }
+        setP(b, 1); finish(b, true); sub(b, list.length + ' · now'); total += list.length;
+        if (all) setP(all, at(1));
+        status('work', pre + t + ' done', at(1));
         if (i < tags.length - 1) await wait(between(1200, 2600));   // a person's pause between alliances
       }
-      msg('Read ' + tags.join(', ') + ' — ' + tags.reduce(function (s, t) { return s + S.members[t].list.length; }, 0) + ' members. Roster card: ' + cardNotes.join(' · '));
-    } catch (e) { msg('✗ ' + (e.message || e)); }
-    busy = false; render();
+      if (all) { finish(all, true); sub(all, 'All four read · now'); }
+      status('ok', (tags.length > 1 ? 'All four alliances read · ' + total + ' members' : tags[0] + ': ' + total + ' members read') +
+        '<small>Roster card: ' + esc(notes.join(' · ')) + (CLASS && CLASS.failed ? ' · MM/CE: roster unavailable' : '') + '</small>');
+    } catch (e) {
+      if (all) { finish(all, false); sub(all, 'Stopped · tap to try again'); }
+      status('bad', 'The read didn\'t finish<small>' + esc(e.message || e) + '</small>');
+    }
+    lock(false); refresh();
   }
-  function csvCell(v) { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
-  function downloadMembers() {
-    var rows = allMembers();
-    var lines = [['Name', 'Alliance', 'Rank', 'Power', 'MM/CE', 'Joined', 'Last online'].join(',')].concat(rows.map(function (m) {
-      return [m.name, m.ally, rankText(m.rank), m.power, m.cls, day(m.join), m.online ? 'now' : day(m.last)].map(csvCell).join(',');
-    }));
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], { type: 'text/csv' }));
-    a.download = 'alliance-members-' + new Date().toISOString().slice(0, 10) + '.csv';
-    document.body.appendChild(a); a.click(); a.remove();
-  }
+  Object.keys(ALLY).forEach(function (t) { $('#a' + t).onclick = function () { run([t]); }; });
+  $('#all').onclick = function () { run(Object.keys(ALLY), $('#all')); };
 
   /* Base CP to Alliance Rosters → RawData-CP, in the Base CP tab's format (cp.js cpSheetRows):
      date, submitter ("Data Extractor"), search name, in-game name, alliance, base CP in millions rounded
@@ -358,90 +397,95 @@
     var p = function (n) { return String(n).padStart(2, '0'); };
     return (at.getMonth() + 1) + '/' + at.getDate() + '/' + at.getFullYear() + ' ' + p(at.getHours()) + ':' + p(at.getMinutes()) + ':' + p(at.getSeconds());
   }
-  // the alliance chosen above (all of them when none is), whatever the other filters
+  // every alliance read, the last read of each
   function cpRows() {
-    return allMembers().filter(function (m) { return !V.ally || m.ally === V.ally; });
+    var out = [];
+    Object.keys(S.members).forEach(function (tag) { (S.members[tag].list || []).forEach(function (m) { out.push({ name: m.name, ally: tag, power: m.power }); }); });
+    return out;
   }
-  async function sendCp() {
-    var at = stamp(new Date());
-    var rows = cpRows().map(function (m) { return [at, SUBMITTER, searchOf(m.name, m.ally, m.power), m.name, m.ally, Math.round(m.power / 1e6)]; });
-    if (!rows.length) return;
-    busy = true; render(); msg('Sending ' + rows.length + ' Base CP rows…');
+  // a send: the plane bobs while it goes, flies off when the sheet has it
+  async function sendTo(b, path, body, what) {
+    lock(true); start(b); sub(b, 'sending…');
+    var p = .05, creep = setInterval(function () { p = Math.min(.9, p + .06); status('work', 'Sending ' + what + '…', p); }, 200);
+    status('work', 'Sending ' + what + '…', p);
     try {
-      var r = await fetch(API + '/game-cp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rows: rows }) });
+      var r = await fetch(API + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       var j = await r.json().catch(function () { return {}; });
       if (!r.ok) throw new Error((j.error && j.error.message) || j.error || 'the sheet did not accept it (' + r.status + ')');
-      msg('✓ ' + Number(j.rows || rows.length).toLocaleString() + ' Base CP rows added to ' + (j.tab || 'RawData-CP') + '.',
-          'https://docs.google.com/spreadsheets/d/1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8/edit#gid=237521468');
-    } catch (e) { msg('✗ ' + (e.message || e)); }
-    busy = false; render();
+      clearInterval(creep); status('work', 'Sending ' + what + '…', 1);
+      finish(b, true); return j;
+    } catch (e) {
+      clearInterval(creep); finish(b, false); sub(b, 'tap to try again');
+      status('bad', 'Couldn\'t send ' + what + '<small>' + esc(e.message || e) + '. Nothing was written.</small>');
+      return null;
+    } finally { lock(false); }
   }
+  $('#cp').onclick = async function () {
+    if (busy) return;
+    var b = $('#cp'), at = stamp(new Date());
+    var rows = cpRows().map(function (m) { return [at, SUBMITTER, searchOf(m.name, m.ally, m.power), m.name, m.ally, Math.round(m.power / 1e6)]; });
+    if (!rows.length) return nudge(b, 'Nothing to send yet<small>Read an alliance first.</small>');
+    await READY;
+    var j = await sendTo(b, '/game-cp', { rows: rows }, rows.length + ' Base CP rows');
+    if (!j) return;
+    var n = Number(j.rows || rows.length);
+    sub(b, 'Sent ' + n + ' rows · now');
+    status('ok', 'Base CP sent<small>' + n.toLocaleString() + ' rows added to ' + esc(j.tab || 'RawData-CP') +
+      ' · <a href="https://docs.google.com/spreadsheets/d/1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8/edit#gid=237521468" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
+  };
 
-  /* whitebeard tab */
+  /* Whitebeard */
   function wbChosen() {
     if (!V.wb) return [];
     var allyOrder = function (t) { return t ? (MAIN.indexOf(t) + 1 || 99) : 100; };
     return V.wb.rows.filter(function (r) { return V.wbFilter === 'ALL4' ? MAIN.indexOf(r.ally) >= 0 : MAIN.indexOf(r.ally) < 0; })
       .sort(function (a, b) { return allyOrder(a.ally) - allyOrder(b.ally) || a.ally.localeCompare(b.ally) || a.rank - b.rank; });
   }
-  function wbBar() {
-    var bar = $('#bar'); bar.textContent = '';
-    var r = el('button', 'go', V.wb ? 'Read again' : 'Read Whitebeard ranking'); r.disabled = busy; r.onclick = runWb; bar.appendChild(r);
-    if (V.wb) {
-      var s = el('select'); var four = V.wb.rows.filter(function (x) { return MAIN.indexOf(x.ally) >= 0; }).length;
-      [['ALL4', '698N, W, S, C (' + four + ')'], ['OTHER', 'Other (' + (V.wb.rows.length - four) + ')']].forEach(function (o) { var op = el('option', '', o[1]); op.value = o[0]; s.appendChild(op); });
-      s.value = V.wbFilter; s.onchange = function () { V.wbFilter = s.value; render(); }; bar.appendChild(s);
-      var send = el('button', 'go', 'Send to sheet'); send.disabled = busy; send.onclick = sendWb; bar.appendChild(send);
-      bar.appendChild(el('span', 'dim', V.wb.title + ' · ' + V.wb.rows.length + (V.wb.want > 0 ? ' of ' + V.wb.want : '') + ' players'
-        + (V.wb.at ? ' · read ' + ago(V.wb.at / 1000) : '')));
+  // every player read goes to the site's Whitebeard card, under today's UTC date (api/wb-update)
+  function pushWb(rows) {
+    var body = rows.map(function (r) { return { uid: r.uid, name: r.name, ally: r.ally, points: r.points }; });
+    return fetch(API + '/wb-update', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rows: body }) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); });
+  }
+  $('#wb').onclick = async function () {
+    if (busy) return; lock(true);
+    var b = $('#wb'); start(b); sub(b, 'opening…');
+    status('work', 'Opening the Whitebeard ranking…', .04);
+    try {
+      var read = await readWhitebeard(function (n, want) {
+        var f = isFinite(want) && want ? Math.min(1, n / want) : .5;
+        setP(b, .06 + .8 * f); sub(b, n + (isFinite(want) ? ' / ' + want : ''));
+        status('work', 'Loading every rank… <b>' + n + '</b>' + (isFinite(want) ? ' of ' + want : ''), .06 + .8 * f);
+      });
+      read.at = Date.now();
+      if (!isFinite(read.want)) read.want = null;            // unknown total: saved as null, not Infinity
+      V.wb = read; S.wb = read; save();
+      setP(b, .9); sub(b, 'saving…');
+      status('work', 'Updating the Whitebeard card…', .92);
+      var card;
+      try { var u = await pushWb(read.rows); card = (u.replaced ? 'Card: today\'s column updated' : 'Card: new column added') + ' (' + u.day + ' UTC)'; }
+      catch (e) { card = 'Card not updated (' + esc(e.message || e) + ')'; }
+      setP(b, 1); finish(b, true); sub(b, read.rows.length + ' players · now');
+      var short = read.want && read.rows.length < read.want;
+      status('ok', (short ? 'Loaded ' + read.rows.length + ' of ' + read.want + ' — some pages did not arrive' : 'Whitebeard ranking read · ' + read.rows.length + ' players') + '<small>' + card + '</small>');
+    } catch (e) {
+      finish(b, false); sub(b, 'tap to try again');
+      status('bad', 'The ranking didn\'t finish<small>' + esc(e.message || e) + (V.wb ? ' The last saved read is kept.' : '') + '</small>');
     }
-  }
-  function wbTable() {
-    var body = $('#body'); body.textContent = '';
-    if (!V.wb) { body.appendChild(el('p', 'dim', 'Tap Read Whitebeard ranking: the game opens the ranking, every page is loaded the way scrolling to the end loads it (about 25 seconds), and the list appears here.')); return; }
-    var q = fold($('#q').value);
-    var rows = wbChosen().filter(function (r) { return !q || fold(r.name).indexOf(q) >= 0; });
-    var t = el('table'), h = el('tr');
-    ['#', 'Name', 'Alliance', 'Points', 'Game rank'].forEach(function (c, i) { h.appendChild(el('th', i === 4 ? 'hs' : '', c)); });
-    var th = el('thead'); th.appendChild(h); t.appendChild(th);
-    var tb = el('tbody');
-    rows.forEach(function (r, i) {
-      var tr = el('tr'); tr.appendChild(el('td', 'dim', String(i + 1))); tr.appendChild(el('td', '', r.name));
-      var a = el('td'); a.appendChild(tagEl(r.ally)); tr.appendChild(a);
-      tr.appendChild(el('td', 'n', r.points.toLocaleString())); tr.appendChild(el('td', 'n hs dim', String(r.rank)));
-      tb.appendChild(tr);
-    });
-    t.appendChild(tb); body.appendChild(t);
-  }
-  async function runWb() {
-    if (busy) return; busy = true; render();
-    try {
-      msg('Opening the Whitebeard ranking…');
-      V.wb = await readWhitebeard(function (n, want) { msg('Loading… ' + n + (isFinite(want) ? ' of ' + want : '')); });
-      V.wb.at = Date.now();
-      if (!isFinite(V.wb.want)) V.wb.want = null;            // unknown total: saved as null, not Infinity
-      S.wb = V.wb; save();
-      msg(V.wb.rows.length < V.wb.want && isFinite(V.wb.want) ? 'Loaded ' + V.wb.rows.length + ' of ' + V.wb.want + ' — some pages did not arrive; Read again to retry.' : 'Loaded all ' + V.wb.rows.length + ' players.');
-    } catch (e) { msg('✗ ' + (e.message || e)); }
-    busy = false; render();
-  }
-  async function sendWb() {
-    var rows = wbChosen().map(function (r) { return [r.name.slice(0, 80), r.points, r.ally.slice(0, 20)]; });
-    if (!rows.length) return;
-    busy = true; render(); msg('Sending…');
-    try {
-      var r = await fetch(API + '/game-ranking', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rows: rows }) });
-      var j = await r.json().catch(function () { return {}; });
-      if (!r.ok) throw new Error(j.error || 'the sheet did not accept it (' + r.status + ')');
-      msg('✓ ' + Number(j.rows).toLocaleString() + ' rows added, dated ' + j.date + '.', j.link || SHEET);
-    } catch (e) { msg('✗ ' + (e.message || e)); }
-    busy = false; render();
-  }
+    lock(false); refresh();
+  };
+  $('#wbs').onclick = async function () {
+    if (busy) return;
+    var b = $('#wbs'), rows = wbChosen().map(function (r) { return [r.name.slice(0, 80), r.points, r.ally.slice(0, 20)]; });
+    if (!V.wb) return nudge(b, 'Nothing to send yet<small>Read the Whitebeard ranking first.</small>');
+    if (!rows.length) return nudge(b, 'Nobody to send<small>No player in this read matches ' + (V.wbFilter === 'ALL4' ? '698N, W, S, C' : 'Other') + '.</small>');
+    var j = await sendTo(b, '/game-ranking', { rows: rows }, rows.length + ' Whitebeard rows');
+    if (!j) return;
+    sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
+    status('ok', 'Whitebeard ranking sent<small>' + Number(j.rows).toLocaleString() + ' rows added, dated ' + esc(j.date) +
+      ' · <a href="' + esc(j.link || SHEET) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
+  };
 
-  function render() {
-    if (V.tab === 'members') { membersBar(); membersTable(); } else { wbBar(); wbTable(); }
-    changes();
-  }
-  render();
-  READY.then(render);
+  refresh();
+  READY.then(refresh);
 })();

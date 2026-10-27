@@ -15,7 +15,7 @@
 try { const t = JSON.parse(localStorage.getItem('kartz.theme'));
       if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
 // No #kartz or #cp in the address: the home page, shown from the first paint (cp.js takes over).
-if (!/^#(kartz|cp|roster)$/.test(location.hash)) document.documentElement.classList.add('athome');
+if (!/^#(kartz|cp|roster|whitebeard)$/.test(location.hash)) document.documentElement.classList.add('athome');
 </script>
 <style>
 /* Light by default, dark when the device prefers it — unless the toggle by the title has chosen,
@@ -200,6 +200,8 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .hcard .acts a:active{transform:translateY(1px);filter:brightness(.9)}
 .hcard .go{background:#fff;color:#7b1a31}
 .hcard.cp .go{color:#c2410c}
+.hcard.wb{background:linear-gradient(135deg,#1d2b64,#3a3f9e 55%,#7a5cd6)}
+.hcard.wb .go{color:#2b2f86}
 .hcard .open{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.55);color:#fff}
 /* ---------------- alliance roster (roster.js) ---------------- */
 /* The bookmark's panel (extractor.js), as the roster card: dark in both themes, like the game. */
@@ -231,6 +233,13 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .rfoot{font-size:12px;color:rgba(235,235,245,.45);padding:0 14px 12px}
 .rfoot a{color:#9ec5ff}
 @media (max-width:640px){.rapp .hs{display:none}.rapp{border-radius:14px}}
+/* the Whitebeard card (wb.js): a column per day, the name kept in view when the days scroll sideways */
+.wbtable{border-collapse:separate;border-spacing:0;min-width:100%;width:auto}
+.wbtable th.d{text-align:right}
+.wbtable td{background:#1a1a23}
+.wbtable th:first-child,.wbtable td:first-child{position:sticky;left:0;z-index:1}
+.wbtable th:first-child{z-index:3}
+.wbtable td:first-child{box-shadow:1px 0 0 rgba(255,255,255,.08)}
 </style>
 </head>
 <body>
@@ -250,6 +259,8 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
         <div class="acts"><a class="go" href="#kartz">Extract</a><a class="open" href="https://docs.google.com/spreadsheets/d/1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE/edit#gid=1243524383" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
       <div class="hcard cp"><b>Alliance roster</b>
         <div class="acts"><a class="go" href="#roster">Open</a><a class="open" href="https://docs.google.com/spreadsheets/d/1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8/edit" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
+      <div class="hcard wb"><b>Whitebeard ranking</b>
+        <div class="acts"><a class="go" href="#whitebeard">Open</a><a class="open" href="https://docs.google.com/spreadsheets/d/12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc/edit#gid=0" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
     </div>
   </div>
 </div>
@@ -412,6 +423,21 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   <div class="rbody" id="rosterView"></div>
   <div class="rfoot">Updated by the <a href="extractor.html">2698 Data Extractor</a> bookmark: each time an alliance is read in the game,
     its rows here are updated. Players no longer in the alliance stay, marked Left.</div>
+</div>
+</div>
+
+<!-- Whitebeard ranking: every read the bookmark makes, a column per UTC day (wb.js) -->
+<div id="tab-wb" class="hide">
+<div class="rapp">
+  <div class="rhead"><b>Whitebeard ranking</b>
+    <label class="rsearch"><span aria-hidden="true">🔍</span><input id="wbQ" type="text" placeholder="Search a name" autocomplete="off"></label>
+    <button type="button" class="rgo" id="wbReload">Reload</button>
+  </div>
+  <div class="rreads" id="wbReads"></div>
+  <div class="rbar" id="wbChips"></div>
+  <div class="rbody" id="wbView"></div>
+  <div class="rfoot">Sent by the <a href="extractor.html">2698 Data Extractor</a> bookmark each time it reads the Whitebeard ranking.
+    Each day gets its own column (UTC date); a read on the same day replaces that day's column.</div>
 </div>
 </div>
 </div>
@@ -2673,9 +2699,10 @@ $('toBottom').onclick = () => scrollTo({ top: document.documentElement.scrollHei
 
 loadSetup();
 </script>
-<script src="cp.js?v=2"></script>
+<script src="cp.js?v=3"></script>
 <!-- the Alliance roster view -->
 <script src="roster.js?v=4"></script>
+<script src="wb.js?v=1"></script>
 <!-- Kartz: decoding the recording, then packing and reading it -->
 <script src="decode.js?v=4"></script>
 <script src="kartz.js?v=5"></script>
