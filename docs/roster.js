@@ -6,7 +6,7 @@
 
 (function () {
   const R = { rows: null, reads: {}, ally: '', cls: '', away: false, sort: 'power', asc: false, loading: false };
-  const ALLIANCES = ['698N', '698S', '698W', '698C', '698X'];
+  const ALLIANCES = ['698N', '698S', '698W', '698C'];
   const fold = s => String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, '');
   const ago = ms => {
     if (!ms) return '—';
@@ -23,7 +23,7 @@
       const r = await fetch(API_BASE + '/roster', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || r.status);
-      R.rows = j.rows || []; R.reads = j.reads || {}; R.err = '';
+      R.rows = (j.rows || []).filter(r => ALLIANCES.includes(r.alliance)); R.reads = j.reads || {}; R.err = '';
     } catch (e) { R.err = 'The roster could not be loaded: ' + (e.message || e); }
     R.loading = false; draw();
   }

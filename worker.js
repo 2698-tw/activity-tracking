@@ -785,9 +785,9 @@ export default {
 };
 
 /* ---------------- the Alliance Roster card ---------------- */
-// What one alliance read may hold. Alliances are the five the extractor reads; every field is checked
+// What one alliance read may hold. Alliances are the four the extractor reads; every field is checked
 // so the store only ever holds what the card shows, plus the UID it matches on.
-const ROSTER_ALLIANCES = ['698N', '698S', '698W', '698C', '698X'];
+const ROSTER_ALLIANCES = ['698N', '698S', '698W', '698C'];
 function checkRosterRead(b) {
   if (!b || !ROSTER_ALLIANCES.includes(b.alliance)) throw new Error('unknown alliance');
   const m = b.members;
@@ -855,7 +855,7 @@ export class RosterStore {
   // the card's view: every row without its UID, and when each alliance was last read
   async list() {
     const rows = await this.load(), reads = (await this.state.storage.get('reads')) || {};
-    return { reads, rows: Object.values(rows).map(({ uid, ...r }) => r) };
+    return { reads, rows: Object.values(rows).filter(r => ROSTER_ALLIANCES.includes(r.alliance)).map(({ uid, ...r }) => r) };
   }
 }
 

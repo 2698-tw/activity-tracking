@@ -1,7 +1,7 @@
 /* 2698 Data Extractor (docs/extractor.js): the in-game panel the "2698 Data Extractor" bookmark loads.
  *
  * Runs on the Top War web game (h5.topwargame.com). Two lists:
- *   Alliance members: 698N, 698S, 698W, 698C, 698X. Each is opened with the game's own Members call
+ *   Alliance members: 698N, 698S, 698W, 698C. Each is opened with the game's own Members call
  *     (UIManager.OpenUI(AllianceMemberPopup, <alliance id>), what the Members button runs), read once
  *     the game has it, and closed again. MM/CE comes from the Alliance Rosters sheet (api/roster-class).
  *   Whitebeard ranking: opened with the event's own Ranking call, every page loaded the way scrolling
@@ -17,7 +17,7 @@
   var API = 'https://data-collection.jk06nm04.workers.dev/api';
   var SHEET = 'https://docs.google.com/spreadsheets/d/12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc/edit#gid=0';
   // alliance ids, from the game's Alliance CP ranking (2026-10-27)
-  var ALLY = { '698N': 500245787, '698S': 500245801, '698W': 500246524, '698C': 500247242, '698X': 500246151 };
+  var ALLY = { '698N': 500245787, '698S': 500245801, '698W': 500246524, '698C': 500247242 };
   var MAIN = ['698N', '698W', '698S', '698C'];
   var STORE = 'x2698.v1';
 
@@ -122,6 +122,8 @@
   /* ---------------- saved reads and MM/CE ---------------- */
   var S = (function () { try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) { return {}; } })();
   S.members = S.members || {}; S.prev = S.prev || {};
+  // only the four alliances: a read of another one saved by an earlier version is dropped
+  [S.members, S.prev].forEach(function (o) { Object.keys(o).forEach(function (t) { if (!ALLY[t]) delete o[t]; }); });
   function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null })); } catch (e) {} }
   var fold = function (s) { return String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, ''); };
   // MM/CE from the roster. Names repeat ("Woody" is 698S's in-game name and 698C's search name; 698S
@@ -255,7 +257,7 @@
       var have = S.members[t]; if (have) b.title = have.list.length + ' members, read ' + ago(have.at / 1000);
       b.onclick = function () { run([t]); }; bar.appendChild(b);
     });
-    var all = el('button', 'go', 'Read all five'); all.disabled = busy; all.onclick = function () { run(Object.keys(ALLY)); }; bar.appendChild(all);
+    var all = el('button', 'go', 'Read all four'); all.disabled = busy; all.onclick = function () { run(Object.keys(ALLY)); }; bar.appendChild(all);
     var csv = el('button', 'go ghost', 'Download CSV'); csv.onclick = downloadMembers; bar.appendChild(csv);
     var n = cpRows().length;
     var send = el('button', 'go', 'Send Base CP to sheet (' + n + ')'); send.disabled = busy || !n;
@@ -311,7 +313,7 @@
     });
     t.appendChild(tb);
     var body = $('#body'); body.textContent = '';
-    if (!Object.keys(S.members).length) body.appendChild(el('p', 'dim', 'No alliance read yet. Tap Read 698S (or Read all five): the game opens each member list, the extractor reads it and closes it again.'));
+    if (!Object.keys(S.members).length) body.appendChild(el('p', 'dim', 'No alliance read yet. Tap Read 698S (or Read all four): the game opens each member list, the extractor reads it and closes it again.'));
     else body.appendChild(t);
     var tot = allMembers().length;
     $('#bar').querySelector('span.dim').textContent = rows.length + ' of ' + tot + ' shown' + (CLASS && CLASS.failed ? ' · MM/CE: roster unavailable' : '');
