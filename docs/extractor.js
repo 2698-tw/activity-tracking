@@ -203,8 +203,9 @@
     '.app{all:initial;display:block;box-sizing:border-box;position:absolute;top:12px;left:50%;transform:translateX(-50%);width:min(440px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;pointer-events:auto;' +
       'font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f3f3f7;background:rgba(22,22,30,.97);border-radius:19px;padding:12px 14px 14px;' +
       'box-shadow:0 20px 60px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.1)}' +
-    '.top{display:flex;align-items:center;gap:10px;margin-bottom:4px}' +
-    '.logo{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b);flex:none}' +
+    '.top{display:flex;align-items:center;gap:10px;margin:-12px -14px 4px;padding:12px 14px 4px;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}' +
+    '.top.drag{cursor:grabbing}' +
+    '.logo{width:28px;height:28px;border-radius:8px;flex:none;object-fit:cover;background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b);-webkit-user-drag:none;pointer-events:none}' +
     '.top b{font-size:15.5px;flex:1}' +
     '.x{border:0;background:rgba(255,255,255,.1);color:#bbb;width:28px;height:28px;border-radius:50%;font-size:16px;cursor:pointer;flex:none}' +
     'h3{margin:12px 2px 7px;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:rgba(235,235,245,.6);font-weight:700}' +
@@ -279,7 +280,7 @@
     '.status a{color:#9ec5ff}' +
     '.tx-in{animation:txin .35s ease}@keyframes txin{from{opacity:0;transform:translateY(5px)}}' +
     '</style>' +
-    '<div class="app"><div class="top"><span class="logo"></span><b>2698 Data Extractor</b><button class="x" id="close" title="Close">×</button></div>' +
+    '<div class="app"><div class="top" title="Drag to move"><img class="logo" alt="" src="https://2698-tw.github.io/activity-tracking/icon.png"><b>2698 Data Extractor</b><button class="x" id="close" title="Close">×</button></div>' +
     '<h3>Alliance members</h3><div class="grid">' +
       Object.keys(ALLY).map(function (t) { return act('a' + t, '', t, 'not read', t); }).join('') + '</div>' +
     '<div class="stack">' + act('all', 'main', 'Read all four', 'Updates the roster card on the site') +
@@ -295,6 +296,35 @@
 
   // closing only hides the panel: a read that is running carries on, and the bookmark brings it back
   $('#close').onclick = function () { host.style.display = 'none'; };
+
+  // the header moves the panel; where it was left is remembered on this device
+  var POS = 'x2698.pos';
+  function place(x, y) {
+    var w = app.offsetWidth, h = app.offsetHeight;
+    x = Math.max(4, Math.min(innerWidth - w - 4, x)); y = Math.max(4, Math.min(innerHeight - Math.min(h, 60) - 4, y));
+    app.style.left = x + 'px'; app.style.top = y + 'px'; app.style.transform = 'none';
+    app.style.maxHeight = (innerHeight - y - 8) + 'px';         // scrolls inside rather than running off the bottom
+    return [x, y];
+  }
+  try { var saved = JSON.parse(localStorage.getItem(POS)); if (saved) place(saved[0], saved[1]); } catch (e) {}
+  (function () {
+    var top = $('.top'), from = null;
+    top.addEventListener('pointerdown', function (e) {
+      if (e.target.closest('button') || e.button > 0) return;
+      var r = app.getBoundingClientRect();
+      from = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+      top.setPointerCapture(e.pointerId); top.classList.add('drag'); e.preventDefault();
+    });
+    top.addEventListener('pointermove', function (e) { if (from) place(e.clientX - from.dx, e.clientY - from.dy); });
+    function drop(e) {
+      if (!from) return; from = null; top.classList.remove('drag');
+      var r = app.getBoundingClientRect();
+      try { localStorage.setItem(POS, JSON.stringify([Math.round(r.left), Math.round(r.top)])); } catch (x) {}
+    }
+    top.addEventListener('pointerup', drop); top.addEventListener('pointercancel', drop);
+    // keep it on screen when the window gets smaller
+    addEventListener('resize', function () { if (app.style.transform === 'none') place(parseFloat(app.style.left), parseFloat(app.style.top)); });
+  })();
   window.__x2698 = { toggle: function () { host.style.display = host.style.display === 'none' ? '' : 'none'; } };
   $('#who').onchange = function () { V.wbFilter = $('#who').value; refresh(); };
 
