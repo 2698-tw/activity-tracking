@@ -129,12 +129,50 @@
     return { title: title, want: want, rows: rows };
   }
 
+  // the Snow Train's Unit Details: read from the window you have open (it needs the train you chose,
+  // so it is not opened from here). The game loads the whole list when the window opens.
+  async function readSnowTrain() {
+    var panel = null;
+    for (var t0 = Date.now(); Date.now() - t0 < 3000; await wait(200)) {
+      panel = findComp(function (c) { return /TrainTroopsInfoPanel$/.test(c.__classname__ || '') && Array.isArray(c._infoList); });
+      if (panel && panel._infoList.length) break;
+    }
+    if (!panel) throw new Error('Open a Snow Train\'s Unit Details window first, then tap Read.');
+    if (!panel._infoList.length) throw new Error('The Unit Details list is empty.');
+    return panel._infoList.map(function (e) {
+      var p = parse(e.playerInfo);
+      return { uid: String(e.uid || ''), name: String(p.username || p.nickname || ''), ally: String(e.aTag || ''), power: Number(e.power) || 0,
+               type: marchType(e.armys) };
+    });
+  }
+  // what a march is, by the units most of its slots hold: the game's unit table types them 101 army,
+  // 201 navy, 301 air force (a mech or two of another kind does not change it)
+  var UNIT = { 101: 'Army', 201: 'Navy', 301: 'Air Force' };
+  function armyTable() {
+    var m = req('TableManager'), C = m && (Object.keys(m).map(function (k) { return m[k]; }).filter(function (v) { return v && typeof v.getInst === 'function'; })[0]);
+    var map = C && C.getInst()._tableMap, t = map && (map.get ? map.get('army') : map.army);
+    return function (id) {
+      if (!t) return null;
+      var ds = [t, t._data, t.data, t._dataMap, t._map];
+      for (var i = 0; i < ds.length; i++) { var d = ds[i]; if (!d) continue; var r = (d.get && d.get(id)) || d[id]; if (r) return r; }
+      return null;
+    };
+  }
+  var unitOf = null;
+  function marchType(armys) {
+    unitOf = unitOf || armyTable();
+    var n = {}, best = '', most = 0;
+    (armys || []).forEach(function (a) { var r = unitOf(a.armyId), ty = r && UNIT[r.type]; if (ty) n[ty] = (n[ty] || 0) + 1; });
+    Object.keys(n).forEach(function (ty) { if (n[ty] > most) { most = n[ty]; best = ty; } });
+    return best;
+  }
+
   /* ---------------- saved reads and MM/CE ---------------- */
   var S = (function () { try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) { return {}; } })();
   S.members = S.members || {}; S.prev = S.prev || {};
   // only the four alliances: a read of another one saved by an earlier version is dropped
   [S.members, S.prev].forEach(function (o) { Object.keys(o).forEach(function (t) { if (!ALLY[t]) delete o[t]; }); });
-  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null })); } catch (e) {} }
+  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null, st: S.st || null })); } catch (e) {} }
   var fold = function (s) { return String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, ''); };
   // MM/CE from the roster. Names repeat ("Woody" is 698S's in-game name and 698C's search name; 698S
   // has two Gikeys), so the candidates are tried in order: in-game name in the player's own alliance,
@@ -287,6 +325,8 @@
       act('cp', 'send', 'Send Base CP to sheet', 'Read an alliance first') + '</div>' +
     '<h3>Whitebeard ranking</h3><select id="who"><option value="ALL4">698N, W, S, C</option><option value="OTHER">Other</option></select>' +
     '<div class="row2">' + act('wb', 'main', 'Read', 'Loads every rank') + act('wbs', 'send', 'Send to sheet', 'Read it first') + '</div>' +
+    '<h3>Snow Train</h3>' +
+    '<div class="row2">' + act('snow', 'main', 'Read', 'Open Unit Details first') + act('snows', 'send', 'Send to sheet', 'Read it first') + '</div>' +
     '<div class="status idle" id="st"><span class="si"></span><span class="tx">Ready. Tap a button to start.</span></div></div>';
   document.body.appendChild(host);
   var $ = function (s) { return root.querySelector(s); };
@@ -382,6 +422,9 @@
     var wb = $('#wb'), wbs = $('#wbs');
     if (!wb.classList.contains('busy') && !wb.classList.contains('err')) sub(wb, V.wb ? V.wb.rows.length + ' players · ' + ago(V.wb.at / 1000) : 'Loads every rank');
     if (!wbs.classList.contains('busy')) { wbs.classList.remove('done'); sub(wbs, V.wb ? wbChosen().length + ' players ready' : 'Read it first'); }
+    var stb = $('#snow'), sts = $('#snows');
+    if (!stb.classList.contains('busy') && !stb.classList.contains('err')) sub(stb, S.st ? S.st.rows.length + ' players · ' + ago(S.st.at / 1000) : 'Open Unit Details first');
+    if (!sts.classList.contains('busy') && !sts.classList.contains('done')) sub(sts, S.st ? S.st.rows.length + ' players ready' : 'Read it first');
   }
 
   /* reading alliances */
@@ -481,6 +524,10 @@
     return V.wb.rows.filter(function (r) { return V.wbFilter === 'ALL4' ? MAIN.indexOf(r.ally) >= 0 : MAIN.indexOf(r.ally) < 0; })
       .sort(function (a, b) { return allyOrder(a.ally) - allyOrder(b.ally) || a.ally.localeCompare(b.ally) || a.rank - b.rank; });
   }
+  function postJson(path, body) {
+    return fetch(API + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); });
+  }
   // every player read goes to the site's Whitebeard card, under today's UTC date (api/wb-update)
   function pushWb(rows) {
     var body = rows.map(function (r) { return { uid: r.uid, name: r.name, ally: r.ally, points: r.points }; });
@@ -524,6 +571,45 @@
     sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
     status('ok', 'Whitebeard ranking sent<small>' + Number(j.rows).toLocaleString() + ' rows added, dated ' + esc(j.date) +
       ' · <a href="' + esc(j.link || SHEET) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
+  };
+
+  /* Snow Train: the open Unit Details window to SS P2 Snow Train (api/game-snowtrain), as Date, Name,
+     March CP, Unit Type, Alliance; the four alliances first, then everyone else */
+  $('#snow').onclick = async function () {
+    if (busy) return; lock(true);
+    var b = $('#snow'); start(b); sub(b, 'reading…');
+    status('work', 'Reading the Unit Details…', .3); setP(b, .3);
+    try {
+      var rows = await readSnowTrain();
+      S.st = { at: Date.now(), rows: rows }; save(); $('#snows').classList.remove('done');
+      setP(b, .6); sub(b, 'saving…');
+      status('work', 'Updating the Snow Train card…', .7);
+      // every player read goes to the site's Snow Train card, under today's UTC date (api/st-update)
+      var card;
+      try {
+        var u = await postJson('/st-update', { rows: rows.map(function (r) { return { uid: r.uid, name: r.name, ally: r.ally, points: r.power, type: r.type }; }) });
+        card = (u.merged ? 'Card: added to today\'s column' : 'Card: new column added') + ' (' + u.day + ' UTC)';
+      } catch (e) { card = 'Card not updated (' + esc(e.message || e) + ')'; }
+      setP(b, 1); finish(b, true); sub(b, rows.length + ' players · now');
+      status('ok', 'Snow Train read · ' + rows.length + ' players<small>' + card + ' · tap Send to sheet for SS P2 Snow Train.</small>');
+    } catch (e) {
+      finish(b, false); sub(b, 'tap to try again');
+      status('bad', 'Nothing read<small>' + esc(e.message || e) + '</small>');
+    }
+    lock(false); refresh();
+  };
+  $('#snows').onclick = async function () {
+    if (busy) return;
+    var b = $('#snows');
+    if (!S.st) return nudge(b, 'Nothing to send yet<small>Open a Snow Train\'s Unit Details and tap Read first.</small>');
+    var order = function (t) { return MAIN.indexOf(t) >= 0 ? MAIN.indexOf(t) : 99; };
+    var rows = S.st.rows.slice().sort(function (a, c) { return order(a.ally) - order(c.ally) || a.ally.localeCompare(c.ally) || c.power - a.power; })
+      .map(function (r) { return [r.name.slice(0, 80), Math.round(r.power / 1e6) + 'M', r.ally.slice(0, 20), r.type || '']; });   // 256,158,825 → 256M
+    var j = await sendTo(b, '/game-snowtrain', { rows: rows }, rows.length + ' Snow Train rows');
+    if (!j) return;
+    sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
+    status('ok', 'Snow Train sent<small>' + Number(j.rows).toLocaleString() + ' rows added, dated ' + esc(j.date) +
+      ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
   };
 
   refresh();

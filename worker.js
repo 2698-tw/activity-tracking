@@ -142,6 +142,9 @@ const TARGETS = {
 // and Alliance, in A to D of the first tab. Each send is added below the lists already there.
 // Only this route accepts the game page's origin.
 const RANKING = { id: '12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc', gid: 0, book: 'Game rankings' };
+// The Snow Train's Unit Details (docs/extractor.js): Date, Name, March CP and Alliance, the same way
+// but Unit Type (Army, Navy, Air Force) in D and Alliance in E; the headers are set to match on a send
+const SNOW_TRAIN = { id: '1d2jgRQlfhYMufn69YaZ-2ZPQ-lGtfvSiOPDTEplUqGs', gid: 0, book: 'SS P2 Snow Train', extra: 'Unit Type' };
 const RANKING_ORIGIN = 'https://h5.topwargame.com';
 const RANKING_MAX = 3000;
 // The alliances that take part in a Kartz round (api/round-*).
@@ -238,21 +241,25 @@ async function appendRows(env, values, name = 'kartz') {
            book: target.book, tab: title, id: target.id, gid: target.gid };
 }
 
-async function writeRanking(env, rows) {
+async function writeRanking(env, rows, target = RANKING) {
   if (!Array.isArray(rows) || !rows.length)
     throw Object.assign(new Error('No rows to send.'), { status: 400 });
   if (rows.length > RANKING_MAX)
     throw Object.assign(new Error(`At most ${RANKING_MAX} rows at a time.`), { status: 400 });
-  if (!rows.every(r => Array.isArray(r) && r.length === 3 && typeof r[0] === 'string' && r[0].length <= 80
-                       && Number.isFinite(r[1]) && typeof r[2] === 'string' && r[2].length <= 20))
-    throw Object.assign(new Error('Every row must be [name, points, alliance].'), { status: 400 });
+  // points are a number, or millions written as the game shows them (256M, for March CP)
+  const n = target.extra ? 4 : 3;
+  if (!rows.every(r => Array.isArray(r) && r.length === n && typeof r[0] === 'string' && r[0].length <= 80
+                       && (Number.isFinite(r[1]) || /^\d{1,6}M$/.test(r[1])) && typeof r[2] === 'string' && r[2].length <= 20
+                       && (n === 3 || /^(Army|Navy|Air Force|)$/.test(r[3]))))
+    throw Object.assign(new Error(`Every row must be [name, points, alliance${n === 4 ? ', unit type' : ''}].`), { status: 400 });
+  const end = n === 4 ? 'E' : 'D';
 
   const token = await googleToken(env);
-  const tab = `'${(await tabTitle(token, RANKING)).replace(/'/g, "''")}'`;
+  const tab = `'${(await tabTitle(token, target)).replace(/'/g, "''")}'`;
   // Each list goes below the last one, the way appendRows does it: find the last row with
-  // anything in A to D and write directly under it.
-  const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(`${tab}!A:D`)}`
-    + '?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', null, RANKING);
+  // anything in A to D (E) and write directly under it.
+  const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(`${tab}!A:${end}`)}`
+    + '?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', null, target);
   const seen = got.values || [];
   let filled = seen.length;
   while (filled > 0 && !(seen[filled - 1] || []).some(v => v !== '' && v != null)) filled--;
@@ -260,12 +267,16 @@ async function writeRanking(env, rows) {
   // real date in the sheet; asCell keeps a name starting with = or + as plain text.
   const date = new Date().toISOString().slice(0, 10);
   const first = Math.max(filled, 1) + 1, last = first + rows.length - 1;
-  const range = `${tab}!A${first}:D${last}`;
+  const range = `${tab}!A${first}:${end}${last}`;
+  if (target.extra && ((seen[0] || [])[3] !== target.extra || (seen[0] || [])[4] !== 'Alliance')) {
+    const head = `${tab}!D1:E1`;
+    await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(head)}?valueInputOption=RAW`, { range: head, values: [[target.extra, 'Alliance']] }, target);
+  }
   const out = await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
     { range, majorDimension: 'ROWS',
-      values: rows.map(([name, points, ally]) => [date, asCell(name), points, asCell(ally)]) }, RANKING);
+      values: rows.map(([name, points, ally, type]) => n === 4 ? [date, asCell(name), points, type, asCell(ally)] : [date, asCell(name), points, asCell(ally)]) }, target);
   return { rows: out.updatedRows || rows.length, range: out.updatedRange || range, date,
-           link: `https://docs.google.com/spreadsheets/d/${RANKING.id}/edit#gid=${RANKING.gid}&range=A${first}` };
+           link: `https://docs.google.com/spreadsheets/d/${target.id}/edit#gid=${target.gid}&range=A${first}` };
 }
 
 async function sheetsCall(token, method, path, body, target) {
@@ -407,7 +418,7 @@ export default {
       && request.headers.get('x-kartz-pass') === env.SHARED_PASS;
     // the game page may reach the ranking route and the roster's MM/CE list, and nothing else
     const rankingCall = origin === RANKING_ORIGIN
-      && ['api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update']
+      && ['api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update']
         .includes(url.pathname.replace(/^\/+/, ''));
     const allowed = knownOrigin || hasPass || rankingCall;
 
@@ -469,18 +480,17 @@ export default {
     // The Whitebeard card (#whitebeard): each read the extractor makes is kept under its UTC date, so
     // a read on a new day adds a column and another read the same day replaces that day's. Kept in
     // the roster's store; the UIDs it matches players on stay here.
-    if (url.pathname.replace(/^\/+/, '') === 'api/wb-update') {
+    // The Snow Train card (#snowtrain) is kept the same way, from the Unit Details reads.
+    const dayCard = { 'api/wb-update': '/wb-update', 'api/st-update': '/st-update', 'api/wb': '/wb-list', 'api/st': '/st-list' }[url.pathname.replace(/^\/+/, '')];
+    if (dayCard) {
       if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
+      if (dayCard.endsWith('-list')) return rosterCall(env, dayCard, null, reply);
       const body = await request.text();
       if (body.length > 512 * 1024) return reply({ error: 'Request too large.' }, 413);
       let read;
       try { read = checkWbRead(JSON.parse(body)); }
       catch (e) { return reply({ error: String(e.message || e) }, 400); }
-      return rosterCall(env, '/wb-update', read, reply);
-    }
-    if (url.pathname.replace(/^\/+/, '') === 'api/wb') {
-      if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
-      return rosterCall(env, '/wb-list', null, reply);
+      return rosterCall(env, dayCard, read, reply);
     }
 
     // Base CP from the extractor's alliance reads, in the Base CP tab's own format: Alliance Rosters,
@@ -535,11 +545,13 @@ export default {
     // list itself changes, so repeated fetches do not go back to the site.
     // A ranking list read from the game by the bookmark (docs/bookmark.html): added below the lists
     // already in the Game rankings sheet. The sheet and columns are fixed above.
-    if (url.pathname.replace(/^\/+/, '') === 'api/game-ranking') {
+    // The Snow Train's Unit Details go to their own sheet the same way.
+    const rankingRoute = { 'api/game-ranking': RANKING, 'api/game-snowtrain': SNOW_TRAIN }[url.pathname.replace(/^\/+/, '')];
+    if (rankingRoute) {
       const body = await request.text();
       if (body.length > 512 * 1024) return reply({ error: 'Request too large.' }, 413);
       try {
-        return reply(await writeRanking(env, JSON.parse(body).rows), 200);
+        return reply(await writeRanking(env, JSON.parse(body).rows, rankingRoute), 200);
       } catch (e) {
         const status = e.status || (e instanceof SyntaxError ? 400 : 502);
         return reply({ error: String(e && e.message || e) }, status);
@@ -829,7 +841,8 @@ function checkWbRead(b) {
       if (!x || !Number.isFinite(x.points)) throw new Error('every player needs points');
       const name = String(x.name == null ? '' : x.name).slice(0, 60);
       const key = /^\d{5,20}$/.test(String(x.uid)) ? String(x.uid) : 'n|' + name;
-      return { key, name, ally: String(x.ally == null ? '' : x.ally).slice(0, 20), points: x.points };
+      return { key, name, ally: String(x.ally == null ? '' : x.ally).slice(0, 20), points: x.points,
+               type: /^(Army|Navy|Air Force)$/.test(x.type) ? x.type : '' };
     }),
   };
 }
@@ -858,8 +871,10 @@ export class RosterStore {
       const path = new URL(request.url).pathname;
       if (path === '/update') return Response.json(await this.update(await request.json()));
       if (path === '/list') return Response.json(await this.list());
-      if (path === '/wb-update') return Response.json(await this.wbUpdate(await request.json()));
-      if (path === '/wb-list') return Response.json(await this.wbList());
+      if (path === '/wb-update') return Response.json(await this.wbUpdate(await request.json(), 'wb'));
+      if (path === '/wb-list') return Response.json(await this.wbList('wb'));
+      if (path === '/st-update') return Response.json(await this.wbUpdate(await request.json(), 'st'));
+      if (path === '/st-list') return Response.json(await this.wbList('st'));
       return Response.json({ error: 'unknown roster call' }, { status: 404 });
     } catch (e) {
       return Response.json({ error: String(e && e.message || e) }, { status: 500 });
@@ -891,25 +906,33 @@ export class RosterStore {
     return { reads, rows: Object.values(rows).filter(r => ROSTER_ALLIANCES.includes(r.alliance)).map(({ uid, ...r }) => r) };
   }
 
-  // Whitebeard: each UTC day's points under a key of its own (wb:day:2026-10-27), so no one value
-  // grows with the number of days; names and alliances, latest first, under wb:who
-  async wbUpdate(read) {
-    const day = new Date().toISOString().slice(0, 10), pts = {};
-    const who = (await this.state.storage.get('wb:who')) || {};
-    for (const r of read.rows) { pts[r.key] = r.points; who[r.key] = { name: r.name, ally: r.ally }; }
-    const had = !!(await this.state.storage.get('wb:day:' + day));
-    await this.state.storage.put({ ['wb:day:' + day]: pts, 'wb:who': who });
-    return { day, players: read.rows.length, replaced: had };
+  // Whitebeard (ns 'wb') and the Snow Train (ns 'st'): each UTC day's points under a key of its own
+  // (wb:day:2026-10-27), so no one value grows with the number of days; names, alliances and unit
+  // types, latest first, under wb:who
+  // The Snow Train keeps, per player, the highest March CP ever read (best) and which days they were
+  // on a train; a second read the same day (another train) adds to that day rather than replacing it.
+  async wbUpdate(read, ns) {
+    const day = new Date().toISOString().slice(0, 10), keep = ns === 'st';
+    const before = await this.state.storage.get(ns + ':day:' + day), had = !!before;
+    const pts = keep && before ? before : {};
+    const who = (await this.state.storage.get(ns + ':who')) || {};
+    for (const r of read.rows) {
+      const was = who[r.key] || {};
+      pts[r.key] = keep ? Math.max(pts[r.key] || 0, r.points) : r.points;
+      who[r.key] = { name: r.name, ally: r.ally, type: r.type || was.type || '', best: Math.max(was.best || 0, r.points) };
+    }
+    await this.state.storage.put({ [ns + ':day:' + day]: pts, [ns + ':who']: who });
+    return { day, players: read.rows.length, replaced: had, merged: keep && had };
   }
   // the card's view: one row per player, without its key, and the points per day
-  async wbList() {
-    const who = (await this.state.storage.get('wb:who')) || {};
-    const days = await this.state.storage.list({ prefix: 'wb:day:' });
-    const dates = [...days.keys()].map(k => k.slice(7)).sort();
+  async wbList(ns) {
+    const who = (await this.state.storage.get(ns + ':who')) || {};
+    const days = await this.state.storage.list({ prefix: ns + ':day:' });
+    const dates = [...days.keys()].map(k => k.slice(ns.length + 5)).sort();
     const rows = Object.entries(who).map(([key, w]) => {
       const p = {};
-      for (const d of dates) { const v = days.get('wb:day:' + d)[key]; if (v != null) p[d] = v; }
-      return { name: w.name, ally: w.ally, pts: p };
+      for (const d of dates) { const v = days.get(ns + ':day:' + d)[key]; if (v != null) p[d] = v; }
+      return { name: w.name, ally: w.ally, type: w.type || '', best: w.best || 0, pts: p };
     });
     return { dates, rows };
   }
