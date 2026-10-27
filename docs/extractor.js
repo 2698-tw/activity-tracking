@@ -23,9 +23,14 @@
   var MAIN = ['698N', '698W', '698S', '698C'];
   var STORE = 'x2698.v1';
 
-  // anywhere but the game, go to the site instead (the bookmark itself does this too; this covers
-  // bookmarks saved before it did). On the game's own page before the game has loaded, just say so.
-  if (!/(^|\.)topwargame\.com$/.test(location.hostname)) { location.href = 'https://2698-tw.github.io/activity-tracking/'; return; }
+  // anywhere but the game, open the site in a new tab instead, or here if the browser blocks that (the
+  // bookmark itself does this too; this covers bookmarks saved before it did). On the game's own page
+  // before the game has loaded, just say so.
+  if (!/(^|\.)topwargame\.com$/.test(location.hostname)) {
+    var site = 'https://2698-tw.github.io/activity-tracking/';
+    if (!window.open(site, '_blank')) location.href = site;
+    return;
+  }
   if (!window.cc || !window.__require) { alert('2698 Data Extractor: the game has not finished loading yet. Try again in a moment.'); return; }
 
   /* ---------------- the game ---------------- */
@@ -195,7 +200,7 @@
   }
   root.innerHTML = '<style>' +
     '*{box-sizing:border-box}' +
-    '.app{all:initial;display:block;box-sizing:border-box;position:absolute;top:12px;left:50%;transform:translateX(-50%);width:min(400px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;pointer-events:auto;' +
+    '.app{all:initial;display:block;box-sizing:border-box;position:absolute;top:12px;left:50%;transform:translateX(-50%);width:min(440px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;pointer-events:auto;' +
       'font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f3f3f7;background:rgba(22,22,30,.97);border-radius:19px;padding:12px 14px 14px;' +
       'box-shadow:0 20px 60px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.1)}' +
     '.top{display:flex;align-items:center;gap:10px;margin-bottom:4px}' +
@@ -215,12 +220,13 @@
     '.act .t{display:block;font-weight:800;font-size:15px;position:relative}' +
     '.act .s{display:block;font-size:11.5px;color:rgba(235,235,245,.6);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative}' +
     '.act.main .s{color:rgba(255,255,255,.75)}' +
-    '.grid .act .t{padding-right:14px}' +
+    '.grid .act{padding:10px 9px}' +
+    '.grid .act .t{white-space:nowrap;font-size:14.5px;padding-right:16px}' +
     '.grid .act .t::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:2px;background:var(--c)}' +
     '.act[data-a="698N"]{--c:#9ec5ff}.act[data-a="698S"]{--c:#e9a8ff}.act[data-a="698W"]{--c:#7ee2a8}.act[data-a="698C"]{--c:#ffc078}' +
     '.app.locked .act:not(.busy),.app.locked select{opacity:.45;pointer-events:none}' +
     '.ic{position:absolute;right:9px;top:9px;width:22px;height:22px;overflow:visible}' +
-    '.grid .ic{width:16px;height:16px;right:7px;top:8px}' +
+    '.grid .ic{width:14px;height:14px;right:7px;top:9px}' +
     '.ic circle{fill:none;stroke-width:2.4}.ic .trk{stroke:rgba(255,255,255,.12)}' +
     '.ic .prg{stroke:#e0457b;stroke-linecap:round;stroke-dasharray:56.55;stroke-dashoffset:56.55;transform:rotate(-90deg);transform-origin:12px 12px;transition:stroke-dashoffset .25s,stroke .3s}' +
     '.act.main .ic .prg{stroke:#fff}' +
@@ -296,6 +302,10 @@
     if (!ts) return '—'; var m = (Date.now() / 1000 - ts) / 60;
     return m < 5 ? 'now' : m < 60 ? Math.round(m) + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago';
   };
+  var agoShort = function (ts) {
+    var m = (Date.now() / 1000 - ts) / 60;
+    return m < 5 ? 'now' : m < 60 ? Math.round(m) + 'm' : m < 1440 ? Math.round(m / 60) + 'h' : Math.round(m / 1440) + 'd';
+  };
   var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
 
   /* the buttons' looks */
@@ -335,7 +345,7 @@
   function refresh() {
     Object.keys(ALLY).forEach(function (t) {
       var b = $('#a' + t), have = S.members[t];
-      if (!b.classList.contains('busy') && !b.classList.contains('err')) sub(b, have ? have.list.length + ' · ' + ago(have.at / 1000) : 'not read');
+      if (!b.classList.contains('busy') && !b.classList.contains('err')) sub(b, have ? have.list.length + ' · ' + agoShort(have.at / 1000) : 'not read');
     });
     var n = cpRows().length, cp = $('#cp');
     if (!cp.classList.contains('done') && !cp.classList.contains('busy')) sub(cp, n ? n + ' players ready' : 'Read an alliance first');
