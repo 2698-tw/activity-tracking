@@ -202,19 +202,35 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .hcard.cp .go{color:#c2410c}
 .hcard .open{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.55);color:#fff}
 /* ---------------- alliance roster (roster.js) ---------------- */
-.rchip{width:auto;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:5px 12px;font:inherit;font-size:13px;font-weight:500;cursor:pointer}
-.rchip.on{background:var(--accent);border-color:var(--accent);color:#fff}
-.rtag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;background:var(--line)}
-.t698N{background:#dbe7ff;color:#1d3f8a}.t698S{background:#f3defa;color:#6b2381}.t698W{background:#d9f3e3;color:#1e6b3c}.t698C{background:#fde9cf;color:#8a4b00}.t698X{background:#e6e6e6;color:#444}
-:root[data-theme="dark"] .t698N{background:#22324f;color:#9ec5ff}:root[data-theme="dark"] .t698S{background:#3b2340;color:#e9a8ff}:root[data-theme="dark"] .t698W{background:#203d33;color:#7ee2a8}:root[data-theme="dark"] .t698C{background:#45321b;color:#ffc078}:root[data-theme="dark"] .t698X{background:#3a3a3a;color:#ddd}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .t698N{background:#22324f;color:#9ec5ff}:root:not([data-theme="light"]) .t698S{background:#3b2340;color:#e9a8ff}:root:not([data-theme="light"]) .t698W{background:#203d33;color:#7ee2a8}:root:not([data-theme="light"]) .t698C{background:#45321b;color:#ffc078}:root:not([data-theme="light"]) .t698X{background:#3a3a3a;color:#ddd}}
-.rtable{width:100%;border-collapse:collapse;font-size:14px}
-.rtable th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);cursor:pointer;white-space:nowrap;position:sticky;top:0;background:var(--panel)}
-.rtable td{padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+/* The bookmark's panel (extractor.js), as the roster card: dark in both themes, like the game. */
+.rapp{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f3f3f7;background:rgba(22,22,30,.97);border-radius:18px;
+  box-shadow:0 12px 40px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.1);overflow:hidden;display:flex;flex-direction:column;min-height:560px}
+.rhead{display:flex;align-items:center;gap:10px;padding:12px 14px 8px;flex-wrap:wrap}
+.rhead b{font-size:15.5px}
+.rsearch{flex:1;min-width:160px;display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.08);border-radius:999px;padding:6px 14px;margin:0}
+.rsearch input{flex:1;min-width:0;border:0;outline:0;background:none;color:inherit;font:inherit;padding:0;width:auto}
+.rgo{width:auto;flex:none;border:0;border-radius:999px;padding:7px 14px;font:inherit;font-weight:700;color:#fff;cursor:pointer;background:rgba(255,255,255,.12)}
+.rreads{display:flex;gap:6px 14px;flex-wrap:wrap;padding:0 14px 8px;font-size:12.5px;color:rgba(235,235,245,.65)}
+.rbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 14px 10px}
+.rchip{width:auto;border:0;background:rgba(255,255,255,.08);color:#f3f3f7;border-radius:999px;padding:5px 12px;font:inherit;font-size:12.5px;font-weight:400;cursor:pointer}
+.rchip.on{background:rgba(195,20,65,.35);box-shadow:inset 0 0 0 1px #e0457b}
+.rcount{margin-left:auto;font-size:12.5px;color:rgba(235,235,245,.5)}
+.rbody{flex:1;overflow:auto;padding:0 14px 14px}
+.rbody .rnote{color:rgba(235,235,245,.6)}
+.rtable{width:100%;border-collapse:collapse;font-size:13.5px}
+.rtable th{position:sticky;top:0;background:#20212c;text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:rgba(235,235,245,.6);
+  padding:8px 10px;cursor:pointer;white-space:nowrap;font-weight:600;border:0}
+.rtable td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.08);white-space:nowrap;color:#f3f3f7}
 .rtable td.n{text-align:right;font-variant-numeric:tabular-nums}
-.rtable td.CE{color:#c2410c;font-weight:700}.rtable td.MM{color:var(--accent);font-weight:700}
-.rtable tr.left td{opacity:.5}
-.dim{color:var(--muted)}
+.rtable .rdim,.rapp .rdim{color:rgba(235,235,245,.45)}
+.rtable tr.left td{opacity:.45}
+.rtable td.CE{color:#ff9f6b;font-weight:700}.rtable td.MM{color:#9ec5ff;font-weight:700}
+.rtag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;background:#3a3a3a;color:#ddd}
+.rtag.t698N{background:#22324f;color:#9ec5ff}.rtag.t698S{background:#3b2340;color:#e9a8ff}.rtag.t698W{background:#203d33;color:#7ee2a8}.rtag.t698C{background:#45321b;color:#ffc078}
+.rdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#7ee2a8;margin-right:6px}
+.rfoot{font-size:12px;color:rgba(235,235,245,.45);padding:0 14px 12px}
+.rfoot a{color:#9ec5ff}
+@media (max-width:640px){.rapp .hs{display:none}.rapp{border-radius:14px}}
 </style>
 </head>
 <body>
@@ -383,20 +399,20 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 </section>
 </div>
 
-<!-- Alliance roster: what the 2698 Data Extractor bookmark has read in the game (roster.js) -->
+<!-- Alliance roster: what the 2698 Data Extractor bookmark has read in the game (roster.js), in the
+     bookmark's own look: a dark panel, whichever theme the page is in -->
 <div id="tab-roster" class="hide">
-<section>
-  <h2>Alliance roster</h2>
-  <div class="note" id="rosterReads" style="margin:0 0 10px"></div>
-  <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
-    <input id="rosterQ" type="text" placeholder="Search a name" autocomplete="off" style="flex:1;min-width:160px">
-    <button type="button" class="ghost" id="rosterReload" style="width:auto;flex:none">Reload</button>
+<div class="rapp">
+  <div class="rhead"><b>Alliance roster</b>
+    <label class="rsearch"><span aria-hidden="true">🔍</span><input id="rosterQ" type="text" placeholder="Search a name" autocomplete="off"></label>
+    <button type="button" class="rgo" id="rosterReload">Reload</button>
   </div>
-  <div id="rosterChips" style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0"></div>
-  <div id="rosterView"></div>
-  <p class="note" style="margin-top:10px">Updated by the <a href="extractor.html">2698 Data Extractor</a> bookmark: each time an alliance is read in the game,
-    its rows here are updated. Players no longer in the alliance stay, marked Left.</p>
-</section>
+  <div class="rreads" id="rosterReads"></div>
+  <div class="rbar" id="rosterChips"></div>
+  <div class="rbody" id="rosterView"></div>
+  <div class="rfoot">Updated by the <a href="extractor.html">2698 Data Extractor</a> bookmark: each time an alliance is read in the game,
+    its rows here are updated. Players no longer in the alliance stay, marked Left.</div>
+</div>
 </div>
 </div>
 
@@ -2659,7 +2675,7 @@ loadSetup();
 </script>
 <script src="cp.js?v=2"></script>
 <!-- the Alliance roster view -->
-<script src="roster.js?v=2"></script>
+<script src="roster.js?v=3"></script>
 <!-- Kartz: decoding the recording, then packing and reading it -->
 <script src="decode.js?v=4"></script>
 <script src="kartz.js?v=5"></script>

@@ -32,28 +32,27 @@
     const box = $('rosterView');
     if (!box) return;
     const q = fold($('rosterQ').value), now = Date.now() / 1000;
-    $('rosterReads').innerHTML = ALLIANCES.map(a => `<span class="rtag t${a}">${a}</span> ${R.reads[a] ? 'read ' + ago(R.reads[a]) : '<span class="dim">not read yet</span>'}`).join(' &nbsp;·&nbsp; ');
+    $('rosterReads').innerHTML = ALLIANCES.map(a => `<span><span class="rtag t${a}">${a}</span> ${R.reads[a] ? 'read ' + ago(R.reads[a]) : '<span class="rdim">not read yet</span>'}</span>`).join('');
+    const rows = (R.rows || []).filter(r => (!q || fold(r.name).includes(q) || fold(r.search).includes(q))
+      && (!R.ally || r.alliance === R.ally) && (!R.cls || r.cls === R.cls) && (!R.away || now - r.last > 3 * 86400));
     $('rosterChips').innerHTML =
       ['', ...ALLIANCES].map(a => `<button type="button" class="rchip ${R.ally === a ? 'on' : ''}" data-a="${a}">${a || 'All alliances'}</button>`).join('') +
       ['CE', 'MM'].map(c => `<button type="button" class="rchip ${R.cls === c ? 'on' : ''}" data-c="${c}">${c}</button>`).join('') +
-      `<button type="button" class="rchip ${R.away ? 'on' : ''}" data-w="1">Away 3+ days</button>`;
-    if (R.err) { box.innerHTML = `<p class="note">${esc(R.err)}</p>`; return; }
-    if (!R.rows) { box.innerHTML = '<p class="note">Loading…</p>'; return; }
-    if (!R.rows.length) { box.innerHTML = '<p class="note">Nothing yet. Read an alliance with the 2698 Data Extractor bookmark in the game, and its members appear here.</p>'; return; }
-    const rows = R.rows.filter(r => (!q || fold(r.name).includes(q) || fold(r.search).includes(q))
-      && (!R.ally || r.alliance === R.ally) && (!R.cls || r.cls === R.cls)
-      && (!R.away || now - r.last > 3 * 86400));
+      `<button type="button" class="rchip ${R.away ? 'on' : ''}" data-w="1">Away 3+ days</button>` +
+      (R.rows ? `<span class="rcount">${rows.length} of ${R.rows.length} players</span>` : '');
+    if (R.err) { box.innerHTML = `<p class="rnote">${esc(R.err)}</p>`; return; }
+    if (!R.rows) { box.innerHTML = '<p class="rnote">Loading…</p>'; return; }
+    if (!R.rows.length) { box.innerHTML = '<p class="rnote">Nothing yet. Read an alliance with the 2698 Data Extractor bookmark in the game, and its members appear here.</p>'; return; }
     const k = R.sort, dir = R.asc ? 1 : -1, text = ['name', 'alliance', 'cls', 'status'].includes(k);
     rows.sort((a, b) => text ? String(a[k]).localeCompare(String(b[k])) * dir : ((a[k] || 0) - (b[k] || 0)) * dir);
-    const cols = [['name', 'Name'], ['alliance', 'Alliance'], ['rank', 'Rank'], ['power', 'Power'], ['cls', 'MM/CE'], ['join', 'Joined'], ['last', 'Last online'], ['status', 'Status']];
-    box.innerHTML = `<div class="note" style="margin:0 0 8px">${rows.length} of ${R.rows.length} players</div>
-      <div class="tablewrap"><table class="rtable"><thead><tr>${cols.map(([c, l]) => `<th data-k="${c}">${l}${R.sort === c ? (R.asc ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead>
+    const cols = [['name', 'Name'], ['alliance', 'Alliance'], ['rank', 'Rank'], ['power', 'Power'], ['cls', 'MM/CE'], ['join', 'Joined', 'hs'], ['last', 'Last online'], ['status', 'Status', 'hs']];
+    box.innerHTML = `<table class="rtable"><thead><tr>${cols.map(([c, l, h]) => `<th class="${h || ''}" data-k="${c}">${l}${R.sort === c ? (R.asc ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead>
       <tbody>${rows.map(r => `<tr class="${r.status === 'Left' ? 'left' : ''}">
-        <td>${esc(r.name)}${r.search && r.search !== r.name ? ` <span class="dim">(${esc(r.search)})</span>` : ''}</td>
+        <td>${esc(r.name)}${r.search && r.search !== r.name ? ` <span class="rdim">(${esc(r.search)})</span>` : ''}</td>
         <td><span class="rtag t${r.alliance}">${r.alliance}</span></td><td>${rankText(r.rank)}</td>
-        <td class="n">${r.power ? (r.power / 1e6).toFixed(1) + 'M' : ''}</td><td class="${r.cls}">${r.cls || '<span class="dim">—</span>'}</td>
-        <td>${day(r.join)}</td><td>${r.online ? 'now' : ago(r.last * 1000)}</td>
-        <td>${r.status === 'Left' ? `Left ${day(r.leftAt / 1000)}` : 'Active'}</td></tr>`).join('')}</tbody></table></div>`;
+        <td class="n">${r.power ? (r.power / 1e6).toFixed(1) + 'M' : ''}</td><td class="${r.cls || 'rdim'}">${r.cls || '—'}</td>
+        <td class="hs">${day(r.join)}</td><td>${r.online ? '<span class="rdot"></span>now' : ago(r.last * 1000)}</td>
+        <td class="hs">${r.status === 'Left' ? `Left ${day(r.leftAt / 1000)}` : 'Active'}</td></tr>`).join('')}</tbody></table>`;
     box.querySelectorAll('th').forEach(th => th.onclick = () => { const c = th.dataset.k; R.asc = R.sort === c ? !R.asc : c === 'name'; R.sort = c; draw(); });
   }
 
