@@ -6,6 +6,8 @@
  *     the game has it, and closed again. MM/CE comes from the Alliance Rosters sheet (api/roster-class).
  *   Whitebeard ranking: opened with the event's own Ranking call, every page loaded the way scrolling
  *     to the end loads it, then sent like the Whitebeard bookmark (api/game-ranking).
+ *   Snow Train: the Snow Train screen opened as its building opens it, then its own Our Defence button;
+ *     sent to SS P2 Snow Train (api/game-snowtrain).
  * The panel is buttons only. Each alliance read updates the site's Alliance roster card
  * (api/roster-update) and each Whitebeard read the site's Whitebeard card (api/wb-update).
  * Nothing here sends anything to the game: the game makes its own usual requests for what it opens.
@@ -136,17 +138,36 @@
     return { title: title, want: want, rows: rows };
   }
 
-  // the Snow Train's Unit Details: read from the window you have open (it needs the train you chose,
-  // so it is not opened from here). The game loads the whole list when the window opens.
-  async function readSnowTrain() {
-    var panel = null;
-    for (var t0 = Date.now(); Date.now() - t0 < 3000; await wait(200)) {
-      panel = findComp(function (c) { return /TrainTroopsInfoPanel$/.test(c.__classname__ || '') && Array.isArray(c._infoList); });
-      if (panel && panel._infoList.length) break;
+  // the Snow Train's Unit Details, as the Snow Train building opens them: the Snow Train screen
+  // (OpenUI(CQ26TransportMainPanel), what tapping the building runs), then its own Our Defence button
+  // (the current train, or the last one), read, and both closed again. A Unit Details window already
+  // open is read as it is and left open. The game loads the whole list when the window opens.
+  var troopsPanel = function () { return findComp(function (c) { return /TrainTroopsInfoPanel$/.test(c.__classname__ || '') && Array.isArray(c._infoList); }); };
+  var trainScreen = function () { return findComp(function (c) { return c.__classname__ === 'CQ26TransportMainContent'; }); };
+  async function readSnowTrain(step) {
+    var panel = troopsPanel(), opened = [];
+    if (!panel || !panel._infoList.length) {
+      var U = ui(), WS = win('CQ26TransportMainPanel'), WT = win('CQ26TrainTroopsInfoPanel');
+      if (!U || !WS || !WT) throw new Error('no Snow Train in the game right now');
+      var screen = trainScreen();
+      if (!screen) { step('Opening the Snow Train…', .1); U.OpenUI(WS); opened.push(WS); }
+      for (var t0 = Date.now(); Date.now() - t0 < 12000; await wait(200)) {
+        screen = trainScreen();
+        if (screen && screen._data && (screen._data.curTrain || screen._data.lastTrain)) break;
+        screen = null;
+      }
+      if (!screen) { opened.forEach(function (w) { try { U.CloseUI(w); } catch (e) {} }); throw new Error('the Snow Train did not load — is the event running?'); }
+      await wait(between(400, 900));                     // a person's pause before tapping Our Defence
+      step('Opening Our Defence…', .3);
+      screen.onClickOurDefence(); opened.unshift(WT);
+      for (var t1 = Date.now(); Date.now() - t1 < 12000; await wait(200)) { panel = troopsPanel(); if (panel && panel._infoList.length) break; panel = null; }
+      await wait(400);                                   // let a late page of the list arrive, if any
     }
-    if (!panel) throw new Error('Open a Snow Train\'s Unit Details window first, then tap Read.');
-    if (!panel._infoList.length) throw new Error('The Unit Details list is empty.');
-    return panel._infoList.map(function (e) {
+    var close = function () { opened.forEach(function (w) { try { U.CloseUI(w); } catch (e) {} }); };
+    if (!panel) { close(); throw new Error('the Unit Details did not load'); }
+    var list = panel._infoList.slice();
+    close();
+    return list.map(function (e) {
       var p = parse(e.playerInfo);
       return { uid: String(e.uid || ''), name: String(p.username || p.nickname || ''), ally: String(e.aTag || ''), power: Number(e.power) || 0,
                type: marchType(e.armys) };
@@ -333,7 +354,7 @@
     '<h3>Whitebeard ranking</h3><select id="who"><option value="ALL4">698N, W, S, C</option><option value="OTHER">Other</option></select>' +
     '<div class="row2">' + act('wb', 'main', 'Read', 'Loads every rank') + act('wbs', 'send', 'Send to sheet', 'Read it first') + '</div>' +
     '<h3>Snow Train</h3>' +
-    '<div class="row2">' + act('snow', 'main', 'Read', 'Open Unit Details first') + act('snows', 'send', 'Send to sheet', 'Read it first') + '</div>' +
+    '<div class="row2">' + act('snow', 'main', 'Read', 'Opens Our Defence') + act('snows', 'send', 'Send to sheet', 'Read it first') + '</div>' +
     '<div class="status idle" id="st"><span class="si"></span><span class="tx">Ready. Tap a button to start.</span></div></div>';
   document.body.appendChild(host);
   var $ = function (s) { return root.querySelector(s); };
@@ -430,7 +451,7 @@
     if (!wb.classList.contains('busy') && !wb.classList.contains('err')) sub(wb, V.wb ? V.wb.rows.length + ' players · ' + ago(V.wb.at / 1000) : 'Loads every rank');
     if (!wbs.classList.contains('busy')) { wbs.classList.remove('done'); sub(wbs, V.wb ? wbChosen().length + ' players ready' : 'Read it first'); }
     var stb = $('#snow'), sts = $('#snows');
-    if (!stb.classList.contains('busy') && !stb.classList.contains('err')) sub(stb, S.st ? S.st.rows.length + ' players · ' + ago(S.st.at / 1000) : 'Open Unit Details first');
+    if (!stb.classList.contains('busy') && !stb.classList.contains('err')) sub(stb, S.st ? S.st.rows.length + ' players · ' + ago(S.st.at / 1000) : 'Opens Our Defence');
     if (!sts.classList.contains('busy') && !sts.classList.contains('done')) sub(sts, S.st ? S.st.rows.length + ' players ready' : 'Read it first');
   }
 
@@ -584,10 +605,10 @@
      March CP, Unit Type, Alliance; the four alliances first, then everyone else */
   $('#snow').onclick = async function () {
     if (busy) return; lock(true);
-    var b = $('#snow'); start(b); sub(b, 'reading…');
-    status('work', 'Reading the Unit Details…', .3); setP(b, .3);
+    var b = $('#snow'); start(b); sub(b, 'opening…');
     try {
-      var rows = await readSnowTrain();
+      var rows = await readSnowTrain(function (t, p) { status('work', t, p); setP(b, p); });
+      status('work', 'Read <b>' + rows.length + '</b> players', .5);
       S.st = { at: Date.now(), rows: rows }; save(); $('#snows').classList.remove('done');
       setP(b, .6); sub(b, 'saving…');
       status('work', 'Updating the Snow Train card…', .7);
@@ -608,7 +629,7 @@
   $('#snows').onclick = async function () {
     if (busy) return;
     var b = $('#snows');
-    if (!S.st) return nudge(b, 'Nothing to send yet<small>Open a Snow Train\'s Unit Details and tap Read first.</small>');
+    if (!S.st) return nudge(b, 'Nothing to send yet<small>Tap Read first.</small>');
     var order = function (t) { return MAIN.indexOf(t) >= 0 ? MAIN.indexOf(t) : 99; };
     var rows = S.st.rows.slice().sort(function (a, c) { return order(a.ally) - order(c.ally) || a.ally.localeCompare(c.ally) || c.power - a.power; })
       .map(function (r) { return [r.name.slice(0, 80), Math.round(r.power / 1e6) + 'M', r.ally.slice(0, 20), r.type || '']; });   // 256,158,825 → 256M
