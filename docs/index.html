@@ -15,7 +15,7 @@
 try { const t = JSON.parse(localStorage.getItem('kartz.theme'));
       if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
 // No #kartz or #cp in the address: the home page, shown from the first paint (cp.js takes over).
-if (!/^#(kartz|cp|roster|whitebeard|snowtrain)$/.test(location.hash)) document.documentElement.classList.add('athome');
+if (!/^#(kartz|cp|roster|whitebeard|snowtrain|admin)$/.test(location.hash)) document.documentElement.classList.add('athome');
 </script>
 <style>
 /* Light by default, dark when the device prefers it — unless the toggle by the title has chosen,
@@ -171,19 +171,19 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 #home{margin:-16px -16px 0}
 .athome #home{display:block}
 .athome #app{display:none}
-.homeband{position:relative;overflow:hidden;padding:56px 16px 0;
+.homeband{position:relative;overflow:hidden;height:150px;display:grid;place-items:center;padding:0 56px;
   background:linear-gradient(180deg,#fff3e2 0%,#fcd9b8 50%,#f6a98b 100%)}
 :root[data-theme="dark"] .homeband{background:linear-gradient(180deg,#3a1d2c,#6e2c3a 55%,#b9524a)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .homeband{background:linear-gradient(180deg,#3a1d2c,#6e2c3a 55%,#b9524a)}}
 .homeband .themebtn{position:absolute;top:16px;right:max(16px, env(safe-area-inset-right));color:#2a1024;border-color:rgba(42,16,36,.25)}
 :root[data-theme="dark"] .homeband .themebtn{color:#fff;border-color:rgba(255,255,255,.35)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .homeband .themebtn{color:#fff;border-color:rgba(255,255,255,.35)}}
-.pepe{position:relative;width:300px;max-width:72vw;aspect-ratio:500/499;margin:0 auto}
-/* the sign's board is see-through in the picture; the logo sits behind it, trimmed top and
-   bottom so that both SERVER and 2698 show */
-.pepe .sign{position:absolute;left:.8%;top:2%;width:98.4%;height:44.5%;overflow:hidden;background:#2a1024}
-.pepe .sign img{width:100%;height:100%;object-fit:cover;object-position:50% 36%;display:block}
-.pepe .frog{position:relative;width:100%;height:100%;display:block}
+/* "2698" written by a glowing pen; the script is under the banner markup */
+.pen2698{height:92%;width:min(520px,100%);overflow:visible}
+.pen2698 path{fill:none;stroke:#fff4f8;stroke-width:9;stroke-linecap:round;stroke-linejoin:round}
+.pen2698 .ink{filter:drop-shadow(0 0 4px #fff) drop-shadow(0 0 10px #ff5c9a) drop-shadow(0 0 22px #c31441)}
+.pen2698 circle{fill:#fff;opacity:0;filter:drop-shadow(0 0 8px #fff) drop-shadow(0 0 16px #ff5c9a)}
+@media (max-width:640px){.homeband{height:120px;padding:0 48px}}
 .homebody{padding:0 16px 64px}
 .hometitle{font-size:24px;letter-spacing:-.3px;margin:18px 0 14px}
 .homecards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -205,9 +205,9 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .hcard.st{background:linear-gradient(135deg,#0b4f6c,#1789a8 55%,#5cc6d6)}
 .hcard.st .go{color:#0b4f6c}
 .hcard .open{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.55);color:#fff}
-/* ---------------- alliance roster (roster.js) ---------------- */
+/* ---------------- alliance roster, Whitebeard and Snow Train cards (cards.js) ---------------- */
 /* The bookmark's panel (extractor.js), as the roster card: dark in both themes, like the game. */
-.rapp{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f3f3f7;background:rgba(22,22,30,.97);border-radius:18px;
+.rapp{color-scheme:dark;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f3f3f7;background:rgba(22,22,30,.97);border-radius:18px;
   box-shadow:0 12px 40px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.1);overflow:hidden;display:flex;flex-direction:column;min-height:560px}
 .rhead{display:flex;align-items:center;gap:10px;padding:12px 14px 8px;flex-wrap:wrap}
 .rhead b{font-size:15.5px}
@@ -235,7 +235,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .rfoot{font-size:12px;color:rgba(235,235,245,.45);padding:0 14px 12px}
 .rfoot a{color:#9ec5ff}
 @media (max-width:640px){.rapp .hs{display:none}.rapp{border-radius:14px}}
-/* the Whitebeard card (wb.js): a column per day, the name kept in view when the days scroll sideways */
+/* the cards (cards.js): a column per day, the name kept in view when the days scroll sideways */
 .wbtable{border-collapse:separate;border-spacing:0;min-width:100%;width:auto}
 .wbtable th.d{text-align:right}
 .wbtable td{background:#1a1a23}
@@ -243,6 +243,116 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .wbtable th:first-child{z-index:3}
 .wbtable td:first-child{box-shadow:1px 0 0 rgba(255,255,255,.08)}
 .wbtable .yes{color:#7ee2a8;font-weight:700}
+.wbtable .dedit{width:auto;border:0;background:none;color:rgba(235,235,245,.4);font-size:12px;padding:0 0 0 6px;cursor:pointer}
+.wbtable .dedit:hover{color:#fff}
+/* ---------------- admin (admin.js, cards.js) ---------------- */
+/* the pill: beside the theme button in the header, and in the home banner */
+.apill{display:flex;flex:none;border-radius:999px;overflow:hidden;border:1px solid var(--line);background:var(--panel)}
+.top .apill{margin-left:auto}
+.top{gap:10px}
+.homeband .apill{position:absolute;top:16px;right:calc(max(16px, env(safe-area-inset-right)) + 44px);z-index:2;background:rgba(255,255,255,.55);border-color:rgba(42,16,36,.25)}
+:root[data-theme="dark"] .homeband .apill{background:rgba(0,0,0,.25);border-color:rgba(255,255,255,.35)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .homeband .apill{background:rgba(0,0,0,.25);border-color:rgba(255,255,255,.35)}}
+.apill button{width:auto;display:flex;align-items:center;gap:6px;border:0;border-radius:0;background:none;color:var(--ink);padding:6px 12px;font-size:13px;font-weight:600;line-height:20px}
+.homeband .apill button{color:#2a1024}
+:root[data-theme="dark"] .homeband .apill button{color:#fff}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .homeband .apill button{color:#fff}}
+.apill svg{width:15px;height:15px}
+.apill.on,.homeband .apill.on{background:linear-gradient(135deg,#c31441,#e0457b);border-color:transparent;box-shadow:0 4px 16px rgba(195,20,65,.35)}
+.apill.on button,.homeband .apill.on button{color:#fff}
+.apill .x{border-left:1px solid rgba(255,255,255,.4);font-weight:500;opacity:.9}
+.hcard[hidden]{display:none}
+/* toast, dialogs, menus */
+.atoast{position:fixed;left:50%;bottom:max(20px, env(safe-area-inset-bottom));z-index:95;transform:translate(-50%,20px);opacity:0;pointer-events:none;max-width:calc(100vw - 32px);
+  background:#20212c;color:#fff;border-radius:999px;padding:8px 8px 8px 16px;font-size:13.5px;display:flex;gap:10px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.3);transition:.25s}
+.atoast span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.atoast.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.atoast button{width:auto;flex:none;border:0;background:rgba(255,255,255,.16);color:#fff;border-radius:999px;padding:4px 12px;font-size:12.5px;font-weight:700}
+.ascrim{position:fixed;inset:0;z-index:90;background:rgba(5,6,10,.55);backdrop-filter:blur(3px);display:grid;place-items:center;padding:16px;animation:afade .15s}
+.amodal{width:min(440px,100%);max-height:88vh;overflow:auto;background:var(--panel);color:var(--ink);border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.35);animation:arise .2s cubic-bezier(.2,.9,.3,1.2)}
+.amodal.wide{width:min(620px,100%)}
+.amodal h3{margin:0 0 4px;font-size:17px}
+.amodal p{margin:0 0 12px;color:var(--muted);font-size:13.5px}
+.amodal label{display:grid;gap:4px;margin:10px 0}
+.amodal select[size]{padding:4px}
+.amodal.shake{animation:ashake .35s}
+.alock{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,#c31441,#e0457b);color:#fff;margin-bottom:10px}
+.alock svg{width:22px;height:22px}
+.aerr{color:var(--bad);font-size:13px;min-height:1.2em;margin:4px 0 0}
+.arow{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.abtn{width:auto;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:transparent;color:var(--ink);border-radius:10px;padding:8px 14px;font-weight:600;text-decoration:none;cursor:pointer;white-space:nowrap}
+.abtn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+.abtn.danger{background:var(--bad);border-color:var(--bad);color:#fff}
+.abtn.sm{padding:4px 10px;font-size:12.5px;border-radius:8px}
+.abtn:disabled{opacity:.4;cursor:default}
+.acheck{display:flex!important;align-items:center;gap:8px;color:var(--ink);font-size:13.5px;margin:10px 0}
+.acheck input,.ali input[type=checkbox]{width:auto;flex:none}
+.agridw{overflow:auto}
+.agrid{width:100%;border-collapse:collapse;font-size:13px}
+.agrid th,.agrid td{padding:4px 5px;border-bottom:1px solid var(--line);text-align:left}
+.agrid input{padding:5px 7px;min-width:70px}
+.apop{position:absolute;z-index:80;min-width:210px;display:grid;gap:2px;padding:6px;border-radius:12px;background:#20212c;color:#f3f3f7;box-shadow:0 12px 30px rgba(0,0,0,.4);font-size:13.5px}
+.apop button{width:100%;text-align:left;border:0;background:none;color:inherit;font-weight:400;padding:7px 10px;border-radius:8px}
+.apop button:hover{background:rgba(255,255,255,.1)}
+.apop button.danger{color:#ff9b9b}
+.apop hr{border:0;border-top:1px solid rgba(255,255,255,.1);margin:4px 0}
+@keyframes afade{from{opacity:0}}
+@keyframes arise{from{opacity:0;transform:translateY(12px) scale(.97)}}
+@keyframes ashake{20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+/* the cards in admin mode */
+.rapp.admin{box-shadow:0 12px 40px rgba(0,0,0,.25),inset 0 0 0 2px rgba(224,69,123,.55)}
+.radm{display:contents}
+.rgo.pink{background:#c31441}
+.rgo.danger{background:#8d2a2a}
+.rgo:disabled{opacity:.4;cursor:default}
+.rgo.mini{padding:2px 9px;font-size:11.5px;font-weight:600;margin-left:4px}
+.rbulk{display:none;gap:8px;align-items:center;flex-wrap:wrap;margin:0 14px 10px;padding:8px 12px;border-radius:12px;background:rgba(195,20,65,.2);font-size:13px}
+.rbulk.on{display:flex}
+.rbulk select{width:auto;background:rgba(255,255,255,.1);color:#fff;border:0;border-radius:8px;padding:5px 8px;color-scheme:dark}
+.rtable tr.sel td{background:#2a1c26}
+.rtable tr.flash td{animation:aflash 2s}
+@keyframes aflash{from{background:#5a2440}}
+.rtable td.ed{cursor:text}
+.rtable td.ed:hover{box-shadow:inset 0 0 0 1px rgba(224,69,123,.75);border-radius:6px}
+.rtable td.nm.ed:hover{box-shadow:inset 0 0 0 1px rgba(224,69,123,.75),1px 0 0 rgba(255,255,255,.08)}
+.rtable td.tog{cursor:pointer}
+.rtable td.tog:hover{background:#262636}
+.rsel{width:16px!important;height:16px;margin:0 8px 0 0;vertical-align:-3px;accent-color:#e0457b;cursor:pointer}
+.rdots{width:auto;border:0;background:none;color:rgba(235,235,245,.45);font-size:15px;padding:0 4px;margin-left:4px;cursor:pointer;line-height:1}
+.rdots:hover{color:#fff}
+.cellin{width:100%;min-width:80px;background:#000;color:#fff;border:1px solid #e0457b;border-radius:6px;padding:3px 6px;font:inherit;color-scheme:dark}
+.gamef{color:#ffc078;font-size:11px;margin-left:3px;cursor:help}
+.radmnote{color:#f0a3c0!important}
+/* the admin page */
+#tab-admin{padding-bottom:40px}
+.atabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.atabs .rchip{width:auto;background:var(--panel);color:var(--ink);border:1px solid var(--line);font-size:13.5px;padding:6px 14px}
+.atabs .rchip.on{background:#c31441;border-color:#c31441;color:#fff;box-shadow:none}
+.apanel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+.apanel h2{margin:0 0 10px}
+.apanel .asub{margin-top:18px}
+.ahint{font-size:12.5px;color:var(--muted);margin:-4px 0 10px}
+.ahint a{color:var(--accent)}
+.alist{display:grid;gap:7px}
+.ali{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ali input[type=text],.ali input[type=url],.ali select{flex:1;min-width:120px;width:auto;padding:6px 9px}
+.ali .short{flex:.6}
+.ali .long{flex:2;min-width:200px}
+.alab{width:110px;flex:none;font-size:13.5px}
+.acols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.acols .apanel{margin:0}
+.asheet{border-bottom:1px solid var(--line);padding-bottom:10px;display:grid;gap:6px}
+.asheet:last-child{border:0}
+.asheet b{font-size:13.5px}
+.asheet .aerr{margin:0;min-height:0}
+.alog{display:grid;gap:6px}
+.alogi{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:10px;font-size:13.5px}
+.alogi time{color:var(--muted);font-size:12px;white-space:nowrap;min-width:92px;padding-top:2px}
+.awhat{flex:1;min-width:0;overflow-wrap:anywhere}
+.aov{color:var(--muted);font-size:12.5px}
+.aov s{color:var(--bad)}.aov ins{color:var(--ok);text-decoration:none}
+@media (max-width:640px){.alab{width:100%}.alogi{flex-wrap:wrap}.alogi time{min-width:0}
+  .homeband .apill{top:12px}.homeband .apill button{padding:6px 9px}.homeband .apill .t{display:none}}
 .unit{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700}
 .unit.uArmy{background:#3d3420;color:#e8c77a}.unit.uNavy{background:#1c3550;color:#8cc4ff}.unit.uAirForce{background:#2c2347;color:#c3a6ff}
 </style>
@@ -252,25 +362,81 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 <div id="home" class="hide">
   <div class="homeband">
     <button type="button" class="themebtn" id="themeHome"></button>
-    <div class="pepe">
-      <div class="sign"><img src="icon.png" alt="Server 2698"></div>
-      <img class="frog" src="pepe-sign.png" alt="">
-    </div>
+    <svg class="pen2698" id="pen2698" viewBox="0 0 520 160" role="img" aria-label="2698"></svg>
   </div>
   <div class="homebody wrap">
     <h1 class="hometitle">2698 Data Extractor</h1>
     <div class="homecards">
-      <div class="hcard"><b>Kartz ranking</b>
+      <div class="hcard" data-card="kartz"><b>Kartz ranking</b>
         <div class="acts"><a class="go" href="#kartz">Extract</a><a class="open" href="https://docs.google.com/spreadsheets/d/1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE/edit#gid=1243524383" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
-      <div class="hcard cp"><b>Alliance roster</b>
+      <div class="hcard cp" data-card="cp"><b>Alliance roster</b>
         <div class="acts"><a class="go" href="#roster">Open</a><a class="open" href="https://docs.google.com/spreadsheets/d/1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8/edit" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
-      <div class="hcard wb"><b>Whitebeard ranking</b>
+      <div class="hcard wb" data-card="wb"><b>Whitebeard ranking</b>
         <div class="acts"><a class="go" href="#whitebeard">Open</a><a class="open" href="https://docs.google.com/spreadsheets/d/12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc/edit#gid=0" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
-      <div class="hcard st"><b>Snow Train</b>
+      <div class="hcard st" data-card="st"><b>Snow Train</b>
         <div class="acts"><a class="go" href="#snowtrain">Open</a><a class="open" href="https://docs.google.com/spreadsheets/d/1d2jgRQlfhYMufn69YaZ-2ZPQ-lGtfvSiOPDTEplUqGs/edit#gid=0" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
     </div>
   </div>
 </div>
+
+<script>
+// The banner's "2698", written by a glowing pen: each digit is the one line a hand draws (in a
+// 100 × 140 box, in writing order), slanted like handwriting, drawn with the pen tip following it.
+// Written each time the home page is shown. The digits can be changed in the admin view (Home page);
+// the last ones set are kept in this browser so the right ones are written straight away.
+(function () {
+  const NS = 'http://www.w3.org/2000/svg', svg = document.getElementById('pen2698');
+  const DIGITS = {
+    2: 'M 16 46 C 16 18, 54 6, 68 28 C 80 48, 62 70, 44 88 C 30 102, 16 116, 10 128 C 26 118, 40 114, 54 121 C 66 127, 78 128, 90 116',
+    6: 'M 78 16 C 58 18, 30 42, 22 76 C 14 108, 30 130, 52 128 C 74 126, 82 100, 68 88 C 54 76, 30 82, 24 104',
+    9: 'M 74 40 C 66 18, 32 20, 28 44 C 24 66, 50 74, 66 58 C 74 50, 76 40, 74 32 C 76 62, 66 100, 52 120 C 42 134, 26 134, 18 124',
+    8: 'M 72 30 C 68 12, 30 12, 30 36 C 30 58, 74 68, 74 96 C 74 124, 30 130, 26 104 C 22 82, 50 72, 62 58 C 72 46, 76 38, 72 30',
+    0: 'M 58 16 C 30 14, 18 50, 20 82 C 22 112, 36 130, 54 128 C 76 126, 84 92, 82 62 C 80 34, 70 16, 52 20',
+    1: 'M 32 40 C 44 32, 54 22, 62 14 C 60 52, 58 90, 56 128',
+    3: 'M 20 34 C 30 12, 72 10, 74 36 C 76 58, 54 66, 40 68 C 62 68, 82 82, 80 104 C 78 128, 40 136, 16 116',
+    4: 'M 58 14 C 44 42, 28 70, 12 96 C 40 95, 66 94, 92 92 M 68 46 C 66 74, 64 102, 62 130',
+    5: 'M 78 16 C 62 16, 46 16, 32 18 C 30 38, 28 54, 26 66 C 44 56, 74 58, 80 88 C 86 120, 48 136, 18 120',
+    7: 'M 14 20 C 40 18, 66 18, 88 16 C 70 50, 52 88, 40 128',
+  };
+  try { window.penText = JSON.parse(localStorage.getItem('site.settings')).home.banner; } catch {}
+  let run = 0;
+  function write() {
+    cancelAnimationFrame(run);
+    svg.textContent = '';
+    const ink = document.createElementNS(NS, 'g'); ink.setAttribute('class', 'ink'); svg.appendChild(ink);
+    const text = /^\d{1,6}$/.test(window.penText || '') ? window.penText : '2698', wide = Math.max(520, text.length * 108 + 88);
+    svg.setAttribute('viewBox', `0 0 ${wide} 160`);
+    const parts = [...text].map((d, k) => {
+      const g = document.createElementNS(NS, 'g');
+      g.setAttribute('transform', `translate(${(wide - text.length * 108) / 2 + 4 + k * 108} 8) skewX(-12)`); ink.appendChild(g);
+      const line = document.createElementNS(NS, 'path'); line.setAttribute('d', DIGITS[d]); g.appendChild(line);
+      const len = line.getTotalLength();
+      line.style.strokeDasharray = len + 1; line.style.strokeDashoffset = len + 1;
+      const nib = document.createElementNS(NS, 'circle'); nib.setAttribute('r', 5.5); g.appendChild(nib);
+      return { line, len, nib };
+    });
+    // ease in and out per digit, time in proportion to its length, a short pen lift between digits
+    const speed = 0.36, lift = 160, plan = []; let t = 300;
+    parts.forEach(p => { const dur = p.len / speed; plan.push({ p, from: t, dur }); t += dur + lift; });
+    const ease = x => x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2, t0 = performance.now();
+    const frame = now => {
+      const el = now - t0;
+      plan.forEach(({ p, from, dur }) => {
+        const f = Math.max(0, Math.min(1, (el - from) / dur)), at = p.len * ease(f), on = f > 0 && f < 1;
+        p.line.style.strokeDashoffset = p.len + 1 - at;
+        p.nib.style.opacity = on ? 1 : 0;
+        if (on) { const pt = p.line.getPointAtLength(at); p.nib.setAttribute('cx', pt.x); p.nib.setAttribute('cy', pt.y); }
+      });
+      if (el < t + 100) run = requestAnimationFrame(frame);
+    };
+    run = requestAnimationFrame(frame);
+  }
+  const atHome = () => !/^#(kartz|cp|roster|whitebeard|snowtrain|admin)$/.test(location.hash);
+  window.penWrite = () => { if (atHome()) write(); };
+  if (atHome()) write();
+  addEventListener('hashchange', () => { if (atHome()) write(); });
+})();
+</script>
 
 <div class="wrap" id="app">
 <header class="top">
@@ -417,7 +583,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 </section>
 </div>
 
-<!-- Alliance roster: what the 2698 Data Extractor bookmark has read in the game (roster.js), in the
+<!-- Alliance roster: what the 2698 Data Extractor bookmark has read in the game (cards.js), in the
      bookmark's own look: a dark panel, whichever theme the page is in -->
 <div id="tab-roster" class="hide">
 <div class="rapp">
@@ -428,10 +594,12 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   <div class="rreads" id="rosterReads"></div>
   <div class="rbar" id="rosterChips"></div>
   <div class="rbody" id="rosterView"></div>
+  <div class="rfoot">Updated by the <a href="extractor.html">2698 Data Extractor</a> bookmark: each time an alliance is read in the game,
+    its rows here are updated. Players no longer in the alliance stay, marked Left.</div>
 </div>
 </div>
 
-<!-- Whitebeard ranking: every read the bookmark makes, a column per UTC day (wb.js) -->
+<!-- Whitebeard ranking: every read the bookmark makes, a column per UTC day (cards.js) -->
 <div id="tab-wb" class="hide">
 <div class="rapp">
   <div class="rhead"><b>Whitebeard ranking</b>
@@ -441,10 +609,12 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   <div class="rreads" id="wbReads"></div>
   <div class="rbar" id="wbChips"></div>
   <div class="rbody" id="wbView"></div>
+  <div class="rfoot">Sent by the <a href="extractor.html">2698 Data Extractor</a> bookmark each time it reads the Whitebeard ranking.
+    Each day gets its own column (UTC date); a read on the same day replaces that day's column.</div>
 </div>
 </div>
 
-<!-- Snow Train: every Unit Details read the bookmark makes, a column per UTC day (wb.js) -->
+<!-- Snow Train: every Unit Details read the bookmark makes, a column per UTC day (cards.js) -->
 <div id="tab-st" class="hide">
 <div class="rapp">
   <div class="rhead"><b>Snow Train</b>
@@ -454,7 +624,16 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   <div class="rreads" id="stReads"></div>
   <div class="rbar" id="stChips"></div>
   <div class="rbody" id="stView"></div>
+  <div class="rfoot">Sent by the <a href="extractor.html">2698 Data Extractor</a> bookmark each time it reads a Snow Train's Unit Details:
+    March CP 1, 2 and 3 are each player's best per unit type (what most of the march holds), in the order the types first appeared: a lower number never replaces a higher one of the same type, and a new type gets the next column. Each day (UTC) says whether the player was on a train that day.
+    Several trains read on one day all count for that day.</div>
 </div>
+</div>
+
+<!-- Admin (admin.js): settings, Sheets, backup and History, once unlocked with the pill -->
+<div id="tab-admin" class="hide">
+  <div class="atabs" id="adminTabs"></div>
+  <div id="adminView"></div>
 </div>
 </div>
 
@@ -2715,10 +2894,10 @@ $('toBottom').onclick = () => scrollTo({ top: document.documentElement.scrollHei
 
 loadSetup();
 </script>
-<script src="cp.js?v=4"></script>
-<!-- the Alliance roster view -->
-<script src="roster.js?v=4"></script>
-<script src="wb.js?v=4"></script>
+<script src="cp.js?v=5"></script>
+<!-- the admin pill and page, then the Alliance roster, Whitebeard and Snow Train cards -->
+<script src="admin.js?v=1"></script>
+<script src="cards.js?v=1"></script>
 <!-- Kartz: decoding the recording, then packing and reading it -->
 <script src="decode.js?v=4"></script>
 <script src="kartz.js?v=5"></script>

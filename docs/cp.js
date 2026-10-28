@@ -14,7 +14,7 @@ let cpSource = '';
 
 /* views */
 // Views on one page: the home page (the address with no #), Kartz (#kartz), the Alliance roster
-// (#roster), the Whitebeard ranking (#whitebeard), the Snow Train (#snowtrain) and Base CP (#cp, no longer on the home page but still there by its address).
+// (#roster), the Whitebeard ranking (#whitebeard), the Snow Train (#snowtrain), the admin page (#admin) and Base CP (#cp, no longer on the home page but still there by its address).
 // The address carries the view, so a link, a reload or the phone's back button lands on the right one.
 function showTab(name) {
   $('home').classList.toggle('hide', name !== 'home');
@@ -24,10 +24,11 @@ function showTab(name) {
   $('tab-roster').classList.toggle('hide', name !== 'roster');
   $('tab-wb').classList.toggle('hide', name !== 'whitebeard');
   $('tab-st').classList.toggle('hide', name !== 'snowtrain');
+  $('tab-admin').classList.toggle('hide', name !== 'admin');
   document.documentElement.classList.remove('athome');
   closeMenu();
 }
-const viewFromAddress = () => ({ '#cp': 'cp', '#kartz': 'kartz', '#roster': 'roster', '#whitebeard': 'whitebeard', '#snowtrain': 'snowtrain' })[location.hash] || 'home';
+const viewFromAddress = () => ({ '#cp': 'cp', '#kartz': 'kartz', '#roster': 'roster', '#whitebeard': 'whitebeard', '#snowtrain': 'snowtrain', '#admin': 'admin' })[location.hash] || 'home';
 function goTo(name) {
   if (name === viewFromAddress()) return;
   if (name === 'home') history.pushState(null, '', location.pathname + location.search);

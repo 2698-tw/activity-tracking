@@ -201,7 +201,7 @@ async function googleToken(env) {
 const asCell = v => typeof v === 'string' && /^[=+\-@]/.test(v) ? "'" + v : v;
 
 async function appendRows(env, values, name = 'kartz') {
-  const target = TARGETS[name];
+  const target = TARGETS[name] && await sheetTarget(env, name);
   if (!target) throw Object.assign(new Error(`Unknown target "${name}".`), { status: 400 });
   if (!Array.isArray(values) || !values.length)
     throw Object.assign(new Error('No rows to append.'), { status: 400 });
@@ -295,14 +295,31 @@ async function sheetsCall(token, method, path, body, target) {
   return out;
 }
 
+// kept per spreadsheet and tab, since the admin view can point a target somewhere else
 const cachedTabs = new Map();
 async function tabTitle(token, target) {
-  if (cachedTabs.has(target)) return cachedTabs.get(target);
+  const key = target.id + ':' + target.gid;
+  if (cachedTabs.has(key)) return cachedTabs.get(key);
   const out = await sheetsCall(token, 'GET', '?fields=sheets.properties(sheetId,title)', null, target);
   const hit = (out.sheets || []).find(t => t.properties?.sheetId === target.gid);
   if (!hit) throw new Error(`No tab with gid ${target.gid} in ${target.book}.`);
-  cachedTabs.set(target, hit.properties.title);
+  cachedTabs.set(key, hit.properties.title);
   return hit.properties.title;
+}
+
+// Where each Send goes: the spreadsheet and tab set in the admin view (Sheets), else the ones above.
+// Columns and checks stay as fixed here.
+const SHEET_BASE = { kartz: TARGETS.kartz, cp: TARGETS.cp, ranking: RANKING, snowtrain: SNOW_TRAIN };
+async function sheetTarget(env, name) {
+  let s = null;
+  try {
+    if (env.ROSTER) {
+      const r = await env.ROSTER.get(env.ROSTER.idFromName('roster')).fetch('https://roster/settings', { method: 'POST', body: '{}' });
+      if (r.ok) s = await r.json();
+    }
+  } catch {}
+  const o = s && s.sheets && s.sheets[name], base = SHEET_BASE[name];
+  return o && o.id ? { ...base, id: o.id, gid: o.gid } : base;
 }
 
 /* ---------------- recordings: Apps Script link, B2 staging ---------------- */
@@ -480,6 +497,25 @@ export default {
     // The Whitebeard card (#whitebeard): each read the extractor makes is kept under its UTC date, so
     // a read on a new day adds a column and another read the same day replaces that day's. Kept in
     // the roster's store; the UIDs it matches players on stay here.
+    // The site's settings (alliances, each card's columns and filters, the home page, where each Send
+    // goes), for every visitor; changed only through the admin view.
+    if (url.pathname.replace(/^\/+/, '') === 'api/settings') {
+      if (!env.ROSTER) return reply(cleanSettings(null), 200);
+      return rosterCall(env, '/settings', null, reply);
+    }
+    // The admin view (docs/admin.js): every change to the cards and the settings, each kept in History
+    // with what it replaced so it can be undone. Only with the shared password (the Worker's SHARED_PASS
+    // secret), sent as x-kartz-pass; a wrong one is answered slowly, to make guessing slow.
+    if (url.pathname.replace(/^\/+/, '') === 'api/admin') {
+      if (!env.SHARED_PASS) return reply({ error: 'No password is set up yet: add a SHARED_PASS secret to the Worker in Cloudflare (Settings → Variables and Secrets).' }, 403);
+      if (!hasPass) { await new Promise(r => setTimeout(r, 800)); return reply({ error: 'Wrong password.' }, 403); }
+      if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
+      const body = await request.text();
+      if (body.length > 16 * 1024 * 1024) return reply({ error: 'Request too large.' }, 413);
+      let b;
+      try { b = JSON.parse(body); } catch { return reply({ error: 'Not JSON.' }, 400); }
+      return rosterCall(env, '/admin', b, reply);
+    }
     // The Snow Train card (#snowtrain) is kept the same way, from the Unit Details reads.
     const dayCard = { 'api/wb-update': '/wb-update', 'api/st-update': '/st-update', 'api/wb': '/wb-list', 'api/st': '/st-list' }[url.pathname.replace(/^\/+/, '')];
     if (dayCard) {
@@ -546,12 +582,12 @@ export default {
     // A ranking list read from the game by the bookmark (docs/bookmark.html): added below the lists
     // already in the Game rankings sheet. The sheet and columns are fixed above.
     // The Snow Train's Unit Details go to their own sheet the same way.
-    const rankingRoute = { 'api/game-ranking': RANKING, 'api/game-snowtrain': SNOW_TRAIN }[url.pathname.replace(/^\/+/, '')];
+    const rankingRoute = { 'api/game-ranking': 'ranking', 'api/game-snowtrain': 'snowtrain' }[url.pathname.replace(/^\/+/, '')];
     if (rankingRoute) {
       const body = await request.text();
       if (body.length > 512 * 1024) return reply({ error: 'Request too large.' }, 413);
       try {
-        return reply(await writeRanking(env, JSON.parse(body).rows, rankingRoute), 200);
+        return reply(await writeRanking(env, JSON.parse(body).rows, await sheetTarget(env, rankingRoute)), 200);
       } catch (e) {
         const status = e.status || (e instanceof SyntaxError ? 400 : 502);
         return reply({ error: String(e && e.message || e) }, status);
@@ -847,6 +883,89 @@ function checkWbRead(b) {
   };
 }
 
+// A Snow Train day's points for a player as { unit type: March CP }; reads kept before unit types were
+// tracked per day hold a bare number, which belongs to the player's unit type then.
+const asTypes = (v, type) => v == null ? {} : typeof v === 'number' ? { [type || '']: v } : { ...v };
+// a player's best March CP per unit type, [[type, cp], …] in the order the types first appeared
+const bestsOf = w => (w.bests || (w.best ? [[w.type || '', w.best]] : [])).map(x => x.slice());
+
+/* ---------------- site settings ---------------- */
+// What the admin view can set besides the cards' rows: the alliances (filter chips), each card's title,
+// columns, default sort and filter and number format, the home page, and where each Send goes. Kept in
+// the store under 'settings'; anything missing or not valid falls back to these.
+const UNIT_TYPES = ['Army', 'Navy', 'Air Force'];
+const col = (k, label) => ({ k, label, show: true });
+const DEFAULT_SETTINGS = {
+  alliances: ['698N', '698S', '698W', '698C'],
+  cards: {
+    wb: { title: 'Whitebeard ranking', sort: 'last', filter: '', fmt: 'full', unitFilters: false,
+          cols: [col('name', 'Name'), col('ally', 'Alliance'), col('@dates', 'Date columns')] },
+    st: { title: 'Snow Train', sort: 'cp1', filter: '', fmt: 'M', unitFilters: true,
+          cols: [col('name', 'Name'), col('cp1', 'March CP 1'), col('u1', 'Unit 1'), col('cp2', 'March CP 2'), col('u2', 'Unit 2'),
+                 col('cp3', 'March CP 3'), col('u3', 'Unit 3'), col('ally', 'Alliance'), col('@dates', 'Date columns')] },
+    ro: { title: 'Alliance roster', sort: 'power', filter: '', fmt: 'M', unitFilters: false,
+          cols: [col('name', 'Name'), col('alliance', 'Alliance'), col('rank', 'Rank'), col('power', 'Power'), col('cls', 'MM/CE'),
+                 col('join', 'Joined'), col('last', 'Last online'), col('status', 'Status')] },
+  },
+  home: { title: '2698 Data Extractor', banner: '2698', cards: [
+    { id: 'kartz', title: 'Kartz ranking', show: true, link: 'https://docs.google.com/spreadsheets/d/1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE/edit#gid=1243524383' },
+    { id: 'cp', title: 'Alliance roster', show: true, link: 'https://docs.google.com/spreadsheets/d/1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8/edit' },
+    { id: 'wb', title: 'Whitebeard ranking', show: true, link: 'https://docs.google.com/spreadsheets/d/12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc/edit#gid=0' },
+    { id: 'st', title: 'Snow Train', show: true, link: 'https://docs.google.com/spreadsheets/d/1d2jgRQlfhYMufn69YaZ-2ZPQ-lGtfvSiOPDTEplUqGs/edit#gid=0' }] },
+  sheets: Object.fromEntries(Object.entries(SHEET_BASE).map(([k, t]) => [k, { id: t.id, gid: t.gid }])),
+};
+// settings as sent, made safe: unknown fields dropped, each value checked, the defaults filling the gaps
+function cleanSettings(s) {
+  const out = structuredClone(DEFAULT_SETTINGS);
+  if (!s || typeof s !== 'object') return out;
+  const str = (v, n) => typeof v === 'string' ? v.trim().slice(0, n) : '';
+  if (Array.isArray(s.alliances)) {
+    const a = [...new Set(s.alliances.map(x => str(x, 12)).filter(x => /^[^\s<>"'&]{1,12}$/.test(x)))].slice(0, 12);
+    if (a.length) out.alliances = a;
+  }
+  for (const c of ['wb', 'st', 'ro']) {
+    const i = s.cards && s.cards[c], o = out.cards[c];
+    if (!i || typeof i !== 'object') continue;
+    o.title = str(i.title, 40) || o.title;
+    o.fmt = ['M', 'k', 'full'].includes(i.fmt) ? i.fmt : o.fmt;
+    if (typeof i.unitFilters === 'boolean') o.unitFilters = i.unitFilters;
+    if (Array.isArray(i.cols)) {
+      const known = new Map(o.cols.map(x => [x.k, x])), cols = [];
+      for (const x of i.cols) {
+        const b = x && known.get(x.k);
+        if (b && !cols.some(y => y.k === x.k)) cols.push({ k: b.k, label: str(x.label, 30) || b.label, show: b.k === 'name' || x.show !== false });
+      }
+      for (const b of o.cols) if (!cols.some(y => y.k === b.k)) cols.push(b);
+      cols.sort((a, b) => (b.k === 'name') - (a.k === 'name'));        // Name stays first
+      o.cols = cols;
+    }
+    const sorts = o.cols.map(x => x.k).filter(k => k !== '@dates').concat(c === 'ro' ? [] : ['last']);
+    if (sorts.includes(i.sort)) o.sort = i.sort;
+    o.filter = i.filter === '' || out.alliances.includes(i.filter) || (i.filter === 'OTHER' && c !== 'ro') ? i.filter : '';
+  }
+  const h = s.home;
+  if (h && typeof h === 'object') {
+    out.home.title = str(h.title, 60) || out.home.title;
+    if (/^\d{1,6}$/.test(h.banner)) out.home.banner = h.banner;
+    if (Array.isArray(h.cards)) {
+      const known = new Map(out.home.cards.map(x => [x.id, x])), cards = [];
+      for (const x of h.cards) {
+        const b = x && known.get(x.id);
+        if (b && !cards.some(y => y.id === x.id))
+          cards.push({ id: b.id, title: str(x.title, 40) || b.title, show: x.show !== false,
+                       link: /^https:\/\/[^\s"'<>]{1,400}$/.test(x.link || '') ? x.link : b.link });
+      }
+      for (const b of out.home.cards) if (!cards.some(y => y.id === b.id)) cards.push(b);
+      out.home.cards = cards;
+    }
+  }
+  for (const name of Object.keys(SHEET_BASE)) {
+    const i = s.sheets && s.sheets[name];
+    if (i && /^[\w-]{20,100}$/.test(i.id) && Number.isInteger(i.gid) && i.gid >= 0) out.sheets[name] = { id: i.id, gid: i.gid };
+  }
+  return out;
+}
+
 // The store is asked with a plain request (stub.fetch) rather than by calling its methods: that works
 // for any Durable Object class. Any failure comes back as a JSON error with the CORS headers, never as
 // Cloudflare's bare error page (which a browser reports only as a CORS block).
@@ -855,17 +974,261 @@ async function rosterCall(env, path, body, reply) {
     const stub = env.ROSTER.get(env.ROSTER.idFromName('roster'));
     const r = await stub.fetch('https://roster' + path, { method: 'POST', body: JSON.stringify(body || {}) });
     const j = await r.json();
-    return reply(j, r.ok ? 200 : 500);
+    return reply(j, r.ok ? 200 : r.status === 400 ? 400 : 500);
   } catch (e) {
     return reply({ error: 'the roster store failed: ' + String(e && e.message || e) }, 500);
   }
 }
 
+// What a backup holds and a restore may write: the cards' data and the settings, not History
+const DATA_KEY = /^(rows|reads|settings|(wb|st):who|(wb|st):day:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st))$/;
+const LOG_MAX = 100;                          // changes kept in History, each with what it replaced
+const isDay = d => /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));
+const bad = msg => Object.assign(new Error(msg), { status: 400 });
+const text = (v, n, need) => { const t = String(v == null ? '' : v).trim().slice(0, n); if (need && !t) throw bad('It cannot be empty.'); return t; };
+const num = (v, lo, hi) => { const n = Number(v); if (!Number.isFinite(n) || n < lo || n > hi) throw bad('Not a valid number: ' + v); return n; };
+const cardOf = b => { if (!['wb', 'st', 'ro'].includes(b.card)) throw bad('Unknown card.'); return b.card; };
+// a Snow Train day's value as sent by the admin view: { unit type: March CP }
+const cleanTypes = v => {
+  if (!v || typeof v !== 'object') throw bad('Bad day value.');
+  const o = {};
+  for (const [t, p] of Object.entries(v)) { if (!UNIT_TYPES.includes(t)) throw bad('Unknown unit type: ' + t); o[t] = num(p, 0, 1e13); }
+  if (!Object.keys(o).length) throw bad('Bad day value.');
+  return o;
+};
+// storage calls take at most 128 keys at a time
+async function putMany(st, obj) {
+  const e = Object.entries(obj);
+  for (let i = 0; i < e.length; i += 128) await st.put(Object.fromEntries(e.slice(i, i + 128)));
+}
+const snapKeys = e => Array.from({ length: e.n }, (_, j) => `adm:snap:${e.id}:${j}`);
+async function delSnaps(st, e) {
+  const k = snapKeys(e);
+  for (let i = 0; i < k.length; i += 128) await st.delete(k.slice(i, i + 128));
+}
+
+// Each admin change, run against `tx` (get, put, del, list), which keeps what every written key held
+// before. `this` is the store.
+const ADMIN_OPS = {
+  // one field of one player
+  async 'row-set'(tx, b) {
+    const ns = cardOf(b), v = b.value;
+    if (ns === 'ro') {
+      const rows = (await tx.get('rows')) || {}, r = rows[await this.keyOf('ro', b.id, rows)];
+      switch (b.field) {
+        case 'name': r.name = text(v, 60, true); break;
+        case 'alliance': if (!(await this.alliances()).includes(v)) throw bad('Unknown alliance.'); r.alliance = v; break;
+        case 'rank': r.rank = Math.round(num(v, 0, 6)); break;
+        case 'power': r.power = num(v, 0, 1e13); break;
+        // the bookmark sends MM/CE from the Alliance Rosters sheet; one set here stays over its reads
+        case 'cls': if (!/^(MM|CE|)$/.test(v)) throw bad('MM, CE or nothing.'); r.cls = v; r.pin = { ...r.pin, cls: v }; break;
+        case 'status': if (!['Active', 'Left'].includes(v)) throw bad('Active or Left.'); r.status = v; r.leftAt = v === 'Left' ? r.leftAt || Date.now() : 0; break;
+        case 'join': r.join = Math.round(num(v, 0, 4e9)); break;
+        case 'last': r.last = Math.round(num(v, 0, 4e9)); r.online = false; break;
+        default: throw bad('That cannot be changed.');
+      }
+      return tx.put('rows', rows);
+    }
+    const who = (await tx.get(ns + ':who')) || {}, w = who[await this.keyOf(ns, b.id, who)];
+    if (b.field === 'name') w.name = text(v, 60, true);
+    else if (b.field === 'ally') w.ally = text(v, 20);
+    else throw bad('That cannot be changed.');
+    return tx.put(ns + ':who', who);
+  },
+  // Whitebeard: one player's points on one day, or none
+  async 'cell-set'(tx, b) {
+    if (cardOf(b) !== 'wb' || !isDay(b.day)) throw bad('Bad cell.');
+    const who = (await tx.get('wb:who')) || {}, k = await this.keyOf('wb', b.id, who);
+    const pts = await tx.get('wb:day:' + b.day);
+    if (!pts) throw bad('There is no column for ' + b.day + '.');
+    if (b.value == null) delete pts[k]; else pts[k] = num(b.value, 0, 1e13);
+    return tx.put('wb:day:' + b.day, pts);
+  },
+  // Snow Train: one player's March CP per unit type on some days (null: not on a train that day),
+  // and their March CP 1–3 worked out again from all their days if asked
+  async 'days-set'(tx, b) {
+    if (cardOf(b) !== 'st' || !b.days || typeof b.days !== 'object') throw bad('Bad days.');
+    const who = (await tx.get('st:who')) || {}, k = await this.keyOf('st', b.id, who);
+    for (const [d, v] of Object.entries(b.days)) {
+      if (!isDay(d)) throw bad('Bad date.');
+      const pts = await tx.get('st:day:' + d);
+      if (!pts) throw bad('There is no column for ' + d + '.');
+      if (v == null) { if (!(k in pts)) continue; delete pts[k]; } else pts[k] = cleanTypes(v);
+      await tx.put('st:day:' + d, pts);
+    }
+    if (b.recalc) {
+      who[k].bests = (await this.bestsFromDays(tx, who))[k] || [];
+      delete who[k].best;
+      await tx.put('st:who', who);
+    }
+  },
+  // Snow Train: March CP 1–3 as given, [[unit type, March CP], …]
+  async 'bests-set'(tx, b) {
+    if (cardOf(b) !== 'st' || !Array.isArray(b.bests) || b.bests.length > 3) throw bad('Bad March CP.');
+    const bests = b.bests.map(x => { if (!Array.isArray(x) || !UNIT_TYPES.includes(x[0])) throw bad('Bad unit type.'); return [x[0], num(x[1], 0, 1e13)]; });
+    if (new Set(bests.map(x => x[0])).size !== bests.length) throw bad('Each unit type can be there once.');
+    const who = (await tx.get('st:who')) || {}, w = who[await this.keyOf('st', b.id, who)];
+    w.bests = bests; if (bests[0]) w.type = bests[0][0]; delete w.best;
+    return tx.put('st:who', who);
+  },
+  async 'row-add'(tx, b) {
+    const ns = cardOf(b), name = text(b.name, 60, true), key = 'a|' + crypto.randomUUID().slice(0, 12), now = Date.now();
+    if (ns === 'ro') {
+      if (!(await this.alliances()).includes(b.ally)) throw bad('Pick an alliance.');
+      const rows = (await tx.get('rows')) || {};
+      rows[key] = { name, search: name, rank: 1, power: 0, level: 0, join: Math.floor(now / 1000), last: Math.floor(now / 1000), online: false, cls: '',
+                    alliance: b.ally, status: 'Active', leftAt: 0, seenAt: now, firstAt: now };
+      await tx.put('rows', rows);
+    } else {
+      const who = (await tx.get(ns + ':who')) || {};
+      who[key] = ns === 'st' ? { name, ally: text(b.ally, 20), type: '', bests: [], manual: 1 } : { name, ally: text(b.ally, 20), manual: 1 };
+      await tx.put(ns + ':who', who);
+    }
+    return { id: (await this.ids(ns, [key]))[key] };
+  },
+  async 'row-delete'(tx, b) {
+    const ns = cardOf(b);
+    if (!Array.isArray(b.ids) || !b.ids.length) throw bad('No players.');
+    if (ns === 'ro') {
+      const rows = (await tx.get('rows')) || {};
+      for (const k of await this.keysOf('ro', b.ids, rows)) delete rows[k];
+      return tx.put('rows', rows);
+    }
+    const who = (await tx.get(ns + ':who')) || {}, keys = await this.keysOf(ns, b.ids, who);
+    for (const k of keys) delete who[k];
+    await tx.put(ns + ':who', who);
+    for (const [dk, pts] of await tx.list(ns + ':day:')) {
+      if (!keys.some(k => k in pts)) continue;
+      for (const k of keys) delete pts[k];
+      await tx.put(dk, pts);
+    }
+    // the game's ids merged into a deleted player start afresh on the next read
+    const alias = (await tx.get('adm:alias:' + ns)) || {};
+    if (Object.entries(alias).some(([a, k]) => keys.includes(k) || keys.includes(a))) {
+      for (const [a, k] of Object.entries(alias)) if (keys.includes(k) || keys.includes(a)) delete alias[a];
+      await tx.put('adm:alias:' + ns, alias);
+    }
+  },
+  // Several players made one (a renamed player, or one listed twice): their days joined, the higher
+  // value kept where both have one. Later reads of the others count for the one kept.
+  async merge(tx, b) {
+    const ns = cardOf(b);
+    if (ns === 'ro') throw bad('Roster players cannot be merged.');
+    const who = (await tx.get(ns + ':who')) || {}, keep = await this.keyOf(ns, b.keep, who);
+    const others = (await this.keysOf(ns, b.ids, who)).filter(k => k !== keep);
+    if (!others.length) throw bad('Pick another player to merge with.');
+    for (const [dk, pts] of await tx.list(ns + ':day:')) {
+      if (!others.some(k => k in pts)) continue;
+      for (const o of others) {
+        if (!(o in pts)) continue;
+        if (ns === 'wb') pts[keep] = Math.max(pts[keep] ?? -Infinity, pts[o]);
+        else {
+          const into = asTypes(pts[keep], who[keep].type);
+          for (const [t, p] of Object.entries(asTypes(pts[o], who[o].type))) into[t] = Math.max(into[t] || 0, p);
+          pts[keep] = into;
+        }
+        delete pts[o];
+      }
+      await tx.put(dk, pts);
+    }
+    if (ns === 'st') {
+      const bests = bestsOf(who[keep]);
+      for (const o of others) for (const [t, p] of bestsOf(who[o])) {
+        const x = bests.find(y => y[0] === t); if (x) x[1] = Math.max(x[1], p); else bests.push([t, p]);
+      }
+      who[keep].bests = bests; delete who[keep].best;
+    }
+    for (const o of others) { if (who[o].manual && !who[keep].manual) delete who[keep].manual; delete who[o]; }
+    await tx.put(ns + ':who', who);
+    const alias = (await tx.get('adm:alias:' + ns)) || {};
+    for (const [a, k] of Object.entries(alias)) if (others.includes(k)) alias[a] = keep;
+    for (const o of others) alias[o] = keep;
+    await tx.put('adm:alias:' + ns, alias);
+  },
+  async 'bulk-ally'(tx, b) {
+    const ns = cardOf(b);
+    if (!Array.isArray(b.ids) || !b.ids.length) throw bad('No players.');
+    if (ns === 'ro') {
+      if (!(await this.alliances()).includes(b.ally)) throw bad('Unknown alliance.');
+      const rows = (await tx.get('rows')) || {};
+      for (const k of await this.keysOf('ro', b.ids, rows)) rows[k].alliance = b.ally;
+      return tx.put('rows', rows);
+    }
+    const who = (await tx.get(ns + ':who')) || {};
+    for (const k of await this.keysOf(ns, b.ids, who)) who[k].ally = text(b.ally, 20);
+    return tx.put(ns + ':who', who);
+  },
+  // date columns
+  async 'day-add'(tx, b) {
+    const ns = cardOf(b);
+    if (ns === 'ro' || !isDay(b.day)) throw bad('Bad date.');
+    if (await tx.get(ns + ':day:' + b.day)) throw bad('That date already has a column.');
+    return tx.put(ns + ':day:' + b.day, {});
+  },
+  // a column moved to another date (merged with that date's, keeping each player's higher number),
+  // removed, or emptied. Afterwards March CP 1–3 are worked out again from the days that are left,
+  // and players left with no day at all are dropped (unless added by hand).
+  async 'day-move'(tx, b) { return this.dayChange(tx, b, 'move'); },
+  async 'day-delete'(tx, b) { return this.dayChange(tx, b, 'delete'); },
+  async 'day-clear'(tx, b) { return this.dayChange(tx, b, 'clear'); },
+  async 'roster-reads'(tx, b) {
+    const a = text(b.ally, 20, true), reads = (await tx.get('reads')) || {};
+    if (b.action === 'wipe') {
+      const rows = (await tx.get('rows')) || {};
+      for (const [k, r] of Object.entries(rows)) if (r.alliance === a) delete rows[k];
+      await tx.put('rows', rows);
+    } else if (b.action !== 'reset') throw bad('Reset or wipe.');
+    delete reads[a];
+    return tx.put('reads', reads);
+  },
+  // the settings; a changed Sheets target is tried first, so a wrong link is never saved
+  async settings(tx, b) {
+    const next = cleanSettings(b.settings), cur = await this.getSettings();
+    for (const [name, t] of Object.entries(next.sheets)) {
+      const was = cur.sheets[name];
+      if (t.id === was.id && t.gid === was.gid) continue;
+      try { await tabTitle(await googleToken(this.env), { ...SHEET_BASE[name], id: t.id, gid: t.gid }); }
+      catch (e) { throw bad(`That sheet could not be used: ${e.message || e}`); }
+    }
+    await tx.put('settings', next);
+    return { settings: next };
+  },
+  // An alliance renamed: in the settings and on every player who has it
+  async 'alliance-rename'(tx, b) {
+    const from = text(b.from, 12, true), to = text(b.to, 12, true), s = await this.getSettings();
+    if (!/^[^\s<>"'&]{1,12}$/.test(to)) throw bad('Not a valid tag.');
+    if (!s.alliances.includes(from) || s.alliances.includes(to)) throw bad(s.alliances.includes(to) ? to + ' is already there.' : 'Unknown alliance.');
+    s.alliances = s.alliances.map(a => a === from ? to : a);
+    for (const c of Object.values(s.cards)) if (c.filter === from) c.filter = to;
+    await tx.put('settings', cleanSettings(s));
+    for (const ns of ['wb', 'st']) {
+      const who = (await tx.get(ns + ':who')) || {};
+      if (!Object.values(who).some(w => w.ally === from)) continue;
+      for (const w of Object.values(who)) if (w.ally === from) w.ally = to;
+      await tx.put(ns + ':who', who);
+    }
+    const rows = (await tx.get('rows')) || {}, reads = (await tx.get('reads')) || {};
+    if (Object.values(rows).some(r => r.alliance === from)) {
+      for (const r of Object.values(rows)) if (r.alliance === from) r.alliance = to;
+      await tx.put('rows', rows);
+    }
+    if (from in reads) { reads[to] = reads[from]; delete reads[from]; await tx.put('reads', reads); }
+  },
+  // a backup file put back: every card and the settings as they were in it
+  async restore(tx, b) {
+    const data = b.data;
+    if (!data || typeof data !== 'object' || !Object.keys(data).length || !Object.keys(data).every(k => DATA_KEY.test(k)))
+      throw bad('That is not a backup of this site.');
+    for (const k of (await tx.list('')).keys()) if (DATA_KEY.test(k) && !(k in data)) await tx.del(k);
+    for (const [k, v] of Object.entries(data)) await tx.put(k, v);
+  },
+};
+
 // One store for the whole roster, keyed by UID. A read of an alliance adds its new players, updates
 // the ones already there, marks the alliance's players who are missing as Left (with the date) and
-// brings back anyone who returns. Rows are never deleted.
+// brings back anyone who returns. Rows are never deleted by a read; the admin view can.
 export class RosterStore {
-  constructor(state) { this.state = state; }
+  constructor(state, env) { this.state = state; this.env = env; }
   async fetch(request) {
     try {
       const path = new URL(request.url).pathname;
@@ -875,11 +1238,34 @@ export class RosterStore {
       if (path === '/wb-list') return Response.json(await this.wbList('wb'));
       if (path === '/st-update') return Response.json(await this.wbUpdate(await request.json(), 'st'));
       if (path === '/st-list') return Response.json(await this.wbList('st'));
+      if (path === '/settings') return Response.json(await this.getSettings());
+      if (path === '/admin') return Response.json(await this.admin(await request.json()));
       return Response.json({ error: 'unknown roster call' }, { status: 404 });
     } catch (e) {
-      return Response.json({ error: String(e && e.message || e) }, { status: 500 });
+      return Response.json({ error: String(e && e.message || e) }, { status: e && e.status === 400 ? 400 : 500 });
     }
   }
+  async getSettings() { return cleanSettings(await this.state.storage.get('settings')); }
+  async alliances() { return (await this.getSettings()).alliances; }
+
+  // Each player's id on the site: a hash of their key with a secret kept here, so a UID can be
+  // neither seen nor worked back from it, yet the admin view can still name the row to change.
+  async ids(ns, keys) {
+    const st = this.state.storage;
+    let salt = await st.get('salt');
+    if (!salt) { salt = crypto.randomUUID(); await st.put('salt', salt); }
+    const out = {};
+    for (const k of keys) out[k] = toHex(await crypto.subtle.digest('SHA-256', te.encode(salt + '|' + ns + '|' + k))).slice(0, 16);
+    return out;
+  }
+  async keysOf(ns, ids, map) {
+    const all = await this.ids(ns, Object.keys(map)), want = new Set(ids);
+    const keys = Object.keys(all).filter(k => want.has(all[k]));
+    if (keys.length !== want.size) throw bad('Someone is no longer on the card — reload it.');
+    return keys;
+  }
+  async keyOf(ns, id, map) { return (await this.keysOf(ns, [id], map))[0]; }
+
   async load() { return (await this.state.storage.get('rows')) || {}; }
   async update(read) {
     const rows = await this.load(), now = Date.now(), seen = new Set();
@@ -889,7 +1275,8 @@ export class RosterStore {
       const was = rows[m.uid];
       if (!was) added++;
       else { updated++; if (was.status === 'Left') rejoined++; }
-      rows[m.uid] = { ...was, ...m, alliance: read.alliance, status: 'Active', leftAt: 0, seenAt: now, firstAt: (was && was.firstAt) || now };
+      // what the admin view set to stay (MM/CE) wins over the read
+      rows[m.uid] = { ...was, ...m, ...(was && was.pin), alliance: read.alliance, status: 'Active', leftAt: 0, seenAt: now, firstAt: (was && was.firstAt) || now };
     }
     for (const uid of Object.keys(rows)) {
       const r = rows[uid];
@@ -900,10 +1287,11 @@ export class RosterStore {
     await this.state.storage.put({ rows, reads });
     return { alliance: read.alliance, added, updated, rejoined, left, total: Object.keys(rows).length };
   }
-  // the card's view: every row without its UID, and when each alliance was last read
+  // the card's view: every row with its site id instead of its UID, and when each alliance was last read
   async list() {
     const rows = await this.load(), reads = (await this.state.storage.get('reads')) || {};
-    return { reads, rows: Object.values(rows).filter(r => ROSTER_ALLIANCES.includes(r.alliance)).map(({ uid, ...r }) => r) };
+    const ok = new Set([...ROSTER_ALLIANCES, ...await this.alliances()]), ids = await this.ids('ro', Object.keys(rows));
+    return { reads, rows: Object.entries(rows).filter(([, r]) => ok.has(r.alliance)).map(([k, { uid, pin, ...r }]) => ({ id: ids[k], ...r })) };
   }
 
   // Whitebeard (ns 'wb') and the Snow Train (ns 'st'): each UTC day's points under a key of its own
@@ -911,30 +1299,133 @@ export class RosterStore {
   // types, latest first, under wb:who
   // The Snow Train keeps, per player, the highest March CP ever read (best) and which days they were
   // on a train; a second read the same day (another train) adds to that day rather than replacing it.
+  // A player merged into another in the admin view is counted as that one (adm:alias).
   async wbUpdate(read, ns) {
     const day = new Date().toISOString().slice(0, 10), keep = ns === 'st';
-    const before = await this.state.storage.get(ns + ':day:' + day), had = !!before;
+    const before = await this.state.storage.get(ns + ':day:' + day), had = !!before && Object.keys(before).length > 0;
     const pts = keep && before ? before : {};
     const who = (await this.state.storage.get(ns + ':who')) || {};
+    const alias = (await this.state.storage.get('adm:alias:' + ns)) || {};
     for (const r of read.rows) {
-      const was = who[r.key] || {};
-      pts[r.key] = keep ? Math.max(pts[r.key] || 0, r.points) : r.points;
-      who[r.key] = { name: r.name, ally: r.ally, type: r.type || was.type || '', best: Math.max(was.best || 0, r.points) };
+      const key = alias[r.key] || r.key, was = who[key] || {};
+      if (!keep) { pts[key] = Math.max(pts[key] ?? -Infinity, r.points); who[key] = { name: r.name, ally: r.ally }; continue; }
+      // Snow Train: that day's best per unit type, and the player's best per unit type ever, the
+      // types in the order they first appeared (March CP 1, 2, 3 on the card)
+      const ty = r.type || '', dayPts = asTypes(pts[key], was.type);
+      dayPts[ty] = Math.max(dayPts[ty] || 0, r.points); pts[key] = dayPts;
+      const bests = bestsOf(was), b = bests.find(x => x[0] === ty);
+      if (b) b[1] = Math.max(b[1], r.points); else bests.push([ty, r.points]);
+      who[key] = { name: r.name, ally: r.ally, type: ty || was.type || '', bests };
     }
     await this.state.storage.put({ [ns + ':day:' + day]: pts, [ns + ':who']: who });
     return { day, players: read.rows.length, replaced: had, merged: keep && had };
   }
-  // the card's view: one row per player, without its key, and the points per day
+
+  // each Snow Train player's best per unit type over the days there are, the types in the order they
+  // first appear
+  async bestsFromDays(tx, who) {
+    const bests = {};
+    for (const pts of (await tx.list('st:day:')).values()) for (const [k, v] of Object.entries(pts)) {
+      const list = bests[k] = bests[k] || [];
+      for (const [ty, p] of Object.entries(asTypes(v, who[k] && who[k].type))) {
+        const b = list.find(x => x[0] === ty); if (b) b[1] = Math.max(b[1], p); else list.push([ty, p]);
+      }
+    }
+    return bests;
+  }
+  async dayChange(tx, b, action) {
+    const ns = cardOf(b), day = b.day, dk = ns + ':day:' + day;
+    if (ns === 'ro' || !isDay(day) || (action === 'move' && !isDay(b.to))) throw bad('Bad date.');
+    const from = await tx.get(dk);
+    if (!from) throw bad('There is no column for ' + day + '.');
+    const who = (await tx.get(ns + ':who')) || {};
+    if (action === 'move') {
+      if (b.to === day) throw bad('Pick a different date.');
+      const into = (await tx.get(ns + ':day:' + b.to)) || {};
+      for (const [k, v] of Object.entries(from)) {
+        if (ns !== 'st') { into[k] = Math.max(into[k] ?? -Infinity, v); continue; }
+        const a = asTypes(into[k], who[k] && who[k].type);
+        for (const [ty, p] of Object.entries(asTypes(v, who[k] && who[k].type))) a[ty] = Math.max(a[ty] || 0, p);
+        into[k] = a;
+      }
+      await tx.put(ns + ':day:' + b.to, into);
+    }
+    if (action === 'clear') await tx.put(dk, {}); else await tx.del(dk);
+    const seen = {};
+    for (const pts of (await tx.list(ns + ':day:')).values()) for (const k of Object.keys(pts)) seen[k] = 1;
+    const bests = ns === 'st' ? await this.bestsFromDays(tx, who) : {};
+    for (const k of Object.keys(who)) {
+      if (!seen[k] && !who[k].manual) delete who[k];
+      else if (ns === 'st') { who[k].bests = bests[k] || []; delete who[k].best; }
+    }
+    await tx.put(ns + ':who', who);
+  }
+
+  // the card's view: one row per player, with its site id instead of its key, and the points per day
   async wbList(ns) {
     const who = (await this.state.storage.get(ns + ':who')) || {};
     const days = await this.state.storage.list({ prefix: ns + ':day:' });
     const dates = [...days.keys()].map(k => k.slice(ns.length + 5)).sort();
+    const ids = await this.ids(ns, Object.keys(who));
     const rows = Object.entries(who).map(([key, w]) => {
       const p = {};
       for (const d of dates) { const v = days.get(ns + ':day:' + d)[key]; if (v != null) p[d] = v; }
-      return { name: w.name, ally: w.ally, type: w.type || '', best: w.best || 0, pts: p };
+      return ns === 'st' ? { id: ids[key], name: w.name, ally: w.ally, type: w.type || '', bests: bestsOf(w), pts: p }
+                         : { id: ids[key], name: w.name, ally: w.ally, pts: p };
     });
     return { dates, rows };
   }
-}
 
+  // The admin view's calls. A change is run by ADMIN_OPS and goes into History (adm:log, newest first)
+  // with what every key it wrote held before (adm:snap:<id>:<n>, one key each); undoing a change puts
+  // those back, after undoing every later change first.
+  async admin(b) {
+    const st = this.state.storage, op = b && b.op;
+    if (op === 'check') return { ok: true };
+    if (op === 'log') return { log: (await st.get('adm:log')) || [] };
+    if (op === 'backup') {
+      const data = {};
+      for (const [k, v] of await st.list()) if (DATA_KEY.test(k)) data[k] = v;
+      return { site: '2698', at: Date.now(), data };
+    }
+    if (op === 'undo') return this.undo(b.id);
+    const fn = ADMIN_OPS[op];
+    if (!fn) throw bad('Unknown admin change.');
+    const read = new Map(), before = new Map();
+    const was = async k => { if (!before.has(k)) before.set(k, read.has(k) ? read.get(k) : (await st.get(k)) ?? null); };
+    const tx = {
+      get: async k => { const v = await st.get(k); if (!read.has(k)) read.set(k, v === undefined ? null : structuredClone(v)); return v; },
+      put: async (k, v) => { await was(k); await st.put(k, v); },
+      del: async k => { await was(k); await st.delete(k); },
+      list: prefix => st.list({ prefix }),
+    };
+    const res = (await fn.call(this, tx, b)) || {};
+    if (!before.size) return { ...res, unchanged: true };
+    const note = b.note || {}, clip = (v, n) => String(v == null ? '' : v).slice(0, n);
+    const entry = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), t: Date.now(),
+                    what: clip(note.what || op, 160), from: clip(note.from, 200), to: clip(note.to, 200), n: before.size };
+    const snaps = {};
+    [...before].forEach(([k, v], i) => { snaps[`adm:snap:${entry.id}:${i}`] = { k, v }; });
+    await putMany(st, snaps);
+    const log = (await st.get('adm:log')) || [];
+    log.unshift(entry);
+    for (const old of log.splice(LOG_MAX)) await delSnaps(st, old);
+    await st.put('adm:log', log);
+    return { ...res, entry: { id: entry.id, what: entry.what } };
+  }
+  async undo(id) {
+    const st = this.state.storage, log = (await st.get('adm:log')) || [], i = log.findIndex(e => e.id === id);
+    if (i < 0) throw bad('That change is no longer in History.');
+    for (const e of log.slice(0, i + 1)) {           // newest first
+      const keys = snapKeys(e);
+      for (let j = 0; j < keys.length; j += 128) {
+        for (const s of (await st.get(keys.slice(j, j + 128))).values()) {
+          if (s.v === null) await st.delete(s.k); else await st.put(s.k, s.v);
+        }
+      }
+      await delSnaps(st, e);
+    }
+    await st.put('adm:log', log.slice(i + 1));
+    return { undone: i + 1 };
+  }
+}
