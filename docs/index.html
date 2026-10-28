@@ -178,6 +178,8 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
    at the pen's tip; then the cards come in one after another (the script under the banner markup) */
 .bandinner{position:relative;width:100%;max-width:960px;margin:0 auto;padding:0 16px}
 .bandtitle{display:inline-block;margin:0;padding-right:.15em;font:400 42px/1.2 Satisfy,cursive;color:#fff;text-shadow:0 0 14px rgba(255,92,154,.45)}
+/* hidden until it is written in, so the stand-in font never shows while Satisfy downloads */
+.bandtitle{clip-path:inset(0 100% 0 0)}
 .writing .bandtitle{animation:writeIn 1.5s cubic-bezier(.45,.05,.35,1) .15s both}
 .writing .bandinner::after{content:"";position:absolute;top:50%;left:16px;width:10px;height:10px;margin-top:-5px;border-radius:50%;background:#fff;
   box-shadow:0 0 10px #fff,0 0 22px #ff5c9a;opacity:0;animation:nib 1.5s cubic-bezier(.45,.05,.35,1) .15s both}
@@ -187,7 +189,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .cardsin .hcard{animation:cardIn .4s cubic-bezier(.2,.8,.2,1) both}
 .cardsin .hcard:nth-child(2){animation-delay:.05s}.cardsin .hcard:nth-child(3){animation-delay:.1s}.cardsin .hcard:nth-child(4){animation-delay:.15s}
 @keyframes cardIn{from{opacity:0;transform:translateY(14px) scale(.98)}}
-@media (prefers-reduced-motion:reduce){.writing .bandtitle,.writing .bandinner::after,.cardsin .hcard{animation:none}}
+@media (prefers-reduced-motion:reduce){.writing .bandtitle{clip-path:none}.writing .bandtitle,.writing .bandinner::after,.cardsin .hcard{animation:none}}
 /* on a phone the name sits below the Admin pill and theme button, so they never overlap */
 @media (max-width:640px){.homeband{height:120px;align-items:flex-end;padding-bottom:12px}.bandtitle{font-size:34px}}
 .homebody{padding:18px 16px 64px}
@@ -411,7 +413,9 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   // after the view has switched (cp.js), so the name has its width
   const go = () => setTimeout(() => { if (atHome()) { cards(); write(); } });
   if (atHome()) cards();
-  (document.fonts ? document.fonts.load('42px Satisfy').catch(() => {}) : Promise.resolve()).then(() => setTimeout(() => { if (atHome()) write(); }));
+  // at most 2.5s for the font, so a slow download never leaves the banner empty
+  const font = document.fonts ? document.fonts.load('42px Satisfy').catch(() => {}) : Promise.resolve();
+  Promise.race([font, new Promise(r => setTimeout(r, 2500))]).then(() => setTimeout(() => { if (atHome()) write(); }));
   addEventListener('hashchange', go);
 })();
 </script>
