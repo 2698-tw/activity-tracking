@@ -179,7 +179,7 @@
         bulk = document.createElement('div'); bulk.className = 'rbulk';
         el('Chips').after(bulk);
         note = document.createElement('div'); note.className = 'rfoot radmnote';
-        rapp.querySelector('.rfoot').before(note);
+        rapp.appendChild(note);                      // at the bottom of the card
       }
       bar.innerHTML = Admin.on ? `<button type="button" class="rgo pink" data-act="add">+ Player</button>${dated ? '<button type="button" class="rgo pink" data-act="adddate">+ Date</button>' : ''}<button type="button" class="rgo" data-act="csv">Export CSV</button>` : '';
       note.hidden = !Admin.on;

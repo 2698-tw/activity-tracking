@@ -554,8 +554,10 @@ export default {
     // Search names for the roster card (docs/cards.js), from two tabs of the roster workbook: the
     // Alliance Rosters tab (A search name, B in-game name, C alliance), looked at first, then the Base CP
     // sends (RawData-CP, the 'cp' target), which are updated more often: each in-game name and alliance
-    // with the search name sent for it most recently, a row the sheet marked "No Name Match" counting only
-    // where nothing better is known. Those columns only; kept for ten minutes.
+    // with the search name sent for it most recently. A row that says nothing about who it is counts only
+    // where nothing better is known: one the sheet marked "No Name Match", or one whose search name is
+    // just the in-game name (the bookmark sends that for a player it could not match). Those columns
+    // only; kept for ten minutes.
     if (url.pathname.replace(/^\/+/, '') === 'api/search-names') {
       const cache = caches.default, key = new Request('https://ask-data.cache/search-names');
       const hit = await cache.match(key);
@@ -577,11 +579,11 @@ export default {
       for (const r of raw.values || []) {
         const search = t(r[0]), name = t(r[1]), ally = t(r[2]);
         if (!search || !name) continue;
-        const k = name + '\n' + ally, weak = /no name match/i.test(r[7] || '');
+        const k = name + '\n' + ally, weak = search === name || /no name match/i.test(r[7] || '');
         if (weak && best.has(k) && !best.get(k).weak) continue;
         best.delete(k); best.set(k, { search, weak });          // kept in the order last sent
       }
-      // raw: [in-game name, alliance, search name, 1 if only "No Name Match"], oldest first
+      // raw: [in-game name, alliance, search name, 1 if it says nothing about who it is], oldest first
       const body = JSON.stringify({ roster: rosterNames, raw: [...best].map(([k, v]) => [...k.split('\n'), v.search, v.weak ? 1 : 0]) });
       ctx.waitUntil(cache.put(key, new Response(body, { headers: { 'content-type': 'application/json', 'cache-control': 'max-age=600' } })));
       return new Response(body, { headers: { ...cors, 'content-type': 'application/json' } });
