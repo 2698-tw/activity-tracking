@@ -551,6 +551,42 @@ export default {
       }
     }
 
+    // Search names for the roster card (docs/cards.js), from two tabs of the roster workbook: the
+    // Alliance Rosters tab (A search name, B in-game name, C alliance), looked at first, then the Base CP
+    // sends (RawData-CP, the 'cp' target), which are updated more often: each in-game name and alliance
+    // with the search name sent for it most recently, a row the sheet marked "No Name Match" counting only
+    // where nothing better is known. Those columns only; kept for ten minutes.
+    if (url.pathname.replace(/^\/+/, '') === 'api/search-names') {
+      const cache = caches.default, key = new Request('https://ask-data.cache/search-names');
+      const hit = await cache.match(key);
+      if (hit) return new Response(hit.body, { headers: { ...cors, 'content-type': 'application/json' } });
+      let roster, raw;
+      try {
+        const token = await googleToken(env), target = await sheetTarget(env, 'cp');
+        const tab = `'${(await tabTitle(token, target)).replace(/'/g, "''")}'`;
+        [roster, raw] = await Promise.all([
+          sheetsCall(token, 'GET', `/values/${encodeURIComponent("'Alliance Rosters'!A2:C")}?majorDimension=ROWS`, null, { id: ROSTER_BOOK }),
+          sheetsCall(token, 'GET', `/values/${encodeURIComponent(tab + '!C2:J')}?majorDimension=ROWS`, null, target),
+        ]);
+      } catch (e) { return reply({ error: String(e.message || e) }, 502); }
+      const t = v => String(v || '').trim();
+      // [in-game name, alliance, search name]
+      const rosterNames = (roster.values || []).map(r => [t(r[1]), t(r[2]), t(r[0])]).filter(r => r[0] && r[2]);
+      // C search name, D in-game name, E alliance, J Name Check; later rows are newer
+      const best = new Map();
+      for (const r of raw.values || []) {
+        const search = t(r[0]), name = t(r[1]), ally = t(r[2]);
+        if (!search || !name) continue;
+        const k = name + '\n' + ally, weak = /no name match/i.test(r[7] || '');
+        if (weak && best.has(k) && !best.get(k).weak) continue;
+        best.delete(k); best.set(k, { search, weak });          // kept in the order last sent
+      }
+      // raw: [in-game name, alliance, search name, 1 if only "No Name Match"], oldest first
+      const body = JSON.stringify({ roster: rosterNames, raw: [...best].map(([k, v]) => [...k.split('\n'), v.search, v.weak ? 1 : 0]) });
+      ctx.waitUntil(cache.put(key, new Response(body, { headers: { 'content-type': 'application/json', 'cache-control': 'max-age=600' } })));
+      return new Response(body, { headers: { ...cors, 'content-type': 'application/json' } });
+    }
+
     // MM/CE for the extractor (docs/extractor.js): search name, in-game name, alliance, MM/CE and
     // Base CP (to tell apart two players with one name) from the Alliance Rosters tab — those five
     // columns only, nothing else from the sheet. Kept for ten minutes, so opening the extractor again

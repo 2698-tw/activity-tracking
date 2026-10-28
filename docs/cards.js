@@ -27,6 +27,38 @@
   const unitTag = t => t ? `<span class="unit u${t.replace(' ', '')}">${esc(t)}</span>` : '';
   const dim = '<span class="rdim">—</span>';
 
+  // Roster: each player's search name, looked up by the in-game name the bookmark read: first in the
+  // Alliance Rosters tab, then in the Base CP sends (RawData-CP), which are updated more often. Both tabs
+  // are tried with the name and alliance before either is tried with the name alone, so a name another
+  // alliance also has ("Woody") never takes that one's search name; each time the exact name first, then
+  // one written without the fancy letters. The bookmark's own is kept where neither tab has the player.
+  let names = null, namesAt = 0;
+  // [in-game name, alliance, search name, weak], oldest first: the newest wins, and an unmatched send
+  // ("No Name Match", weak) never replaces a real search name
+  function nameMap(list) {
+    const m = new Map(), weakKeys = new Set();
+    for (const [name, ally, search, weak] of list || []) for (const k of [name + '|' + ally, name, '~' + fold(name) + '|' + ally, '~' + fold(name)]) {
+      if (weak && m.has(k) && !weakKeys.has(k)) continue;
+      m.set(k, search); weak ? weakKeys.add(k) : weakKeys.delete(k);
+    }
+    return m;
+  }
+  const withAlly = (m, r) => m.get(r.name + '|' + r.alliance) || m.get('~' + fold(r.name) + '|' + r.alliance);
+  const byName = (m, r) => m.get(r.name) || (fold(r.name) !== '' && m.get('~' + fold(r.name)));
+  async function searchNames(rows) {
+    if (!names || Date.now() - namesAt > 10 * 60 * 1000) {   // the sheet changes; asked again after a while
+      namesAt = Date.now();
+      names = fetch(API_BASE + '/search-names', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+        .then(r => r.ok ? r.json() : Promise.reject()).catch(() => { namesAt = 0; return {}; })   // asked again next time
+        .then(j => [nameMap(j.roster), nameMap(j.raw)]);
+    }
+    const [roster, raw] = await names;
+    for (const r of rows) {
+      const s = withAlly(roster, r) || withAlly(raw, r) || byName(roster, r) || byName(raw, r);
+      if (s) r.search = s;
+    }
+  }
+
   function makeCard(o) {
     const W = { rows: null, dates: [], reads: {}, ally: null, type: '', cls: '', away: false, sort: null, asc: false, loading: false, err: '', flash: '' };
     const sel = new Set();
@@ -82,6 +114,7 @@
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || r.status);
         W.rows = j.rows || []; W.dates = j.dates || []; W.reads = j.reads || {}; W.err = '';
+        if (o.id === 'ro') await searchNames(W.rows);
         for (const id of [...sel]) if (!byId(id)) sel.delete(id);
       } catch (e) { W.err = `The ${cfg().title} could not be loaded: ` + (e.message || e); }
       W.loading = false; draw();
