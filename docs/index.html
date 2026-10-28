@@ -183,11 +183,11 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   box-shadow:0 0 10px #fff,0 0 22px #ff5c9a;opacity:0;animation:nib 1.5s cubic-bezier(.45,.05,.35,1) .15s both}
 @keyframes writeIn{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
 @keyframes nib{0%{opacity:0;transform:translateX(0)}8%{opacity:1}92%{opacity:1}100%{opacity:0;transform:translateX(var(--w,340px))}}
-.writing .hcard{animation:cardIn .55s cubic-bezier(.2,.8,.2,1) both}
-.writing .hcard:nth-child(1){animation-delay:.55s}.writing .hcard:nth-child(2){animation-delay:.65s}
-.writing .hcard:nth-child(3){animation-delay:.75s}.writing .hcard:nth-child(4){animation-delay:.85s}
+/* the cards come in straight away, not waiting for the name's font */
+.cardsin .hcard{animation:cardIn .4s cubic-bezier(.2,.8,.2,1) both}
+.cardsin .hcard:nth-child(2){animation-delay:.05s}.cardsin .hcard:nth-child(3){animation-delay:.1s}.cardsin .hcard:nth-child(4){animation-delay:.15s}
 @keyframes cardIn{from{opacity:0;transform:translateY(14px) scale(.98)}}
-@media (prefers-reduced-motion:reduce){.writing .bandtitle,.writing .bandinner::after,.writing .hcard{animation:none}}
+@media (prefers-reduced-motion:reduce){.writing .bandtitle,.writing .bandinner::after,.cardsin .hcard{animation:none}}
 /* on a phone the name sits below the Admin pill and theme button, so they never overlap */
 @media (max-width:640px){.homeband{height:120px;align-items:flex-end;padding-bottom:12px}.bandtitle{font-size:34px}}
 .homebody{padding:18px 16px 64px}
@@ -278,6 +278,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .atoast{position:fixed;left:50%;bottom:max(20px, env(safe-area-inset-bottom));z-index:95;transform:translate(-50%,20px);opacity:0;pointer-events:none;max-width:calc(100vw - 32px);
   background:#20212c;color:#fff;border-radius:999px;padding:8px 8px 8px 16px;font-size:13.5px;display:flex;gap:10px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.3);transition:.25s}
 .atoast span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.atoast.plain{padding-right:16px}
 .atoast.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}
 .atoast button{width:auto;flex:none;border:0;background:rgba(255,255,255,.16);color:#fff;border-radius:999px;padding:4px 12px;font-size:12.5px;font-weight:700}
 .ascrim{position:fixed;inset:0;z-index:90;background:rgba(5,6,10,.55);backdrop-filter:blur(3px);display:grid;place-items:center;padding:16px;animation:afade .15s}
@@ -393,7 +394,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 
 <script>
 // The site's name written into the banner each time the home page is shown (the CSS under .writing):
-// the pen's glint travels the name's own width, once the font is in.
+// the pen's glint travels the name's own width, once the font is in. The cards come in at once (.cardsin).
 (function () {
   const home = document.getElementById('home'), title = document.getElementById('bandTitle');
   try { const t = JSON.parse(localStorage.getItem('site.settings')).home.title; if (t) title.textContent = t; } catch {}
@@ -404,9 +405,13 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
     void home.offsetWidth;                        // start the animation over
     home.classList.add('writing');
   }
+  function cards() {
+    home.classList.remove('cardsin'); void home.offsetWidth; home.classList.add('cardsin');
+  }
   // after the view has switched (cp.js), so the name has its width
-  const go = () => setTimeout(() => { if (atHome()) write(); });
-  (document.fonts ? document.fonts.load('42px Satisfy').catch(() => {}) : Promise.resolve()).then(go);
+  const go = () => setTimeout(() => { if (atHome()) { cards(); write(); } });
+  if (atHome()) cards();
+  (document.fonts ? document.fonts.load('42px Satisfy').catch(() => {}) : Promise.resolve()).then(() => setTimeout(() => { if (atHome()) write(); }));
   addEventListener('hashchange', go);
 })();
 </script>
@@ -2862,7 +2867,7 @@ loadSetup();
 </script>
 <script src="cp.js?v=5"></script>
 <!-- the admin pill and page, then the Alliance roster, Whitebeard and Snow Train cards -->
-<script src="admin.js?v=1"></script>
+<script src="admin.js?v=2"></script>
 <script src="cards.js?v=3"></script>
 <!-- Kartz: decoding the recording, then packing and reading it -->
 <script src="decode.js?v=4"></script>

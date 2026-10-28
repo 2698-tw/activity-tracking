@@ -96,6 +96,7 @@ window.Admin = (function () {
     toastEl.firstChild.textContent = msg;
     const b = toastEl.lastChild;
     b.style.display = undoId ? '' : 'none';
+    toastEl.classList.toggle('plain', !undoId);           // no Undo: the same space on both sides
     b.onclick = () => { toastEl.classList.remove('on'); A.undo(undoId); };
     toastEl.classList.add('on');
     clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('on'), undoId ? 6000 : 3500);
