@@ -196,7 +196,7 @@ window.Admin = (function () {
   function applyHome() {
     const h = A.settings.home;
     if (!h || !h.cards || !h.cards.length) return;
-    const t = document.querySelector('.hometitle'); if (t) t.textContent = h.title;
+    const t = document.getElementById('bandTitle'); if (t) t.textContent = h.title;
     const t2 = document.querySelector('.top .brand h1'); if (t2) t2.textContent = h.title;
     const box = document.querySelector('.homecards');
     for (const c of h.cards) {
@@ -206,7 +206,6 @@ window.Admin = (function () {
       el.querySelector('b').textContent = c.title;
       const o = el.querySelector('.open'); if (o) o.href = c.link;
     }
-    if (window.penText !== h.banner) { window.penText = h.banner; if (window.penWrite && !location.hash) window.penWrite(); }
   }
   applyHome();
 
@@ -307,8 +306,7 @@ window.Admin = (function () {
   function homePage() {
     const H = A.settings.home;
     view.innerHTML = `<div class="apanel"><h2>Home page</h2><div class="alist">
-        <div class="ali"><span class="alab">Site title</span><input type="text" data-h="title" value="${esc(H.title)}" maxlength="60"></div>
-        <div class="ali"><span class="alab">Banner</span><input type="text" data-h="banner" value="${esc(H.banner)}" maxlength="6" inputmode="numeric" pattern="[0-9]*"><span class="ahint" style="margin:0">digits only, written by the glowing pen</span></div></div></div>
+        <div class="ali"><span class="alab">Site title</span><!-- the name in the banner and the header --><input type="text" data-h="title" value="${esc(H.title)}" maxlength="60"></div></div></div>
       <div class="apanel"><h2>Cards</h2><p class="ahint">Show or hide, the title, the Open in Sheets link, and the order.</p><div class="alist">
       ${H.cards.map((x, i) => `<div class="ali wrapline"><input type="checkbox" data-hs="${i}" ${x.show ? 'checked' : ''} aria-label="Show on the home page">
         <input type="text" data-ht="${i}" value="${esc(x.title)}" maxlength="40" class="short">
@@ -317,7 +315,6 @@ window.Admin = (function () {
     view.onchange = e => {
       const t = e.target, d = t.dataset, v = t.value.trim();
       if (d.h === 'title') { if (!v) { t.value = H.title; return; } return save(n => { n.home.title = v; }, { what: 'Home · site title', from: H.title, to: v }); }
-      if (d.h === 'banner') { if (!/^\d{1,6}$/.test(v)) { toast('The banner takes 1 to 6 digits'); t.value = H.banner; return; } return save(n => { n.home.banner = v; }, { what: 'Home · banner', from: H.banner, to: v }); }
       if (d.hs) { const x = H.cards[d.hs]; return save(n => { n.home.cards[d.hs].show = t.checked; }, { what: `Home · ${x.title} card`, from: x.show ? 'shown' : 'hidden', to: t.checked ? 'shown' : 'hidden' }); }
       if (d.ht) { const x = H.cards[d.ht]; if (!v) { t.value = x.title; return; } return save(n => { n.home.cards[d.ht].title = v; }, { what: `Home · ${HOME_NAMES[x.id]} card title`, from: x.title, to: v }); }
       if (d.hl) { const x = H.cards[d.hl]; if (!/^https:\/\/\S+$/.test(v)) { toast('The link must start with https://'); t.value = x.link; return; } return save(n => { n.home.cards[d.hl].link = v; }, { what: `Home · ${x.title} link`, from: x.link, to: v }); }

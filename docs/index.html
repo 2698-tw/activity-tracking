@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&family=Satisfy&display=swap">
 <script>
 // The saved theme, applied before the first paint so the page never flashes the other one.
 try { const t = JSON.parse(localStorage.getItem('kartz.theme'));
@@ -171,23 +171,28 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 #home{margin:-16px -16px 0}
 .athome #home{display:block}
 .athome #app{display:none}
-.homeband{position:relative;overflow:hidden;height:190px;display:grid;place-items:center;padding:0 56px;
-  background:linear-gradient(180deg,#fff3e2 0%,#fcd9b8 50%,#f6a98b 100%)}
-:root[data-theme="dark"] .homeband{background:linear-gradient(180deg,#3a1d2c,#6e2c3a 55%,#b9524a)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .homeband{background:linear-gradient(180deg,#3a1d2c,#6e2c3a 55%,#b9524a)}}
-.homeband .themebtn{position:absolute;top:16px;right:max(16px, env(safe-area-inset-right));color:#2a1024;border-color:rgba(42,16,36,.25)}
-:root[data-theme="dark"] .homeband .themebtn{color:#fff;border-color:rgba(255,255,255,.35)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .homeband .themebtn{color:#fff;border-color:rgba(255,255,255,.35)}}
-/* "2698" written by a glowing pen; the script is under the banner markup */
-.pen2698{height:92%;width:min(620px,100%);overflow:visible}
-.pen2698 path{fill:none;stroke:#fff4f8;stroke-width:9;stroke-linecap:round;stroke-linejoin:round}
-.pen2698 .ink{filter:drop-shadow(0 0 4px #fff) drop-shadow(0 0 10px #ff5c9a) drop-shadow(0 0 22px #c31441)}
-.pen2698 circle{fill:#fff;opacity:0;filter:drop-shadow(0 0 8px #fff) drop-shadow(0 0 16px #ff5c9a)}
-@media (max-width:640px){.homeband{height:150px;padding:0 48px}}
-.homebody{padding:0 16px 64px}
-.hometitle{font-size:24px;letter-spacing:-.3px;margin:18px 0 14px}
+.homeband{position:relative;overflow:hidden;height:140px;display:flex;align-items:center;
+  background:linear-gradient(180deg,#3a1d2c,#6e2c3a 55%,#b9524a)}
+.homeband .themebtn{position:absolute;top:14px;right:max(16px, env(safe-area-inset-right));z-index:2;color:#fff;border-color:rgba(255,255,255,.35)}
+/* the site's name, in Satisfy, written in from left to right each time the home page is shown, a glint
+   at the pen's tip; then the cards come in one after another (the script under the banner markup) */
+.bandinner{position:relative;width:100%;max-width:960px;margin:0 auto;padding:0 16px}
+.bandtitle{display:inline-block;margin:0;padding-right:.15em;font:400 42px/1.2 Satisfy,cursive;color:#fff;text-shadow:0 0 14px rgba(255,92,154,.45)}
+.writing .bandtitle{animation:writeIn 1.5s cubic-bezier(.45,.05,.35,1) .15s both}
+.writing .bandinner::after{content:"";position:absolute;top:50%;left:16px;width:10px;height:10px;margin-top:-5px;border-radius:50%;background:#fff;
+  box-shadow:0 0 10px #fff,0 0 22px #ff5c9a;opacity:0;animation:nib 1.5s cubic-bezier(.45,.05,.35,1) .15s both}
+@keyframes writeIn{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@keyframes nib{0%{opacity:0;transform:translateX(0)}8%{opacity:1}92%{opacity:1}100%{opacity:0;transform:translateX(var(--w,340px))}}
+.writing .hcard{animation:cardIn .55s cubic-bezier(.2,.8,.2,1) both}
+.writing .hcard:nth-child(1){animation-delay:.55s}.writing .hcard:nth-child(2){animation-delay:.65s}
+.writing .hcard:nth-child(3){animation-delay:.75s}.writing .hcard:nth-child(4){animation-delay:.85s}
+@keyframes cardIn{from{opacity:0;transform:translateY(14px) scale(.98)}}
+@media (prefers-reduced-motion:reduce){.writing .bandtitle,.writing .bandinner::after,.writing .hcard{animation:none}}
+/* on a phone the name sits below the Admin pill and theme button, so they never overlap */
+@media (max-width:640px){.homeband{height:120px;align-items:flex-end;padding-bottom:12px}.bandtitle{font-size:34px}}
+.homebody{padding:18px 16px 64px}
 .homecards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-@media (max-width:640px){.homecards{grid-template-columns:1fr;gap:12px}.hometitle{text-align:center;font-size:22px}}
+@media (max-width:640px){.homecards{grid-template-columns:1fr;gap:12px}}
 .hcard{position:relative;overflow:hidden;border-radius:14px;padding:20px 18px 16px;color:#fff;
   display:flex;flex-direction:column;gap:18px;background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b)}
 .hcard.cp{background:linear-gradient(135deg,#c31441,#f26b3a 55%,#f5b04c)}
@@ -250,14 +255,10 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .apill{display:flex;flex:none;border-radius:999px;overflow:hidden;border:1px solid var(--line);background:var(--panel)}
 .top .apill{margin-left:auto}
 .top{gap:10px}
-.homeband .apill{position:absolute;top:16px;right:calc(max(16px, env(safe-area-inset-right)) + 44px);z-index:2;background:rgba(255,255,255,.55);border-color:rgba(42,16,36,.25)}
-:root[data-theme="dark"] .homeband .apill{background:rgba(0,0,0,.25);border-color:rgba(255,255,255,.35)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .homeband .apill{background:rgba(0,0,0,.25);border-color:rgba(255,255,255,.35)}}
+.homeband .apill{position:absolute;top:14px;right:calc(max(16px, env(safe-area-inset-right)) + 44px);z-index:2;background:rgba(0,0,0,.25);border-color:rgba(255,255,255,.35)}
 .apill button{width:auto;height:32px;display:flex;align-items:center;gap:6px;border:0;border-radius:0;background:none;color:var(--ink);padding:0 12px;font-size:13px;font-weight:600;line-height:1}
 .apill .t{display:block;line-height:1}
-.homeband .apill button{color:#2a1024}
-:root[data-theme="dark"] .homeband .apill button{color:#fff}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .homeband .apill button{color:#fff}}
+.homeband .apill button{color:#fff}
 .apill svg{display:block;flex:none;width:15px;height:15px}
 .apill.on,.homeband .apill.on{background:linear-gradient(135deg,#c31441,#e0457b);border-color:transparent;box-shadow:0 4px 16px rgba(195,20,65,.35)}
 .apill.on button,.homeband .apill.on button{color:#fff}
@@ -354,7 +355,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .aov{color:var(--muted);font-size:12.5px}
 .aov s{color:var(--bad)}.aov ins{color:var(--ok);text-decoration:none}
 @media (max-width:640px){.alab{width:100%}.alogi{flex-wrap:wrap}.alogi time{min-width:0}
-  .homeband .apill{top:12px}.homeband .apill button{padding:0 9px}.homeband .apill .t{display:none}}
+  .homeband .apill button{padding:0 9px}.homeband .apill .t{display:none}}
 .unit{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700}
 .unit.uArmy{background:#3d3420;color:#e8c77a}.unit.uNavy{background:#1c3550;color:#8cc4ff}.unit.uAirForce{background:#2c2347;color:#c3a6ff}
 </style>
@@ -364,10 +365,9 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 <div id="home" class="hide">
   <div class="homeband">
     <button type="button" class="themebtn" id="themeHome"></button>
-    <svg class="pen2698" id="pen2698" viewBox="0 0 520 160" role="img" aria-label="2698"></svg>
+    <div class="bandinner"><h1 class="bandtitle" id="bandTitle">2698 Data Extractor</h1></div>
   </div>
   <div class="homebody wrap">
-    <h1 class="hometitle">2698 Data Extractor</h1>
     <div class="homecards">
       <div class="hcard" data-card="kartz"><b>Kartz ranking</b>
         <div class="acts"><a class="go" href="#kartz">Extract</a><a class="open" href="https://docs.google.com/spreadsheets/d/1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE/edit#gid=1243524383" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
@@ -382,61 +382,22 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 </div>
 
 <script>
-// The banner's "2698", written by a glowing pen: each digit is the one line a hand draws (in a
-// 100 × 140 box, in writing order), slanted like handwriting, drawn with the pen tip following it.
-// Written each time the home page is shown. The digits can be changed in the admin view (Home page);
-// the last ones set are kept in this browser so the right ones are written straight away.
+// The site's name written into the banner each time the home page is shown (the CSS under .writing):
+// the pen's glint travels the name's own width, once the font is in.
 (function () {
-  const NS = 'http://www.w3.org/2000/svg', svg = document.getElementById('pen2698');
-  const DIGITS = {
-    2: 'M 16 46 C 16 18, 54 6, 68 28 C 80 48, 62 70, 44 88 C 30 102, 16 116, 10 128 C 26 118, 40 114, 54 121 C 66 127, 78 128, 90 116',
-    6: 'M 78 16 C 58 18, 30 42, 22 76 C 14 108, 30 130, 52 128 C 74 126, 82 100, 68 88 C 54 76, 30 82, 24 104',
-    9: 'M 74 40 C 66 18, 32 20, 28 44 C 24 66, 50 74, 66 58 C 74 50, 76 40, 74 32 C 76 62, 66 100, 52 120 C 42 134, 26 134, 18 124',
-    8: 'M 72 30 C 68 12, 30 12, 30 36 C 30 58, 74 68, 74 96 C 74 124, 30 130, 26 104 C 22 82, 50 72, 62 58 C 72 46, 76 38, 72 30',
-    0: 'M 58 16 C 30 14, 18 50, 20 82 C 22 112, 36 130, 54 128 C 76 126, 84 92, 82 62 C 80 34, 70 16, 52 20',
-    1: 'M 32 40 C 44 32, 54 22, 62 14 C 60 52, 58 90, 56 128',
-    3: 'M 20 34 C 30 12, 72 10, 74 36 C 76 58, 54 66, 40 68 C 62 68, 82 82, 80 104 C 78 128, 40 136, 16 116',
-    4: 'M 58 14 C 44 42, 28 70, 12 96 C 40 95, 66 94, 92 92 M 68 46 C 66 74, 64 102, 62 130',
-    5: 'M 78 16 C 62 16, 46 16, 32 18 C 30 38, 28 54, 26 66 C 44 56, 74 58, 80 88 C 86 120, 48 136, 18 120',
-    7: 'M 14 20 C 40 18, 66 18, 88 16 C 70 50, 52 88, 40 128',
-  };
-  try { window.penText = JSON.parse(localStorage.getItem('site.settings')).home.banner; } catch {}
-  let run = 0;
-  function write() {
-    cancelAnimationFrame(run);
-    svg.textContent = '';
-    const ink = document.createElementNS(NS, 'g'); ink.setAttribute('class', 'ink'); svg.appendChild(ink);
-    const text = /^\d{1,6}$/.test(window.penText || '') ? window.penText : '2698', wide = Math.max(520, text.length * 108 + 88);
-    svg.setAttribute('viewBox', `0 0 ${wide} 160`);
-    const parts = [...text].map((d, k) => {
-      const g = document.createElementNS(NS, 'g');
-      g.setAttribute('transform', `translate(${(wide - text.length * 108) / 2 + 4 + k * 108} 8) skewX(-12)`); ink.appendChild(g);
-      const line = document.createElementNS(NS, 'path'); line.setAttribute('d', DIGITS[d]); g.appendChild(line);
-      const len = line.getTotalLength();
-      line.style.strokeDasharray = len + 1; line.style.strokeDashoffset = len + 1;
-      const nib = document.createElementNS(NS, 'circle'); nib.setAttribute('r', 5.5); g.appendChild(nib);
-      return { line, len, nib };
-    });
-    // ease in and out per digit, time in proportion to its length, a short pen lift between digits
-    const speed = 0.36, lift = 160, plan = []; let t = 300;
-    parts.forEach(p => { const dur = p.len / speed; plan.push({ p, from: t, dur }); t += dur + lift; });
-    const ease = x => x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2, t0 = performance.now();
-    const frame = now => {
-      const el = now - t0;
-      plan.forEach(({ p, from, dur }) => {
-        const f = Math.max(0, Math.min(1, (el - from) / dur)), at = p.len * ease(f), on = f > 0 && f < 1;
-        p.line.style.strokeDashoffset = p.len + 1 - at;
-        p.nib.style.opacity = on ? 1 : 0;
-        if (on) { const pt = p.line.getPointAtLength(at); p.nib.setAttribute('cx', pt.x); p.nib.setAttribute('cy', pt.y); }
-      });
-      if (el < t + 100) run = requestAnimationFrame(frame);
-    };
-    run = requestAnimationFrame(frame);
-  }
+  const home = document.getElementById('home'), title = document.getElementById('bandTitle');
+  try { const t = JSON.parse(localStorage.getItem('site.settings')).home.title; if (t) title.textContent = t; } catch {}
   const atHome = () => !/^#(kartz|cp|roster|whitebeard|snowtrain|admin)$/.test(location.hash);
-  window.penWrite = () => { if (atHome()) write(); };
-  if (atHome()) write();
-  addEventListener('hashchange', () => { if (atHome()) write(); });
+  function write() {
+    home.classList.remove('writing');
+    title.parentNode.style.setProperty('--w', title.offsetWidth + 'px');
+    void home.offsetWidth;                        // start the animation over
+    home.classList.add('writing');
+  }
+  // after the view has switched (cp.js), so the name has its width
+  const go = () => setTimeout(() => { if (atHome()) write(); });
+  (document.fonts ? document.fonts.load('42px Satisfy').catch(() => {}) : Promise.resolve()).then(go);
+  addEventListener('hashchange', go);
 })();
 </script>
 
