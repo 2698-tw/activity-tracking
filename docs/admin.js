@@ -200,12 +200,16 @@ window.Admin = (function () {
     const t = document.getElementById('bandTitle'); if (t) t.textContent = h.title;
     const t2 = document.querySelector('.top .brand h1'); if (t2) t2.textContent = h.title;
     const box = document.querySelector('.homecards');
+    let prev = null;
     for (const c of h.cards) {
       const el = box && box.querySelector(`.hcard[data-card="${c.id}"]`); if (!el) continue;
-      box.appendChild(el);                      // in the order set
-      el.hidden = !c.show;
-      el.querySelector('b').textContent = c.title;
-      const o = el.querySelector('.open'); if (o) o.href = c.link;
+      // in the order set, moving a card only when it's out of place (a move replays its slide-in)
+      const at = prev ? prev.nextElementSibling : box.firstElementChild;
+      if (at !== el) box.insertBefore(el, at);
+      prev = el;
+      if (el.hidden !== !c.show) el.hidden = !c.show;
+      const b = el.querySelector('b'); if (b.textContent !== c.title) b.textContent = c.title;
+      const o = el.querySelector('.open'); if (o && o.getAttribute('href') !== c.link) o.href = c.link;
     }
   }
   applyHome();
