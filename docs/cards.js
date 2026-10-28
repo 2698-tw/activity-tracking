@@ -437,7 +437,7 @@
         const name = m.querySelector('[data-n]').value.trim(), ally = m.querySelector('[data-a]').value;
         if (!name) return Admin.toast('Type a name');
         m.close();
-        el('Q').value = ''; W.ally = '';
+        el('Q').value = ''; el('Q').dispatchEvent(new Event('input')); W.ally = '';
         const res = await run('row-add', { name, ally }, { what: `${cfg().title} · added ${name}`, from: '—', to: name });
         if (res && res.id) { W.flash = res.id; draw(); }
       };
@@ -503,7 +503,12 @@
       sel.clear();
       run('bulk-ally', { ids, ally }, { what: `${cfg().title} · ${ids.length} players to ${ally || 'no alliance'}`, from: list(nm), to: ally || '—' });
     });
-    el('Q').oninput = draw;
+    // the search box: a ✕ to empty it, shown once something is typed
+    const q = el('Q'), clear = document.createElement('button');
+    clear.type = 'button'; clear.className = 'rclear'; clear.textContent = '✕'; clear.title = 'Clear the search'; clear.setAttribute('aria-label', 'Clear the search'); clear.hidden = true;
+    q.after(clear);
+    q.oninput = () => { clear.hidden = !q.value; draw(); };
+    clear.onclick = e => { e.preventDefault(); q.value = ''; clear.hidden = true; draw(); q.focus(); };
     el('Reload').onclick = load;
     const visible = () => location.hash === o.hash;
     Admin.subscribe(kind => {
