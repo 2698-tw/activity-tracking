@@ -171,7 +171,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 #home{margin:-16px -16px 0}
 .athome #home{display:block}
 .athome #app{display:none}
-.homeband{position:relative;overflow:hidden;height:150px;display:grid;place-items:center;padding:0 56px;
+.homeband{position:relative;overflow:hidden;height:190px;display:grid;place-items:center;padding:0 56px;
   background:linear-gradient(180deg,#fff3e2 0%,#fcd9b8 50%,#f6a98b 100%)}
 :root[data-theme="dark"] .homeband{background:linear-gradient(180deg,#3a1d2c,#6e2c3a 55%,#b9524a)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .homeband{background:linear-gradient(180deg,#3a1d2c,#6e2c3a 55%,#b9524a)}}
@@ -179,11 +179,11 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 :root[data-theme="dark"] .homeband .themebtn{color:#fff;border-color:rgba(255,255,255,.35)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .homeband .themebtn{color:#fff;border-color:rgba(255,255,255,.35)}}
 /* "2698" written by a glowing pen; the script is under the banner markup */
-.pen2698{height:92%;width:min(520px,100%);overflow:visible}
+.pen2698{height:92%;width:min(620px,100%);overflow:visible}
 .pen2698 path{fill:none;stroke:#fff4f8;stroke-width:9;stroke-linecap:round;stroke-linejoin:round}
 .pen2698 .ink{filter:drop-shadow(0 0 4px #fff) drop-shadow(0 0 10px #ff5c9a) drop-shadow(0 0 22px #c31441)}
 .pen2698 circle{fill:#fff;opacity:0;filter:drop-shadow(0 0 8px #fff) drop-shadow(0 0 16px #ff5c9a)}
-@media (max-width:640px){.homeband{height:120px;padding:0 48px}}
+@media (max-width:640px){.homeband{height:150px;padding:0 48px}}
 .homebody{padding:0 16px 64px}
 .hometitle{font-size:24px;letter-spacing:-.3px;margin:18px 0 14px}
 .homecards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -208,7 +208,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 /* ---------------- alliance roster, Whitebeard and Snow Train cards (cards.js) ---------------- */
 /* The bookmark's panel (extractor.js), as the roster card: dark in both themes, like the game. */
 .rapp{color-scheme:dark;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f3f3f7;background:rgba(22,22,30,.97);border-radius:18px;
-  box-shadow:0 12px 40px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.1);overflow:hidden;display:flex;flex-direction:column;min-height:560px}
+  box-shadow:0 12px 40px rgba(0,0,0,.25),inset 0 0 0 2px rgba(224,69,123,.55);overflow:hidden;display:flex;flex-direction:column;min-height:560px}
 .rhead{display:flex;align-items:center;gap:10px;padding:12px 14px 8px;flex-wrap:wrap}
 .rhead b{font-size:15.5px}
 .rsearch{flex:1;min-width:160px;display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.08);border-radius:999px;padding:6px 14px;margin:0}
@@ -253,11 +253,12 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .homeband .apill{position:absolute;top:16px;right:calc(max(16px, env(safe-area-inset-right)) + 44px);z-index:2;background:rgba(255,255,255,.55);border-color:rgba(42,16,36,.25)}
 :root[data-theme="dark"] .homeband .apill{background:rgba(0,0,0,.25);border-color:rgba(255,255,255,.35)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .homeband .apill{background:rgba(0,0,0,.25);border-color:rgba(255,255,255,.35)}}
-.apill button{width:auto;display:flex;align-items:center;gap:6px;border:0;border-radius:0;background:none;color:var(--ink);padding:6px 12px;font-size:13px;font-weight:600;line-height:20px}
+.apill button{width:auto;height:32px;display:flex;align-items:center;gap:6px;border:0;border-radius:0;background:none;color:var(--ink);padding:0 12px;font-size:13px;font-weight:600;line-height:1}
+.apill .t{display:block;line-height:1}
 .homeband .apill button{color:#2a1024}
 :root[data-theme="dark"] .homeband .apill button{color:#fff}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .homeband .apill button{color:#fff}}
-.apill svg{width:15px;height:15px}
+.apill svg{display:block;flex:none;width:15px;height:15px}
 .apill.on,.homeband .apill.on{background:linear-gradient(135deg,#c31441,#e0457b);border-color:transparent;box-shadow:0 4px 16px rgba(195,20,65,.35)}
 .apill.on button,.homeband .apill.on button{color:#fff}
 .apill .x{border-left:1px solid rgba(255,255,255,.4);font-weight:500;opacity:.9}
@@ -300,7 +301,6 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 @keyframes arise{from{opacity:0;transform:translateY(12px) scale(.97)}}
 @keyframes ashake{20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
 /* the cards in admin mode */
-.rapp.admin{box-shadow:0 12px 40px rgba(0,0,0,.25),inset 0 0 0 2px rgba(224,69,123,.55)}
 .radm{display:contents}
 .rgo.pink{background:#c31441}
 .rgo.danger{background:#8d2a2a}
@@ -308,7 +308,9 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .rgo.mini{padding:2px 9px;font-size:11.5px;font-weight:600;margin-left:4px}
 .rbulk{display:none;gap:8px;align-items:center;flex-wrap:wrap;margin:0 14px 10px;padding:8px 12px;border-radius:12px;background:rgba(195,20,65,.2);font-size:13px}
 .rbulk.on{display:flex}
-.rbulk select{width:auto;background:rgba(255,255,255,.1);color:#fff;border:0;border-radius:8px;padding:5px 8px;color-scheme:dark}
+.rbulk select{width:auto;background:#3a2330;color:#fff;border:0;border-radius:8px;padding:5px 8px;color-scheme:dark}
+/* Windows draws a select's open list with the select's text colour on its own white: give the options their own colours */
+.rbulk option,.cellin option{background:#20212c;color:#f3f3f7}
 .rtable tr.sel td{background:#2a1c26}
 .rtable tr.flash td{animation:aflash 2s}
 @keyframes aflash{from{background:#5a2440}}
@@ -352,7 +354,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .aov{color:var(--muted);font-size:12.5px}
 .aov s{color:var(--bad)}.aov ins{color:var(--ok);text-decoration:none}
 @media (max-width:640px){.alab{width:100%}.alogi{flex-wrap:wrap}.alogi time{min-width:0}
-  .homeband .apill{top:12px}.homeband .apill button{padding:6px 9px}.homeband .apill .t{display:none}}
+  .homeband .apill{top:12px}.homeband .apill button{padding:0 9px}.homeband .apill .t{display:none}}
 .unit{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700}
 .unit.uArmy{background:#3d3420;color:#e8c77a}.unit.uNavy{background:#1c3550;color:#8cc4ff}.unit.uAirForce{background:#2c2347;color:#c3a6ff}
 </style>
