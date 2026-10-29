@@ -448,7 +448,7 @@ export default {
     // the game page may reach the ranking route, the roster's MM/CE list and the settings (which of
     // the bookmark's sections to show), and nothing else
     const rankingCall = origin === RANKING_ORIGIN
-      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points']
+      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points', 'api/et-send']
         .includes(url.pathname.replace(/^\/+/, ''));
     const allowed = knownOrigin || hasPass || rankingCall;
 
@@ -647,6 +647,23 @@ export default {
       } catch (e) {
         const status = e.status || (e instanceof SyntaxError ? 400 : 502);
         return reply({ error: String(e && e.message || e) }, status);
+      }
+    }
+
+    // The bookmark's Energy Tower Send: today's column as the card has it (every garrison read of the
+    // day combined, and the Rankings points), not only the reads on the device that sends it; added
+    // below the rows already in the sheet, like the other sends.
+    if (url.pathname.replace(/^\/+/, '') === 'api/et-send') {
+      try {
+        const target = await sheetTarget(env, 'energytower');
+        if (!target.id) return reply({ error: `No sheet is set for the ${target.book} yet — add one in the admin view (Sheets).` }, 400);
+        const r = await env.ROSTER.get(env.ROSTER.idFromName('roster')).fetch('https://roster/et-day', { method: 'POST', body: '{}' });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || 'the Energy Tower card could not be read');
+        if (!j.rows.length) return reply({ error: `The Energy Tower card has no one on ${j.day} (UTC) yet — tap Read garrison or Read points first.` }, 400);
+        return reply(await writeRanking(env, j.rows, target, j.day), 200);
+      } catch (e) {
+        return reply({ error: String(e && e.message || e) }, e.status || 502);
       }
     }
 
@@ -1374,6 +1391,7 @@ export class RosterStore {
       if (path === '/et-update') return Response.json(await this.wbUpdate(await request.json(), 'et'));
       if (path === '/et-list') return Response.json(await this.wbList('et'));
       if (path === '/et-points') return Response.json(await this.etPoints(await request.json()));
+      if (path === '/et-day') return Response.json(await this.etDay());
       if (path === '/settings') return Response.json(await this.getSettings());
       if (path === '/admin') return Response.json(await this.admin(await request.json()));
       return Response.json({ error: 'unknown roster call' }, { status: 404 });
@@ -1487,6 +1505,21 @@ export class RosterStore {
     await this.state.storage.put({ [ns + ':day:' + day]: pts, [ns + ':who']: who });
     return { day, players: read.rows.length, replaced: had, merged: keep && had, ...(ns === 'et' ? { allies } : {}) };
   }
+  // Today's Energy Tower column as sheet rows, the way the card shows it: [name, March CP (79M), alliance,
+  // points], one per player there that day (in a garrison read, or with points), our alliances first
+  async etDay() {
+    const st = this.state.storage, day = new Date().toISOString().slice(0, 10);
+    const cps = (await st.get('et:day:' + day)) || {}, pts = (await st.get('et:pts:' + day)) || {};
+    const who = (await st.get('et:who')) || {}, roster = await this.load(), order = (await this.getSettings()).alliances;
+    const rank = a => { const i = order.indexOf(a); return i < 0 ? 99 : i; };
+    const rows = [...new Set([...Object.keys(cps), ...Object.keys(pts)])].filter(k => who[k]).map(k => {
+      const ro = roster[k];
+      return { name: String(who[k].name || ''), ally: String((ro ? (ro.status === 'Left' ? 'Left' : ro.alliance) : who[k].ally) || ''), cp: cps[k], pt: pts[k] };
+    });
+    rows.sort((a, b) => rank(a.ally) - rank(b.ally) || a.ally.localeCompare(b.ally) || (b.cp || 0) - (a.cp || 0) || (b.pt || 0) - (a.pt || 0));
+    return { day, rows: rows.map(r => [r.name.slice(0, 80), r.cp != null ? Math.round(r.cp / 1e6) + 'M' : '', r.ally.slice(0, 20), r.pt ?? '']) };
+  }
+
   // The Energy Tower's Rankings (this warzone's players and their points): each player's points that
   // day (et:pts:<day>, the highest of the day's reads), shown in the card's date column in place of
   // Yes. That day's column is made if there is none yet, and a player not on the card yet is added,
