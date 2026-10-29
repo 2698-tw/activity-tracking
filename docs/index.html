@@ -16,6 +16,9 @@ try { const t = JSON.parse(localStorage.getItem('kartz.theme'));
       if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
 // No #kartz or #cp in the address: the home page, shown from the first paint (cp.js takes over).
 if (!/^#(kartz|cp|roster|whitebeard|snowtrain|energytower|admin)$/.test(location.hash)) document.documentElement.classList.add('athome');
+// Another view in the address (#roster…): that one from the first paint too, not Kartz, the page's
+// own first view, while cp.js loads.
+else if (location.hash !== '#kartz') document.documentElement.dataset.view = location.hash.slice(1);
 </script>
 <style>
 /* Light by default, dark when the device prefers it — unless the toggle by the title has chosen,
@@ -171,6 +174,9 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 #home{margin:-16px -16px 0}
 .athome #home{display:block}
 .athome #app{display:none}
+html[data-view] #tab-kartz{display:none}
+html[data-view=cp] #tab-cp,html[data-view=roster] #tab-roster,html[data-view=whitebeard] #tab-wb,html[data-view=snowtrain] #tab-st,
+html[data-view=energytower] #tab-et,html[data-view=admin] #tab-admin{display:block}
 .homeband{position:relative;overflow:hidden;height:140px;display:flex;align-items:center;
   background:linear-gradient(180deg,#3a1d2c,#6e2c3a 55%,#b9524a)}
 .homeband .themebtn{position:absolute;top:14px;right:max(16px, env(safe-area-inset-right));z-index:2;color:#fff;border-color:rgba(255,255,255,.35)}
@@ -2897,7 +2903,7 @@ $('toBottom').onclick = () => scrollTo({ top: document.documentElement.scrollHei
 
 loadSetup();
 </script>
-<script src="cp.js?v=6"></script>
+<script src="cp.js?v=7"></script>
 <!-- the admin pill and page, then the Alliance roster, Whitebeard and Snow Train cards -->
 <script src="admin.js?v=6"></script>
 <script src="cards.js?v=10"></script>

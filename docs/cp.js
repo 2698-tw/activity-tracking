@@ -27,6 +27,7 @@ function showTab(name) {
   $('tab-et').classList.toggle('hide', name !== 'energytower');
   $('tab-admin').classList.toggle('hide', name !== 'admin');
   document.documentElement.classList.remove('athome');
+  delete document.documentElement.dataset.view;      // index.html's first-paint view, now shown by the classes
   closeMenu();
 }
 const viewFromAddress = () => ({ '#cp': 'cp', '#kartz': 'kartz', '#roster': 'roster', '#whitebeard': 'whitebeard', '#snowtrain': 'snowtrain', '#energytower': 'energytower', '#admin': 'admin' })[location.hash] || 'home';
