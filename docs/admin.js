@@ -21,13 +21,14 @@ window.Admin = (function () {
             cols: [col('name', 'Name'), col('cp1', 'March CP 1'), col('u1', 'Unit 1'), col('cp2', 'March CP 2'), col('u2', 'Unit 2'), col('cp3', 'March CP 3'), col('u3', 'Unit 3'), col('ally', 'Alliance'), col('@dates', 'Date columns')] },
       ro: { title: 'Alliance roster', sort: 'power', filter: '', fmt: 'M', unitFilters: false,
             cols: [col('name', 'Name'), col('alliance', 'Alliance'), col('rank', 'Rank'), col('power', 'Power'), col('cls', 'MM/CE'), col('join', 'Joined'), col('last', 'Last online'), col('status', 'Status')] },
+      et: { title: 'Energy Tower', sort: 'best', filter: '', fmt: 'M', unitFilters: false, cols: [col('name', 'Name'), col('best', 'Best March CP'), col('ally', 'Alliance'), col('@dates', 'Date columns')] },
     },
     home: { title: '2698 Data Extractor', banner: '2698', cards: [] },
     sheets: {},
   };
-  const SHEET_NAMES = { kartz: 'Kartz ranking (Send on the Kartz page)', cp: 'Base CP (Alliance Rosters, RawData-CP)', ranking: 'Whitebeard ranking (bookmark Send)', snowtrain: 'Snow Train (bookmark Send)' };
-  const HOME_NAMES = { kartz: 'Kartz ranking', cp: 'Alliance roster', wb: 'Whitebeard ranking', st: 'Snow Train' };
-  const CARD_NAMES = { wb: 'Whitebeard', st: 'Snow Train', ro: 'Alliance roster' };
+  const SHEET_NAMES = { kartz: 'Kartz ranking (Send on the Kartz page)', cp: 'Base CP (Alliance Rosters, RawData-CP)', ranking: 'Whitebeard ranking (bookmark Send)', snowtrain: 'Snow Train (bookmark Send)', energytower: 'Energy Tower (bookmark Send)' };
+  const HOME_NAMES = { kartz: 'Kartz ranking', cp: 'Alliance roster', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower' };
+  const CARD_NAMES = { wb: 'Whitebeard', st: 'Snow Train', ro: 'Alliance roster', et: 'Energy Tower' };
 
   const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
                   set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
@@ -209,7 +210,8 @@ window.Admin = (function () {
       prev = el;
       if (el.hidden !== !c.show) el.hidden = !c.show;
       const b = el.querySelector('b'); if (b.textContent !== c.title) b.textContent = c.title;
-      const o = el.querySelector('.open'); if (o && o.getAttribute('href') !== c.link) o.href = c.link;
+      const o = el.querySelector('.open');
+      if (o) { if (o.getAttribute('href') !== c.link) o.href = c.link; if (o.hidden !== !c.link) o.hidden = !c.link; }
     }
   }
   applyHome();
@@ -263,7 +265,7 @@ window.Admin = (function () {
       <p class="ahint">The filter chips on every card, in this order. Renaming one renames it on every player too. The bookmark still labels its own reads 698N, 698S, 698W and 698C.</p>
       <div class="alist">${AL.map((a, i) => `<div class="ali">${tag(a)}<input type="text" data-ar="${i}" value="${esc(a)}" maxlength="12">${arrows('a', i, AL.length)}<button type="button" class="abtn sm" data-ax="${i}" ${AL.length > 1 ? '' : 'disabled'}>Remove</button></div>`).join('')}
         <div class="ali"><input type="text" data-an placeholder="New alliance tag" maxlength="12"><button type="button" class="abtn sm pri" data-aadd>Add</button></div></div></div>
-      <div class="acols">${['wb', 'st', 'ro'].map(card).join('')}</div>`;
+      <div class="acols">${['wb', 'st', 'et', 'ro'].map(card).join('')}</div>`;
     view.onchange = async e => {
       const t = e.target, d = t.dataset, c = d.c, C = c && S.cards[c];
       if (d.ar) {
@@ -286,7 +288,7 @@ window.Admin = (function () {
     view.onclick = async e => {
       const b = e.target.closest('button'); if (!b) return;
       const d = b.dataset;
-      for (const c of ['wb', 'st', 'ro']) {
+      for (const c of ['wb', 'st', 'et', 'ro']) {
         const u = d['c' + c + 'u'], dn = d['c' + c + 'd'];
         if (u == null && dn == null) continue;
         const L = S.cards[c].cols, i = +(u ?? dn), j = u != null ? i - 1 : i + 1;
@@ -295,7 +297,7 @@ window.Admin = (function () {
       if (d.au || d.ad) { const i = +(d.au ?? d.ad), j = d.au ? i - 1 : i + 1; return save(n => swap(n.alliances, i, j), { what: `Alliances · moved ${AL[i]}`, from: `place ${i + 1}`, to: `place ${j + 1}` }); }
       if (d.ax) {
         const a = AL[d.ax];
-        if (await A.confirm(`Remove ${esc(a)}?`, `${esc(a)} stops being a filter chip. Its players stay: under Other on Whitebeard and Snow Train.`))
+        if (await A.confirm(`Remove ${esc(a)}?`, `${esc(a)} stops being a filter chip. Its players stay: under Other on Whitebeard, Snow Train and Energy Tower.`))
           save(n => { n.alliances.splice(d.ax, 1); }, { what: 'Removed alliance', from: a, to: '—' });
         return;
       }
@@ -334,12 +336,12 @@ window.Admin = (function () {
 
   function sheetsPage() {
     const T = A.settings.sheets;
-    const link = t => `https://docs.google.com/spreadsheets/d/${t.id}/edit#gid=${t.gid}`;
+    const link = t => t.id ? `https://docs.google.com/spreadsheets/d/${t.id}/edit#gid=${t.gid}` : '';
     view.innerHTML = `<div class="apanel"><h2>Where each Send goes</h2>
       <p class="ahint">Paste the link of the tab to send to (it carries the spreadsheet and the tab). The Worker tries it before saving: the spreadsheet must be shared with its service account as Editor. The columns written stay the same. Rows already in a sheet are changed in Google Sheets itself.</p>
       <div class="alist">${Object.keys(SHEET_NAMES).filter(k => T[k]).map(k => `<div class="asheet">
         <b>${SHEET_NAMES[k]}</b>
-        <div class="ali"><input type="url" data-sl="${k}" value="${esc(link(T[k]))}" class="long"><button type="button" class="abtn sm pri" data-ss="${k}">Save</button><a class="abtn sm" href="${esc(link(T[k]))}" target="_blank" rel="noopener">Open ↗</a></div>
+        <div class="ali"><input type="url" data-sl="${k}" value="${esc(link(T[k]))}" placeholder="No sheet yet — paste a tab's link" class="long"><button type="button" class="abtn sm pri" data-ss="${k}">Save</button>${T[k].id ? `<a class="abtn sm" href="${esc(link(T[k]))}" target="_blank" rel="noopener">Open ↗</a>` : ''}</div>
         <p class="aerr" data-se="${k}"></p></div>`).join('')}</div></div>
       <div class="apanel"><h2>Backup</h2><p class="ahint">Every card's data and every setting in one file. Restoring puts all of it back as it was in the file (History can undo that too).</p>
         <div class="ali"><button type="button" class="abtn pri" data-bk>Download backup</button><label class="abtn">Restore from a backup…<input type="file" accept=".json,application/json" data-rs hidden></label></div></div>`;
@@ -353,7 +355,12 @@ window.Admin = (function () {
         if (id === T[k].id && gid === T[k].gid) { err.textContent = 'That is where it goes already.'; return; }
         err.textContent = 'Trying the sheet…';
         try {
-          await A.busy(b, () => A.saveSettings(n => { n.sheets[k] = { id, gid }; }, { what: `Sheets · ${SHEET_NAMES[k]}`, from: `${T[k].id.slice(0, 10)}… tab ${T[k].gid}`, to: `${id.slice(0, 10)}… tab ${gid}` }));
+          await A.busy(b, () => A.saveSettings(n => {
+            n.sheets[k] = { id, gid };
+            // the Energy Tower's home card has no Open in Sheets link until its sheet is set
+            const h = k === 'energytower' && n.home.cards.find(c => c.id === 'et');
+            if (h && !h.link) h.link = link({ id, gid });
+          }, { what: `Sheets · ${SHEET_NAMES[k]}`, from: T[k].id ? `${T[k].id.slice(0, 10)}… tab ${T[k].gid}` : 'none', to: `${id.slice(0, 10)}… tab ${gid}` }));
         } catch (x) { err.textContent = '✗ ' + x.message; }
         return;
       }

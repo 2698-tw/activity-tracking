@@ -15,7 +15,7 @@
 try { const t = JSON.parse(localStorage.getItem('kartz.theme'));
       if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
 // No #kartz or #cp in the address: the home page, shown from the first paint (cp.js takes over).
-if (!/^#(kartz|cp|roster|whitebeard|snowtrain|admin)$/.test(location.hash)) document.documentElement.classList.add('athome');
+if (!/^#(kartz|cp|roster|whitebeard|snowtrain|energytower|admin)$/.test(location.hash)) document.documentElement.classList.add('athome');
 </script>
 <style>
 /* Light by default, dark when the device prefers it — unless the toggle by the title has chosen,
@@ -211,6 +211,9 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .hcard.wb .go{color:#2b2f86}
 .hcard.st{background:linear-gradient(135deg,#0b4f6c,#1789a8 55%,#5cc6d6)}
 .hcard.st .go{color:#0b4f6c}
+.hcard.et{background:linear-gradient(135deg,#1f5130,#2f8a4c 55%,#8fd14f)}
+.hcard.et .go{color:#1f5130}
+.hcard .open[hidden]{display:none}
 .hcard .open{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.55);color:#fff}
 /* ---------------- alliance roster, Whitebeard and Snow Train cards (cards.js) ---------------- */
 /* The bookmark's panel (extractor.js), as the roster card: dark in both themes, like the game. */
@@ -247,7 +250,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .rtable tr.left td{opacity:.45}
 .rtable td.CE{color:#ff9f6b;font-weight:700}.rtable td.MM{color:#9ec5ff;font-weight:700}
 .rtag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;background:#3a3a3a;color:#ddd}
-.rtag.t698N{background:#22324f;color:#9ec5ff}.rtag.t698S{background:#3b2340;color:#e9a8ff}.rtag.t698W{background:#203d33;color:#7ee2a8}.rtag.t698C{background:#45321b;color:#ffc078}
+.rtag.tLeft{background:transparent;color:#8a8f99;box-shadow:inset 0 0 0 1px #4a4f58}.rtag.t698N{background:#22324f;color:#9ec5ff}.rtag.t698S{background:#3b2340;color:#e9a8ff}.rtag.t698W{background:#203d33;color:#7ee2a8}.rtag.t698C{background:#45321b;color:#ffc078}
 .rdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#7ee2a8;margin-right:6px}
 .rfoot{font-size:12px;color:rgba(235,235,245,.45);padding:0 14px 12px}
 .rfoot a{color:#9ec5ff}
@@ -390,6 +393,8 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
         <div class="acts"><a class="go" href="#whitebeard">Open</a><a class="open" href="https://docs.google.com/spreadsheets/d/12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc/edit#gid=0" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
       <div class="hcard st" data-card="st"><b>Snow Train</b>
         <div class="acts"><a class="go" href="#snowtrain">Open</a><a class="open" href="https://docs.google.com/spreadsheets/d/1d2jgRQlfhYMufn69YaZ-2ZPQ-lGtfvSiOPDTEplUqGs/edit#gid=0" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
+      <div class="hcard et" data-card="et"><b>Energy Tower</b>
+        <div class="acts"><a class="go" href="#energytower">Open</a><a class="open" href="" target="_blank" rel="noopener" hidden>Open in Sheets ↗</a></div></div>
     </div>
   </div>
 </div>
@@ -400,7 +405,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 (function () {
   const home = document.getElementById('home'), title = document.getElementById('bandTitle');
   try { const t = JSON.parse(localStorage.getItem('site.settings')).home.title; if (t) title.textContent = t; } catch {}
-  const atHome = () => !/^#(kartz|cp|roster|whitebeard|snowtrain|admin)$/.test(location.hash);
+  const atHome = () => !/^#(kartz|cp|roster|whitebeard|snowtrain|energytower|admin)$/.test(location.hash);
   function write() {
     home.classList.remove('writing');
     title.parentNode.style.setProperty('--w', title.offsetWidth + 'px');
@@ -602,6 +607,19 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
   <div class="rreads" id="stReads"></div>
   <div class="rbar" id="stChips"></div>
   <div class="rbody" id="stView"></div>
+</div>
+</div>
+
+<!-- Energy Tower: every Unit Details read the bookmark makes, a column per UTC day (cards.js) -->
+<div id="tab-et" class="hide">
+<div class="rapp">
+  <div class="rhead"><b>Energy Tower</b>
+    <label class="rsearch"><span aria-hidden="true">🔍</span><input id="etQ" type="text" placeholder="Search a name" autocomplete="off"></label>
+    <button type="button" class="rgo" id="etReload">Reload</button>
+  </div>
+  <div class="rreads" id="etReads"></div>
+  <div class="rbar" id="etChips"></div>
+  <div class="rbody" id="etView"></div>
 </div>
 </div>
 
@@ -2869,10 +2887,10 @@ $('toBottom').onclick = () => scrollTo({ top: document.documentElement.scrollHei
 
 loadSetup();
 </script>
-<script src="cp.js?v=5"></script>
+<script src="cp.js?v=6"></script>
 <!-- the admin pill and page, then the Alliance roster, Whitebeard and Snow Train cards -->
-<script src="admin.js?v=3"></script>
-<script src="cards.js?v=3"></script>
+<script src="admin.js?v=4"></script>
+<script src="cards.js?v=5"></script>
 <!-- Kartz: decoding the recording, then packing and reading it -->
 <script src="decode.js?v=4"></script>
 <script src="kartz.js?v=5"></script>

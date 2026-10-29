@@ -1,4 +1,4 @@
-/* ---------------- The cards: Whitebeard (#whitebeard), Snow Train (#snowtrain), Alliance roster (#roster) ---------------- */
+/* ---------------- The cards: Whitebeard (#whitebeard), Snow Train (#snowtrain), Energy Tower (#energytower), Alliance roster (#roster) ---------------- */
 // What the 2698 Data Extractor bookmark (docs/extractor.js) reads in the game, kept on the Worker:
 //  - Whitebeard: each read under its UTC date (api/wb-update), a column per day.
 //  - Snow Train: each Unit Details read the same way (api/st-update); March CP 1, 2, 3 are a player's
@@ -27,7 +27,7 @@
   const unitTag = t => t ? `<span class="unit u${t.replace(' ', '')}">${esc(t)}</span>` : '';
   const dim = '<span class="rdim">—</span>';
 
-  // Roster: each player's search name, looked up by the in-game name the bookmark read: first in the
+  // Every card: each player's search name, looked up by the in-game name the bookmark read: first in the
   // Alliance Rosters tab, then in the Base CP sends (RawData-CP), which are updated more often. Both tabs
   // are tried with the name and alliance before either is tried with the name alone, so a name another
   // alliance also has ("Woody") never takes that one's search name; each time the exact name first, then
@@ -43,7 +43,7 @@
     }
     return m;
   }
-  const withAlly = (m, r) => m.get(r.name + '|' + r.alliance) || m.get('~' + fold(r.name) + '|' + r.alliance);
+  const withAlly = (m, r) => { const a = r.alliance ?? r.ally; return m.get(r.name + '|' + a) || m.get('~' + fold(r.name) + '|' + a); };
   const byName = (m, r) => m.get(r.name) || (fold(r.name) !== '' && m.get('~' + fold(r.name)));
   async function searchNames(rows) {
     if (!names || Date.now() - namesAt > 10 * 60 * 1000) {   // the sheet changes; asked again after a while
@@ -80,6 +80,7 @@
     // Each column: its value for sorting (and CSV), its cell, and how admin mode edits it
     const DEF = {
       name: { text: 1, val: r => r.name, cell: r => esc(r.name) + (r.search && r.search !== r.name ? ` <span class="rdim">(${esc(r.search)})</span>` : ''), edit: 'text' },
+      // from the roster card for a player on it (Left once they have left), else the card's own read
       ally: { text: 1, val: r => r.ally, cell: r => allyTag(r.ally), edit: 'ally' },
       alliance: { text: 1, val: r => r.alliance, cell: r => allyTag(r.alliance), edit: 'ally' },
       rank: { val: r => r.rank || 0, cell: r => rankText(r.rank), edit: 'rank' },
@@ -88,6 +89,8 @@
       join: { hs: 1, val: r => r.join || 0, cell: r => day(r.join), edit: 'date' },
       last: { val: r => r.online ? Infinity : r.last || 0, cell: r => r.online ? '<span class="rdot"></span>now' : ago(r.last * 1000), edit: 'date' },
       status: { text: 1, hs: 1, val: r => r.status, cell: r => r.status === 'Left' ? `Left ${day(r.leftAt / 1000)}` : 'Active', edit: 'status' },
+      // Energy Tower: the highest March CP over the days there are (edited through the days)
+      best: { n: 1, val: r => Math.max(0, ...Object.values(r.pts || {})), cell: r => { const b = Math.max(0, ...Object.values(r.pts || {})); return b ? fmt(b) : dim; } },
     };
     for (const n of [1, 2, 3]) {
       DEF['cp' + n] = { n: 1, val: r => cp(r, n), cell: r => cp(r, n) ? fmt(cp(r, n)) : dim, edit: 'big' };
@@ -95,7 +98,7 @@
     }
     const dateDef = d => o.id === 'st'
       ? { n: 1, val: r => r.pts[d] != null ? 1 : 0, cell: r => r.pts[d] != null ? '<span class="yes">Yes</span>' : '<span class="rdim">No</span>', edit: 'toggle' }
-      : { n: 1, val: r => r.pts[d] ?? -1, cell: r => r.pts[d] == null ? dim : fmt(r.pts[d]), edit: 'num' };
+      : { n: 1, val: r => r.pts[d] ?? -1, cell: r => r.pts[d] == null ? dim : fmt(r.pts[d]), edit: o.id === 'et' ? 'big' : 'num' };
     const defOf = k => /^\d{4}-/.test(k) ? dateDef(k) : DEF[k];
     const columns = () => {
       const out = [];
@@ -114,7 +117,7 @@
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || r.status);
         W.rows = j.rows || []; W.dates = j.dates || []; W.reads = j.reads || {}; W.err = '';
-        if (o.id === 'ro') await searchNames(W.rows);
+        await searchNames(W.rows);                                 // every card: the roster's search names
         for (const id of [...sel]) if (!byId(id)) sel.delete(id);
       } catch (e) { W.err = `The ${cfg().title} could not be loaded: ` + (e.message || e); }
       W.loading = false; draw();
@@ -184,7 +187,7 @@
       bar.innerHTML = Admin.on ? `<button type="button" class="rgo pink" data-act="add">+ Player</button>${dated ? '<button type="button" class="rgo pink" data-act="adddate">+ Date</button>' : ''}<button type="button" class="rgo" data-act="csv">Export CSV</button>` : '';
       note.hidden = !Admin.on;
       note.innerHTML = 'Admin: click a cell to change it · ⋯ for a player · ✎ on a date for its column · tick players to change several at once. Every change is in History and can be undone.' +
-        (o.id === 'ro' ? ' ⚠ columns come from the game: its next read of that alliance replaces an edit (MM/CE edits stay).' : ' Names and alliances come from the game: its next read replaces an edit to them.');
+        (o.id === 'ro' ? ' ⚠ columns come from the game: its next read of that alliance replaces an edit (MM/CE edits stay).' : ' Names come from the game: its next read replaces an edit. Alliances of players on the Alliance roster card come from there: changing one here changes it on the roster, and every card follows.');
     }
     function drawBulk() {
       if (!bulk) return;
@@ -209,17 +212,18 @@
       const tr = td.closest('tr'), r = byId(tr.dataset.id), k = td.dataset.k, f = defOf(k);
       if (!r || !f || !f.edit || td.querySelector('.cellin')) return;
       if (f.edit === 'toggle') return toggleDay(r, k);
+      if (f.edit === 'ally' && r.left) return Admin.toast(`${r.name} has left the alliances — change it on the Alliance roster card.`);
       const AL = Admin.settings.alliances, opts = (list, cur) => `<select class="cellin">${list.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(cur) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
       const cur = k === 'name' ? r.name : f.val(r);
       let html;
-      if (f.edit === 'ally') html = opts([...(o.id === 'ro' ? [] : [['', '(no alliance)']]), ...AL.map(a => [a, a]), ...(cur && !AL.includes(cur) ? [[cur, cur]] : [])], cur || '');
+      if (f.edit === 'ally') html = opts([...(o.id === 'ro' || r.roster ? [] : [['', '(no alliance)']]), ...AL.map(a => [a, a]), ...(cur && !AL.includes(cur) ? [[cur, cur]] : [])], cur || '');
       else if (f.edit === 'unit') html = opts([['', '— (remove)'], ...TYPES.map(t => [t, t])], cur);
       else if (f.edit === 'cls') html = opts([['', '—'], ['MM', 'MM'], ['CE', 'CE']], cur);
       else if (f.edit === 'status') html = opts([['Active', 'Active'], ['Left', 'Left']], cur);
       else if (f.edit === 'rank') html = opts([[1, 'R1'], [2, 'R2'], [3, 'R3'], [4, 'R4'], [5, 'R5'], [6, 'R4 ★']], cur);
       else if (f.edit === 'date') html = `<input type="date" class="cellin" value="${k === 'last' ? day(r.last) : day(r.join)}">`;
       else {
-        const shown = f.edit === 'big' ? (cur ? Math.round(cur / 1e6) + 'M' : '') : f.edit === 'num' ? (cur === -1 ? '' : cur) : cur;
+        const shown = f.edit === 'big' ? (cur > 0 ? Math.round(cur / 1e6) + 'M' : '') : f.edit === 'num' ? (cur === -1 ? '' : cur) : cur;
         html = `<input class="cellin" value="${esc(shown)}" placeholder="${f.edit === 'text' ? '' : 'empty = clear'}">`;
       }
       const target = k === 'name' ? td.querySelector('.nmv') : td, keep = target.innerHTML;
@@ -243,9 +247,10 @@
       const show = x => x === '' || x == null || x === -1 || x === 0 ? '—' : typeof x === 'number' && x >= 1e4 ? fmt(x) : String(x);
       if (k === 'name') { if (!v || v === cur) return false; run('row-set', { id: r.id, field: 'name', value: v }, { what: `Renamed ${cur}`, from: cur, to: v }); return true; }
       if (k === 'ally' || k === 'alliance') { if (v === (cur || '')) return false; run('row-set', { id: r.id, field: k, value: v }, { what: `${who} · alliance`, from: cur || '—', to: v || '—' }); return true; }
-      if (/^\d{4}-/.test(k)) {                                     // Whitebeard points on a day
-        const n = v === '' ? null : parseNum(v);
+      if (/^\d{4}-/.test(k)) {                                     // Whitebeard points (Energy Tower March CP) on a day
+        let n = v === '' ? null : parseNum(v);
         if (n !== null && !isFinite(n)) { Admin.toast('Not a number: ' + v); return false; }
+        if (o.id === 'et' && n !== null && n < 1e5) n *= 1e6;        // "79" means 79M
         if ((n ?? -1) === cur) return false;
         run('cell-set', { id: r.id, day: k, value: n }, { what: `${who} · ${head(k)}`, from: show(cur), to: show(n) }); return true;
       }
@@ -526,6 +531,8 @@
     empty: 'Nothing yet. Read the Whitebeard ranking with the 2698 Data Extractor bookmark in the game, and it appears here.' });
   makeCard({ id: 'st', el: 'st', tab: 'tab-st', api: '/st', hash: '#snowtrain',
     empty: 'Nothing yet. Open a Snow Train\'s Unit Details in the game and tap Read on the 2698 Data Extractor bookmark, and it appears here.' });
+  makeCard({ id: 'et', el: 'et', tab: 'tab-et', api: '/et', hash: '#energytower',
+    empty: 'Nothing yet. Tap Read under Energy Tower on the 2698 Data Extractor bookmark in the game, and it appears here.' });
   makeCard({ id: 'ro', el: 'roster', tab: 'tab-roster', api: '/roster', hash: '#roster',
     empty: 'Nothing yet. Read an alliance with the 2698 Data Extractor bookmark in the game, and its members appear here.' });
 })();

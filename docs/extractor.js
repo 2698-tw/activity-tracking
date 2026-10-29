@@ -8,6 +8,8 @@
  *     to the end loads it, then sent like the Whitebeard bookmark (api/game-ranking).
  *   Snow Train: the Snow Train screen opened as its building opens it, then its own Our Defence button;
  *     sent to SS P2 Snow Train (api/game-snowtrain).
+ *   Energy Tower: its Unit Details, opened as the tower's own Unit Details button opens them; the
+ *     site's Energy Tower card (api/et-update) and its sheet (api/game-energytower).
  * The panel is buttons only. Each alliance read updates the site's Alliance roster card
  * (api/roster-update) and each Whitebeard read the site's Whitebeard card (api/wb-update).
  * Nothing here sends anything to the game: the game makes its own usual requests for what it opens.
@@ -173,6 +175,30 @@
                type: marchType(e.armys) };
     });
   }
+  // the Energy Tower's Unit Details: OpenUI(CQ26ArkWorldTroopPanel), what the tower's Unit Details
+  // button runs (the window loads this warzone's players for the event the game has open), read, and
+  // closed again. A Unit Details window already open is read as it is and left open. The game gives no
+  // alliance here; the Worker fills it in from the roster card.
+  var towerPanel = function () { return findComp(function (c) { return c.__classname__ === 'CQ26ArkWorldTroopPanel' && Array.isArray(c._infoList); }); };
+  async function readEnergyTower(step) {
+    var panel = towerPanel(), opened = [], U = ui();
+    if (!panel || !panel._infoList.length) {
+      var WT = win('CQ26ArkWorldTroopPanel'), m = req('CQ26Controller'), C = m && m.CQ26Controller && m.CQ26Controller.getInstance();
+      if (!U || !WT || !C || !C.arkData || C.arkData.cid == null) throw new Error('no Energy Tower in the game right now — open the event once, then try again');
+      if (!panel) { step('Opening the Unit Details…', .15); U.OpenUI(WT); opened.push(WT); }
+      for (var t0 = Date.now(); Date.now() - t0 < 12000; await wait(200)) { panel = towerPanel(); if (panel && panel._infoList.length) break; panel = null; }
+      await wait(400);                                   // let a late page of the list arrive, if any
+    }
+    var close = function () { opened.forEach(function (w) { try { U.CloseUI(w); } catch (e) {} }); };
+    if (!panel) { close(); throw new Error('the Unit Details did not load, or no one has joined the tower yet'); }
+    var list = panel._infoList.slice();
+    close();
+    return list.map(function (e) {
+      var p = parse(e.playerInfo);
+      return { uid: String(e.uid || ''), name: String(p.username || p.nickname || ''), ally: String(e.aTag || ''), power: Number(e.power) || 0 };
+    });
+  }
+
   // what a march is, by the units most of its slots hold: the game's unit table types them 101 army,
   // 201 navy, 301 air force (a mech or two of another kind does not change it)
   var UNIT = { 101: 'Army', 201: 'Navy', 301: 'Air Force' };
@@ -200,7 +226,7 @@
   S.members = S.members || {}; S.prev = S.prev || {};
   // only the four alliances: a read of another one saved by an earlier version is dropped
   [S.members, S.prev].forEach(function (o) { Object.keys(o).forEach(function (t) { if (!ALLY[t]) delete o[t]; }); });
-  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null, st: S.st || null })); } catch (e) {} }
+  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null, st: S.st || null, et: S.et || null })); } catch (e) {} }
   var fold = function (s) { return String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, ''); };
   // MM/CE from the roster. Names repeat ("Woody" is 698S's in-game name and 698C's search name; 698S
   // has two Gikeys), so the candidates are tried in order: in-game name in the player's own alliance,
@@ -355,6 +381,8 @@
     '<div class="row2">' + act('wb', 'main', 'Read', 'Loads every rank') + act('wbs', 'send', 'Send to sheet', 'Read it first') + '</div>' +
     '<h3>Snow Train</h3>' +
     '<div class="row2">' + act('snow', 'main', 'Read', 'Opens Our Defence') + act('snows', 'send', 'Send to sheet', 'Read it first') + '</div>' +
+    '<h3>Energy Tower</h3>' +
+    '<div class="row2">' + act('tower', 'main', 'Read', 'Opens Unit Details') + act('towers', 'send', 'Send to sheet', 'Read it first') + '</div>' +
     '<div class="status idle" id="st"><span class="si"></span><span class="tx">Ready. Tap a button to start.</span></div></div>';
   document.body.appendChild(host);
   var $ = function (s) { return root.querySelector(s); };
@@ -453,6 +481,9 @@
     var stb = $('#snow'), sts = $('#snows');
     if (!stb.classList.contains('busy') && !stb.classList.contains('err')) sub(stb, S.st ? S.st.rows.length + ' players · ' + ago(S.st.at / 1000) : 'Opens Our Defence');
     if (!sts.classList.contains('busy') && !sts.classList.contains('done')) sub(sts, S.st ? S.st.rows.length + ' players ready' : 'Read it first');
+    var etb = $('#tower'), ets = $('#towers');
+    if (!etb.classList.contains('busy') && !etb.classList.contains('err')) sub(etb, S.et ? S.et.rows.length + ' players · ' + ago(S.et.at / 1000) : 'Opens Unit Details');
+    if (!ets.classList.contains('busy') && !ets.classList.contains('done')) sub(ets, S.et ? S.et.rows.length + ' players ready' : 'Read it first');
   }
 
   /* reading alliances */
@@ -637,6 +668,47 @@
     if (!j) return;
     sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
     status('ok', 'Snow Train sent<small>' + Number(j.rows).toLocaleString() + ' rows added, dated ' + esc(j.date) +
+      ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
+  };
+
+  /* Energy Tower: its Unit Details to the site's card (api/et-update), which sends back each player's
+     alliance from the roster card, and on Send to the Energy Tower sheet (api/game-energytower) as
+     Date, Name, March CP, Alliance; the four alliances first, then everyone else */
+  $('#tower').onclick = async function () {
+    if (busy) return; lock(true);
+    var b = $('#tower'); start(b); sub(b, 'opening…');
+    try {
+      var rows = await readEnergyTower(function (t, p) { status('work', t, p); setP(b, p); });
+      status('work', 'Read <b>' + rows.length + '</b> players', .5);
+      S.et = { at: Date.now(), rows: rows }; save(); $('#towers').classList.remove('done');
+      setP(b, .6); sub(b, 'saving…');
+      status('work', 'Updating the Energy Tower card…', .7);
+      var card;
+      try {
+        var u = await postJson('/et-update', { rows: rows.map(function (r) { return { uid: r.uid, name: r.name, ally: r.ally, points: r.power }; }) });
+        (u.allies || []).forEach(function (a, i) { if (a && rows[i]) rows[i].ally = a; });
+        save();
+        card = (u.merged ? 'Card: added to today\'s column' : 'Card: new column added') + ' (' + u.day + ' UTC)';
+      } catch (e) { card = 'Card not updated (' + esc(e.message || e) + ')'; }
+      setP(b, 1); finish(b, true); sub(b, rows.length + ' players · now');
+      status('ok', 'Energy Tower read · ' + rows.length + ' players<small>' + card + ' · tap Send to sheet for its sheet.</small>');
+    } catch (e) {
+      finish(b, false); sub(b, 'tap to try again');
+      status('bad', 'Nothing read<small>' + esc(e.message || e) + '</small>');
+    }
+    lock(false); refresh();
+  };
+  $('#towers').onclick = async function () {
+    if (busy) return;
+    var b = $('#towers');
+    if (!S.et) return nudge(b, 'Nothing to send yet<small>Tap Read first.</small>');
+    var order = function (t) { return MAIN.indexOf(t) >= 0 ? MAIN.indexOf(t) : 99; };
+    var rows = S.et.rows.slice().sort(function (a, c) { return order(a.ally) - order(c.ally) || a.ally.localeCompare(c.ally) || c.power - a.power; })
+      .map(function (r) { return [r.name.slice(0, 80), Math.round(r.power / 1e6) + 'M', r.ally.slice(0, 20)]; });   // 78,951,860 → 79M
+    var j = await sendTo(b, '/game-energytower', { rows: rows }, rows.length + ' Energy Tower rows');
+    if (!j) return;
+    sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
+    status('ok', 'Energy Tower sent<small>' + Number(j.rows).toLocaleString() + ' rows added, dated ' + esc(j.date) +
       ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
   };
 
