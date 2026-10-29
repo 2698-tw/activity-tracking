@@ -269,10 +269,11 @@ async function writeRanking(env, rows, target = RANKING, day) {
   let filled = seen.length;
   while (filled > 0 && !(seen[filled - 1] || []).some(v => v !== '' && v != null)) filled--;
   // The date the list was sent, by the game's day: Top War runs on UTC; or, for a day sent again from
-  // the admin view, that day (never one still to come). USER_ENTERED makes it a real date in the
-  // sheet; asCell keeps a name starting with = or + as plain text.
+  // the admin view or picked in the bookmark (the Whitebeard event's end date), that day (at most a week
+  // ahead). USER_ENTERED makes it a real date in the sheet; asCell keeps a name starting with = or +
+  // as plain text.
   const today = new Date().toISOString().slice(0, 10);
-  const date = isDay(day) && day <= today ? day : today;
+  const date = dayAhead(day) ? day : today;
   const first = Math.max(filled, 1) + 1, last = first + rows.length - 1;
   const range = `${tab}!A${first}:${end}${last}`;
   if (target.extra && ((seen[0] || [])[3] !== target.extra || (seen[0] || [])[4] !== 'Alliance')) {
@@ -945,7 +946,9 @@ function checkRosterRead(b) {
 function checkWbRead(b) {
   const r = b && b.rows;
   if (!Array.isArray(r) || !r.length || r.length > 3000) throw new Error('rows must be 1 to 3000 players');
+  if (b.day != null && !dayAhead(b.day)) throw new Error('day must be a date, at most a week ahead');
   return {
+    ...(b.day != null ? { day: b.day } : {}),
     rows: r.map(x => {
       if (!x || !Number.isFinite(x.points)) throw new Error('every player needs points');
       const name = String(x.name == null ? '' : x.name).slice(0, 60);
@@ -1083,6 +1086,9 @@ const MOVES_MAX = 3000;                       // alliance changes kept on the ro
 const MOVE_JOIN = 30 * 60 * 1000;             // leaving and joining within this is one change                          // changes kept in History, each with what it replaced
 // where a card keeps its days: the Energy Tower's Rankings points beside its Unit Details days
 const dayPrefixes = ns => ns === 'et' ? ['et:day:', 'et:pts:'] : [ns + ':day:'];
+// a date a read or a send may be put under: any day up to a week ahead (the Whitebeard event's end
+// date, picked in the bookmark, can still be to come)
+const dayAhead = d => isDay(d) && d <= new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
 const isDay = d => /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));
 const bad = msg => Object.assign(new Error(msg), { status: 400 });
 const text = (v, n, need) => { const t = String(v == null ? '' : v).trim().slice(0, n); if (need && !t) throw bad('It cannot be empty.'); return t; };
@@ -1481,7 +1487,8 @@ export class RosterStore {
   // bookmark's sheet rows.
   // A player merged into another in the admin view is counted as that one (adm:alias).
   async wbUpdate(read, ns) {
-    const day = new Date().toISOString().slice(0, 10), keep = ns !== 'wb';
+    // Whitebeard: under the date picked in the bookmark (the event's end date), else today
+    const day = ns === 'wb' && read.day ? read.day : new Date().toISOString().slice(0, 10), keep = ns !== 'wb';
     const before = await this.state.storage.get(ns + ':day:' + day), had = !!before && Object.keys(before).length > 0;
     const pts = keep && before ? before : {};
     const who = (await this.state.storage.get(ns + ':who')) || {};

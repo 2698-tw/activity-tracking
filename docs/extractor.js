@@ -360,7 +360,12 @@
     '.grid .act .t{white-space:nowrap;font-size:14.5px;padding-right:16px}' +
     '.grid .act .t::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:2px;background:var(--c)}' +
     '.act[data-a="698N"]{--c:#9ec5ff}.act[data-a="698S"]{--c:#e9a8ff}.act[data-a="698W"]{--c:#7ee2a8}.act[data-a="698C"]{--c:#ffc078}' +
-    '.app.locked .act:not(.busy),.app.locked select{opacity:.45;pointer-events:none}' +
+    '.app.locked .act:not(.busy),.app.locked select,.app.locked .wbday{opacity:.45;pointer-events:none}' +
+    '.wbsel{display:grid;grid-template-columns:1fr 1fr;gap:8px}' +
+    '.wbday{position:relative;display:block;background:rgba(255,255,255,.08);border-radius:12px;padding:4px 12px 5px}' +
+    '.wbday span{display:block;font-size:10.5px;color:rgba(235,235,245,.6)}' +
+    '.wbday input{all:unset;display:block;width:100%;font:inherit;font-size:13.5px;color-scheme:dark;cursor:pointer}' +
+    '.wbday.need{box-shadow:0 0 0 2px #ff6b6b}' +
     '.ic{position:absolute;right:9px;top:9px;width:22px;height:22px;overflow:visible}' +
     '.grid .ic{width:14px;height:14px;right:7px;top:9px}' +
     '.ic circle{fill:none;stroke-width:2.4}.ic .trk{stroke:rgba(255,255,255,.12)}' +
@@ -420,7 +425,8 @@
       Object.keys(ALLY).map(function (t) { return act('a' + t, '', t, 'not read', t); }).join('') + '</div>' +
     '<div class="row2">' + act('all', 'main', 'Read all four', 'Updates the roster card') +
       act('cp', 'send', 'Send to sheet', 'Read an alliance first') + '</div></div>' +
-    '<div data-sec="wb"><h3>Whitebeard ranking</h3><select id="who"><option value="ALL4">698N, W, S, C</option><option value="OTHER">Other</option></select>' +
+    '<div data-sec="wb"><h3>Whitebeard ranking</h3><div class="wbsel"><select id="who"><option value="ALL4">698N, W, S, C</option><option value="OTHER">Other</option></select>' +
+      '<label class="wbday" title="The date the event ends: the read goes on the card and the sheet under it"><span>End date</span><input type="date" id="wbday"></label></div>' +
     '<div class="row2">' + act('wb', 'main', 'Read', 'Loads every rank') + act('wbs', 'send', 'Send to sheet', 'Read it first') + '</div></div>' +
     '<div data-sec="st"><h3>Snow Train</h3>' +
     '<div class="row2">' + act('snow', 'main', 'Read garrison', '') + act('snows', 'send', 'Send to sheet', 'Read it first') + '</div></div>' +
@@ -534,7 +540,7 @@
     if (!cp.classList.contains('done') && !cp.classList.contains('busy')) sub(cp, n ? n + ' players ready' : 'Read an alliance first');
     var wb = $('#wb'), wbs = $('#wbs');
     if (!wb.classList.contains('busy') && !wb.classList.contains('err')) sub(wb, V.wb ? V.wb.rows.length + ' players · ' + ago(V.wb.at / 1000) : 'Loads every rank');
-    if (!wbs.classList.contains('busy')) { wbs.classList.remove('done'); sub(wbs, V.wb ? wbChosen().length + ' players ready' : 'Read it first'); }
+    if (!wbs.classList.contains('busy')) { wbs.classList.remove('done'); sub(wbs, V.wb ? wbChosen().length + ' players' + (V.wb.day ? ' · ' + dayText(V.wb.day) : '') : 'Read it first'); }
     var stb = $('#snow'), sts = $('#snows');
     if (!stb.classList.contains('busy') && !stb.classList.contains('err')) sub(stb, S.st ? S.st.rows.length + ' players · ' + ago(S.st.at / 1000) : '');
     if (!sts.classList.contains('busy') && !sts.classList.contains('done')) sub(sts, S.st ? S.st.rows.length + ' players ready' : 'Read it first');
@@ -646,14 +652,22 @@
     return fetch(API + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); });
   }
-  // every player read goes to the site's Whitebeard card, under today's UTC date (api/wb-update)
-  function pushWb(rows) {
+  // every player read goes to the site's Whitebeard card, under the end date picked (api/wb-update)
+  function pushWb(rows, day) {
     var body = rows.map(function (r) { return { uid: r.uid, name: r.name, ally: r.ally, points: r.points }; });
-    return fetch(API + '/wb-update', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rows: body }) })
+    return fetch(API + '/wb-update', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ day: day, rows: body }) })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.status); return j; }); });
   }
+  // The event runs four days and only its end is kept, so a read waits for its date: the read goes on
+  // the card and the sheet under it, and the date is not kept from one panel to the next.
+  var wbDay = function () { var v = $('#wbday').value; return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''; };
+  var dayText = function (d) { return new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }); };
+  $('#wbday').onchange = function () { $('.wbday').classList.toggle('need', false); };
   $('#wb').onclick = async function () {
-    if (busy) return; lock(true);
+    if (busy) return;
+    var day = wbDay();
+    if (!day) { $('.wbday').classList.add('need'); return nudge($('#wb'), 'Pick the end date first<small>The date the Whitebeard event ends: the read goes on the card and the sheet under it.</small>'); }
+    lock(true);
     var b = $('#wb'); start(b); sub(b, 'opening…');
     status('work', 'Opening the Whitebeard ranking…', .04);
     try {
@@ -662,13 +676,13 @@
         setP(b, .06 + .8 * f); sub(b, n + (isFinite(want) ? ' / ' + want : ''));
         status('work', 'Loading every rank… <b>' + n + '</b>' + (isFinite(want) ? ' of ' + want : ''), .06 + .8 * f);
       });
-      read.at = Date.now();
+      read.at = Date.now(); read.day = day;
       if (!isFinite(read.want)) read.want = null;            // unknown total: saved as null, not Infinity
       V.wb = read; S.wb = read; save();
       setP(b, .9); sub(b, 'saving…');
       status('work', 'Updating the Whitebeard card…', .92);
       var card;
-      try { var u = await pushWb(read.rows); card = (u.replaced ? 'Card: today\'s column updated' : 'Card: new column added') + ' (' + u.day + ' UTC)'; }
+      try { var u = await pushWb(read.rows, day); card = 'Card: ' + (u.replaced ? 'the ' + dayText(u.day) + ' column updated' : 'a ' + dayText(u.day) + ' column added'); }
       catch (e) { card = 'Card not updated (' + esc(e.message || e) + ')'; }
       setP(b, 1); finish(b, true); sub(b, read.rows.length + ' players · now');
       var short = read.want && read.rows.length < read.want;
@@ -683,8 +697,9 @@
     if (busy) return;
     var b = $('#wbs'), rows = wbChosen().map(function (r) { return [r.name.slice(0, 80), r.points, r.ally.slice(0, 20)]; });
     if (!V.wb) return nudge(b, 'Nothing to send yet<small>Read the Whitebeard ranking first.</small>');
+    if (!V.wb.day) return nudge(b, 'No end date on this read<small>Pick the end date and tap Read again.</small>');
     if (!rows.length) return nudge(b, 'Nobody to send<small>No player in this read matches ' + (V.wbFilter === 'ALL4' ? '698N, W, S, C' : 'Other') + '.</small>');
-    var j = await sendTo(b, '/game-ranking', { rows: rows }, rows.length + ' Whitebeard rows');
+    var j = await sendTo(b, '/game-ranking', { rows: rows, date: V.wb.day }, rows.length + ' Whitebeard rows');
     if (!j) return;
     sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
     status('ok', 'Whitebeard ranking sent<small>' + Number(j.rows).toLocaleString() + ' rows added, dated ' + esc(j.date) +
