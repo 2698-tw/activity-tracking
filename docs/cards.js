@@ -202,8 +202,8 @@
       if (W.flash) { const tr = box.querySelector('tr.flash'); if (tr) tr.scrollIntoView({ block: 'center' }); W.flash = ''; }
     }
 
-    /* ---- the roster's History: each alliance change the reads found, newest first ---- */
-    const views = () => `<span class="rseg">${[['list', 'Players'], ['moves', 'History']].map(([v, l]) => `<button type="button" class="rchip ${W.view === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</span>`;
+    /* ---- the roster's Log: each alliance change the reads found, newest first ---- */
+    const views = () => `<span class="rseg">${[['list', 'Players'], ['moves', 'Log']].map(([v, l]) => `<button type="button" class="rchip ${W.view === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</span>`;
     function drawMoves(box, q) {
       const AL = Admin.settings.alliances, admin = Admin.on;
       const searchOf = name => (W.rows.find(r => r.name === name) || {}).search;
@@ -220,15 +220,15 @@
       box.innerHTML = `<table class="rtable mvtable"><thead><tr><th>When</th><th class="nm">Name</th><th>Change</th>${admin ? '<th></th>' : ''}</tr></thead><tbody>${list.map(x => {
         const s = searchOf(x.name);
         return `<tr><td>${when(x.at)}</td><td class="nm">${esc(x.name)}${s && s !== x.name ? ` <span class="rdim">(${esc(s)})</span>` : ''}</td>
-          <td>${tag(x.from)} <span class="rdim">→</span> ${tag(x.to)}</td>${admin ? `<td><button type="button" class="rgo mini" data-mv="${esc(x.m)}" title="Take this off History">✕</button></td>` : ''}</tr>`;
+          <td>${tag(x.from)} <span class="rdim">→</span> ${tag(x.to)}</td>${admin ? `<td><button type="button" class="rgo mini" data-mv="${esc(x.m)}" title="Take this off the Log">✕</button></td>` : ''}</tr>`;
       }).join('') || '<tr><td colspan="4" class="rdim">No changes match.</td></tr>'}</tbody></table>`;
     }
 
-    // a change added by hand: one from before History was kept, or one a read missed
+    // a change added by hand: one from before the Log was kept, or one a read missed
     function addMove() {
       const AL = Admin.settings.alliances, today = new Date().toISOString().slice(0, 10);
       const opts = list => list.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
-      const m = Admin.modal(`<h3>Add a change to History</h3>
+      const m = Admin.modal(`<h3>Add a change to the Log</h3>
         <label>Name<input type="text" list="mvNames" maxlength="60" placeholder="In-game name"></label>
         <datalist id="mvNames">${[...new Set(W.rows.map(r => r.name))].map(n => `<option value="${esc(n)}">`).join('')}</datalist>
         <label>From<select data-f>${opts([...AL.map(a => [a, a]), ['', 'No alliance'], ['new', 'New']])}</select></label>
@@ -244,7 +244,7 @@
         if (from === to) { err.textContent = 'From and To are the same.'; return; }
         if (!day) { err.textContent = 'Pick a date.'; return; }
         const tx = a => a === null ? 'New' : a || 'No alliance';
-        m.close(); run('move-add', { name, from, to, day }, { what: 'Roster · added a change to History', from: '—', to: `${name}: ${tx(from)} → ${tx(to)}, ${head(day)}` });
+        m.close(); run('move-add', { name, from, to, day }, { what: 'Roster · added a change to the Log', from: '—', to: `${name}: ${tx(from)} → ${tx(to)}, ${head(day)}` });
       };
     }
 
@@ -658,8 +658,8 @@
         if (d.act === 'addmove') return addMove();
         if (d.mv) {
           const x = W.moves.find(y => y.m === d.mv), tx = a => a === null ? 'New' : a || 'No alliance';
-          if (x && await Admin.confirm('Take this off History?', `${esc(x.name)}: ${esc(tx(x.from))} → ${esc(tx(x.to))}, from the Alliance roster card's History. History (admin) can undo it.`, 'Remove'))
-            run('move-delete', { m: x.m }, { what: `Roster · removed a change from History`, from: `${x.name}: ${tx(x.from)} → ${tx(x.to)}`, to: '—' });
+          if (x && await Admin.confirm('Take this off the Log?', `${esc(x.name)}: ${esc(tx(x.from))} → ${esc(tx(x.to))}, from the Alliance roster card's Log. History (admin) can undo it.`, 'Remove'))
+            run('move-delete', { m: x.m }, { what: `Roster · removed a change from the Log`, from: `${x.name}: ${tx(x.from)} → ${tx(x.to)}`, to: '—' });
           return;
         }
         if (d.act === 'clear') { sel.clear(); return draw(); }
