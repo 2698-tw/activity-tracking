@@ -20,6 +20,19 @@
  */
 (function () {
   'use strict';
+  // GitHub Pages' cache keeps the old copy of this file for up to ten minutes after an update, whatever
+  // the bookmark's ?_= says; the Worker serves the same file (wrangler.toml, [assets]) uncached. So a
+  // copy the bookmark loaded from Pages loads the Worker's instead, and runs itself only if that fails.
+  var me = (document.currentScript && document.currentScript.src) || '', viaPages = window.__x2698pages;
+  window.__x2698pages = 0;
+  if (/\.github\.io\//.test(me) && !viaPages) {
+    var w = document.createElement('script');
+    w.src = 'https://data-collection.jk06nm04.workers.dev/extractor.js?_=' + Date.now();
+    w.onerror = function () { window.__x2698pages = 1; var p = document.createElement('script'); p.src = me; document.body.appendChild(p); };
+    document.body.appendChild(w);
+    return;
+  }
+
   // The bookmark hides a panel that is showing without downloading anything. Otherwise this, the
   // copy just downloaded, takes the place of one already on the page, so an update shows up without
   // reloading the game; but a panel in the middle of a read is only shown again, and left alone.
@@ -527,7 +540,7 @@
     if (!sts.classList.contains('busy') && !sts.classList.contains('done')) sub(sts, S.st ? S.st.rows.length + ' players ready' : 'Read it first');
     var etb = $('#tower'), ets = $('#towers');
     if (!etb.classList.contains('busy') && !etb.classList.contains('err')) sub(etb, S.et ? S.et.rows.length + ' players · ' + ago(S.et.at / 1000) : 'Opens Unit Details');
-    if (!ets.classList.contains('busy') && !ets.classList.contains('done')) sub(ets, S.et ? S.et.rows.length + ' players ready' : 'Read it first');
+    if (!ets.classList.contains('busy') && !ets.classList.contains('done')) { var etn = etRows().length; sub(ets, etn ? etn + ' players ready' : 'Read it first'); }
     var etp = $('#towerp');
     if (!etp.classList.contains('busy') && !etp.classList.contains('err')) sub(etp, S.etp ? S.etp.n + ' players · ' + ago(S.etp.at / 1000) : 'Opens Rankings');
   }
@@ -719,7 +732,19 @@
 
   /* Energy Tower: its Unit Details to the site's card (api/et-update), which sends back each player's
      alliance from the roster card, and on Send to the Energy Tower sheet (api/game-energytower) as
-     Date, Name, March CP, Alliance; the four alliances first, then everyone else */
+     Date, Name, March CP, Alliance, Points (the Rankings read the same UTC day, if there is one);
+     the four alliances first, then everyone else */
+  // the Unit Details and Rankings reads of the latest UTC day either was made on, one row per player
+  var utcDay = function (at) { return new Date(at).toISOString().slice(0, 10); };
+  function etRows() {
+    var reads = [S.et, S.etp && S.etp.rows ? S.etp : null].filter(Boolean);
+    if (!reads.length) return [];
+    var day = reads.map(function (x) { return utcDay(x.at); }).sort().pop(), by = {}, out = [];
+    var row = function (r) { var k = r.uid || 'n|' + r.name; if (!by[k]) { by[k] = { name: r.name, ally: r.ally || '', power: 0, points: null }; out.push(by[k]); } return by[k]; };
+    if (S.et && utcDay(S.et.at) === day) S.et.rows.forEach(function (r) { row(r).power = r.power; });
+    if (S.etp && S.etp.rows && utcDay(S.etp.at) === day) S.etp.rows.forEach(function (r) { var x = row(r); x.points = r.points; if (!x.ally) x.ally = r.ally || ''; });
+    return out;
+  }
   $('#tower').onclick = async function () {
     if (busy) return; lock(true);
     var b = $('#tower'); start(b); sub(b, 'opening…');
@@ -747,10 +772,11 @@
   $('#towers').onclick = async function () {
     if (busy) return;
     var b = $('#towers');
-    if (!S.et) return nudge(b, 'Nothing to send yet<small>Tap Read first.</small>');
+    var list = etRows();
+    if (!list.length) return nudge(b, 'Nothing to send yet<small>Tap Read or Read points first.</small>');
     var order = function (t) { return MAIN.indexOf(t) >= 0 ? MAIN.indexOf(t) : 99; };
-    var rows = S.et.rows.slice().sort(function (a, c) { return order(a.ally) - order(c.ally) || a.ally.localeCompare(c.ally) || c.power - a.power; })
-      .map(function (r) { return [r.name.slice(0, 80), Math.round(r.power / 1e6) + 'M', r.ally.slice(0, 20)]; });   // 78,951,860 → 79M
+    var rows = list.sort(function (a, c) { return order(a.ally) - order(c.ally) || a.ally.localeCompare(c.ally) || c.power - a.power || (c.points || 0) - (a.points || 0); })
+      .map(function (r) { return [r.name.slice(0, 80), r.power ? Math.round(r.power / 1e6) + 'M' : '', r.ally.slice(0, 20), r.points == null ? '' : r.points]; });   // 78,951,860 → 79M
     var j = await sendTo(b, '/game-energytower', { rows: rows }, rows.length + ' Energy Tower rows');
     if (!j) return;
     sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
@@ -759,7 +785,7 @@
   };
 
   /* Energy Tower points: its Rankings to the site's card (api/et-points), each player's points in
-     that day's column */
+     that day's column, and in column E of the sheet on Send */
   $('#towerp').onclick = async function () {
     if (busy) return; lock(true);
     var b = $('#towerp'); start(b); sub(b, 'opening…');
@@ -769,7 +795,8 @@
       setP(b, .6); sub(b, 'saving…');
       status('work', 'Updating the Energy Tower card…', .7);
       var u = await postJson('/et-points', { rows: rows });
-      S.etp = { at: Date.now(), n: rows.length }; save();
+      (u.allies || []).forEach(function (a, i) { if (rows[i]) rows[i].ally = a || ''; });
+      S.etp = { at: Date.now(), n: rows.length, rows: rows }; save(); $('#towers').classList.remove('done');
       setP(b, 1); finish(b, true); sub(b, rows.length + ' players · now');
       status('ok', 'Energy Tower points read · ' + rows.length + ' players<small>Card: points in the ' + esc(u.day) + ' UTC column' +
         (u.added ? ' · ' + Number(u.added) + ' new on the card' : '') + '</small>');

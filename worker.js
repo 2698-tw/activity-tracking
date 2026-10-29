@@ -146,8 +146,9 @@ const RANKING = { id: '12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc', gid: 0, bo
 // but Unit Type (Army, Navy, Air Force) in D and Alliance in E; the headers are set to match on a send
 const SNOW_TRAIN = { id: '1d2jgRQlfhYMufn69YaZ-2ZPQ-lGtfvSiOPDTEplUqGs', gid: 0, book: 'SS P2 Snow Train', extra: 'Unit Type' };
 // The Energy Tower's Unit Details (docs/extractor.js): Date, Name, March CP and Alliance, like the
-// rankings. No sheet until one is set in the admin view (Sheets).
-const ENERGY_TOWER = { id: '', gid: 0, book: 'Energy Tower' };
+// rankings, then each player's Rankings points that day in E (its header set on a send). No sheet
+// until one is set in the admin view (Sheets).
+const ENERGY_TOWER = { id: '', gid: 0, book: 'Energy Tower', points: 'Points' };
 const RANKING_ORIGIN = 'https://h5.topwargame.com';
 const RANKING_MAX = 3000;
 // The alliances that take part in a Kartz round (api/round-*).
@@ -250,11 +251,12 @@ async function writeRanking(env, rows, target = RANKING, day) {
   if (rows.length > RANKING_MAX)
     throw Object.assign(new Error(`At most ${RANKING_MAX} rows at a time.`), { status: 400 });
   // points are a number, or millions written as the game shows them (256M, for March CP)
-  const n = target.extra ? 4 : 3;
+  // (the Energy Tower: March CP empty for a player only in its Rankings, points empty for one not in them)
+  const n = target.extra || target.points ? 4 : 3, pts = !!target.points;
   if (!rows.every(r => Array.isArray(r) && r.length === n && typeof r[0] === 'string' && r[0].length <= 80
-                       && (Number.isFinite(r[1]) || /^\d{1,6}M$/.test(r[1])) && typeof r[2] === 'string' && r[2].length <= 20
-                       && (n === 3 || /^(Army|Navy|Air Force|)$/.test(r[3]))))
-    throw Object.assign(new Error(`Every row must be [name, points, alliance${n === 4 ? ', unit type' : ''}].`), { status: 400 });
+                       && (Number.isFinite(r[1]) || /^\d{1,6}M$/.test(r[1]) || (pts && r[1] === '')) && typeof r[2] === 'string' && r[2].length <= 20
+                       && (n === 3 || (pts ? r[3] === '' || (Number.isFinite(r[3]) && r[3] >= 0) : /^(Army|Navy|Air Force|)$/.test(r[3])))))
+    throw Object.assign(new Error(`Every row must be [name, points, alliance${n === 4 ? pts ? ', Rankings points' : ', unit type' : ''}].`), { status: 400 });
   const end = n === 4 ? 'E' : 'D';
 
   const token = await googleToken(env);
@@ -277,9 +279,14 @@ async function writeRanking(env, rows, target = RANKING, day) {
     const head = `${tab}!D1:E1`;
     await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(head)}?valueInputOption=RAW`, { range: head, values: [[target.extra, 'Alliance']] }, target);
   }
+  if (target.points && (seen[0] || [])[4] !== target.points) {
+    const head = `${tab}!E1`;
+    await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(head)}?valueInputOption=RAW`, { range: head, values: [[target.points]] }, target);
+  }
   const out = await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
     { range, majorDimension: 'ROWS',
-      values: rows.map(([name, points, ally, type]) => n === 4 ? [date, asCell(name), points, type, asCell(ally)] : [date, asCell(name), points, asCell(ally)]) }, target);
+      values: rows.map(([name, points, ally, type]) => pts ? [date, asCell(name), points, asCell(ally), type]
+        : n === 4 ? [date, asCell(name), points, type, asCell(ally)] : [date, asCell(name), points, asCell(ally)]) }, target);
   return { rows: out.updatedRows || rows.length, range: out.updatedRange || range, date,
            link: `https://docs.google.com/spreadsheets/d/${target.id}/edit#gid=${target.gid}&range=A${first}` };
 }
@@ -1483,20 +1490,23 @@ export class RosterStore {
   // The Energy Tower's Rankings (this warzone's players and their points): each player's points that
   // day (et:pts:<day>, the highest of the day's reads), shown in the card's date column in place of
   // Yes. That day's column is made if there is none yet, and a player not on the card yet is added,
-  // with their alliance from the roster card the way the Unit Details reads have it.
+  // with their alliance from the roster card the way the Unit Details reads have it; the alliances go
+  // back (allies, in the order of the rows) for the bookmark's sheet rows.
   async etPoints(read) {
     const st = this.state.storage, day = new Date().toISOString().slice(0, 10);
     const pts = (await st.get('et:pts:' + day)) || {}, had = Object.keys(pts).length > 0, col = await st.get('et:day:' + day);
     const who = (await st.get('et:who')) || {}, alias = (await st.get('adm:alias:et')) || {}, roster = await this.load();
     let added = 0;
+    const allies = [];
     for (const r of read.rows) {
       const key = alias[r.key] || r.key, was = who[key], ro = roster[r.key];
       if (!was) added++;
       pts[key] = Math.max(pts[key] ?? -Infinity, r.points);
       who[key] = { ...(was || {}), name: r.name, ally: ro ? (ro.status === 'Left' ? 'Left' : ro.alliance) : (was && was.ally) || r.ally || '' };
+      allies.push(who[key].ally);
     }
     await st.put({ ['et:pts:' + day]: pts, 'et:who': who, ...(col ? {} : { ['et:day:' + day]: {} }) });
-    return { day, players: read.rows.length, added, merged: had };
+    return { day, players: read.rows.length, added, merged: had, allies };
   }
 
   // each Snow Train player's best per unit type over the days there are, the types in the order they

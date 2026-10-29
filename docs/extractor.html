@@ -39,8 +39,10 @@ button{font:inherit;font-size:13px;border:1px solid var(--line);background:trans
   </section>
 </div>
 <script>
-// anywhere but the game, the bookmark opens the site in a new tab (or here, if pop-ups are blocked)
-const src = "(function(){if(!/(^|\\.)topwargame\\.com$/.test(location.hostname)){var u='https://2698-tw.github.io/activity-tracking/';if(!window.open(u,'_blank'))location.href=u;return;}var h=document.getElementById('x2698');if(h&&h.style.display!=='none'&&window.__x2698){window.__x2698.toggle();return;}var s=document.createElement('script');s.src='https://2698-tw.github.io/activity-tracking/extractor.js?_='+Date.now();s.onerror=function(){alert('2698 Data Extractor could not load. Check your connection and try again.');};document.body.appendChild(s);})();";
+// anywhere but the game, the bookmark opens the site in a new tab (or here, if pop-ups are blocked);
+// in the game it loads the extractor from the Worker, which serves it uncached (GitHub Pages keeps a
+// copy for ten minutes)
+const src = "(function(){if(!/(^|\\.)topwargame\\.com$/.test(location.hostname)){var u='https://2698-tw.github.io/activity-tracking/';if(!window.open(u,'_blank'))location.href=u;return;}var h=document.getElementById('x2698');if(h&&h.style.display!=='none'&&window.__x2698){window.__x2698.toggle();return;}var s=document.createElement('script');s.src='https://data-collection.jk06nm04.workers.dev/extractor.js?_='+Date.now();s.onerror=function(){alert('2698 Data Extractor could not load. Check your connection and try again.');};document.body.appendChild(s);})();";
 const href = 'javascript:' + encodeURIComponent(src);
 const bm = document.getElementById('bm');
 bm.href = href;
