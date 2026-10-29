@@ -60,7 +60,7 @@
   }
 
   function makeCard(o) {
-    const W = { rows: null, dates: [], reads: {}, ally: null, type: '', cls: '', away: false, sort: null, asc: false, loading: false, err: '', flash: '' };
+    const W = { rows: null, dates: [], reads: {}, moves: [], view: 'list', ally: null, type: '', cls: '', away: false, sort: null, asc: false, loading: false, err: '', flash: '' };
     const sel = new Set();
     const el = k => $(o.el + k);
     const cfg = () => Admin.settings.cards[o.id];
@@ -116,7 +116,7 @@
         const [r] = await Promise.all([fetch(API_BASE + o.api, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }), Admin.ready]);
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || r.status);
-        W.rows = j.rows || []; W.dates = j.dates || []; W.reads = j.reads || {}; W.err = '';
+        W.rows = j.rows || []; W.dates = j.dates || []; W.reads = j.reads || {}; W.moves = j.moves || []; W.err = '';
         await searchNames(W.rows);                                 // every card: the roster's search names
         for (const id of [...sel]) if (!byId(id)) sel.delete(id);
       } catch (e) { W.err = `The ${cfg().title} could not be loaded: ` + (e.message || e); }
@@ -130,6 +130,31 @@
       if (W.sort === null) { W.sort = C.sort === 'last' ? W.dates[W.dates.length - 1] || 'name' : C.sort; W.asc = !!(DEF[W.sort] && DEF[W.sort].text); }
     }
 
+    /* ---- highlights (admin → Filters & columns → Highlights) ---- */
+    const rule = k => { const h = (Admin.settings.highlight || {})[k]; return h && h.on && h.cards.includes(o.id) ? h : null; };
+    const DAY = 864e5;
+    // days in a row, up to the latest, a player is missing from (only once they have been on a day)
+    const missedRun = r => { if (!Object.keys(r.pts || {}).length) return 0; let n = 0; for (let i = W.dates.length - 1; i >= 0 && r.pts[W.dates[i]] == null; i--) n++; return n; };
+    // new: first seen within the rule's days, and not on the card from its start (its first day, or the
+    // roster's first read), when everyone was new
+    function isNew(r, days) {
+      if (o.id === 'ro') {
+        const first = Math.min(...W.rows.map(x => x.firstAt || Infinity));
+        return !!r.firstAt && Date.now() - r.firstAt < days * DAY && r.firstAt - first > DAY / 2;
+      }
+      const ds = Object.keys(r.pts || {}).sort();
+      return !!ds.length && ds[0] !== W.dates[0] && Date.now() - Date.parse(ds[0] + 'T00:00:00Z') < days * DAY;
+    }
+    const isAway = (r, days) => r.status !== 'Left' && !r.online && r.last && Date.now() / 1000 - r.last > days * 86400;
+    function badges(r) {
+      let out = '';
+      const m = rule('missed'), f = rule('fresh');
+      if (m) { const n = missedRun(r); if (n >= m.days) out += ` <span class="hl hl-${m.color}" title="Not on the last ${n} ${n === 1 ? 'day' : 'days'}">missed ${n}</span>`; }
+      if (f && isNew(r, f.days)) out += ` <span class="hl hl-${f.color}" title="New in the last ${f.days} days">new</span>`;
+      return out;
+    }
+    const awayDays = () => { const a = (Admin.settings.highlight || {}).away; return a && a.days || 3; };
+
     function draw() {
       const box = el('View');
       if (!box) return;
@@ -142,15 +167,17 @@
       el('Reads').innerHTML = o.id === 'ro'
         ? AL.map(a => `<span><span class="rtag t${esc(a)}">${esc(a)}</span> ${W.reads[a] ? 'read ' + ago(W.reads[a]) : '<span class="rdim">not read yet</span>'}${admin ? ` <button type="button" class="rgo mini" data-reset="${esc(a)}">Reset</button><button type="button" class="rgo mini" data-wipe="${esc(a)}">Wipe</button>` : ''}</span>`).join('')
         : W.rows ? `${W.rows.length} players · ${W.dates.length} ${W.dates.length === 1 ? 'day' : 'days'}` + (W.dates.length ? ` · last read ${head(W.dates[W.dates.length - 1])}` : '') : '';
+      if (o.id === 'ro' && W.view === 'moves') return drawMoves(box, q);
       const rows = (W.rows || []).filter(r => (!q || fold(r.name).includes(q) || (r.search && fold(r.search).includes(q))) &&
         (!W.ally || (W.ally === 'OTHER' ? !AL.includes(r[allyKey]) : r[allyKey] === W.ally)) &&
-        (!W.type || bests(r).some(b => b[0] === W.type)) && (!W.cls || r.cls === W.cls) && (!W.away || now - r.last > 3 * 86400));
+        (!W.type || bests(r).some(b => b[0] === W.type)) && (!W.cls || r.cls === W.cls) && (!W.away || now - r.last > awayDays() * 86400));
       el('Chips').innerHTML =
         ['', ...AL, ...(o.id === 'ro' ? [] : ['OTHER'])].map(a => `<button type="button" class="rchip ${W.ally === a ? 'on' : ''}" data-a="${esc(a)}">${a === 'OTHER' ? 'Other' : esc(a) || (o.id === 'ro' ? 'All alliances' : 'Everyone')}</button>`).join('') +
         (o.id === 'st' && C.unitFilters ? TYPES.map(t => `<button type="button" class="rchip ${W.type === t ? 'on' : ''}" data-t="${t}">${t}</button>`).join('') : '') +
         (o.id === 'ro' ? ['CE', 'MM'].map(c => `<button type="button" class="rchip ${W.cls === c ? 'on' : ''}" data-c="${c}">${c}</button>`).join('') +
-          `<button type="button" class="rchip ${W.away ? 'on' : ''}" data-w="1">Away 3+ days</button>` : '') +
+          `<button type="button" class="rchip ${W.away ? 'on' : ''}" data-w="1">Away ${awayDays()}+ days</button>` : '') +
         (W.rows ? `<span class="rcount">${rows.length} of ${W.rows.length} players</span>` : '');
+      if (o.id === 'ro') el('Chips').insertAdjacentHTML('afterbegin', views());
       drawBulk();
       if (W.err) { box.innerHTML = `<p class="rnote">${esc(W.err)}</p>`; return; }
       if (!W.rows) { box.innerHTML = '<p class="rnote">Loading…</p>'; return; }
@@ -166,10 +193,34 @@
           (admin && c.date ? `<button type="button" class="dedit" data-d="${c.k}" title="Change date, clear or remove">✎</button>` : '') + '</th>';
       }).join('')}</tr></thead><tbody>${rows.map(r => `<tr data-id="${esc(r.id)}" class="${r.status === 'Left' ? 'left' : ''} ${sel.has(r.id) ? 'sel' : ''} ${W.flash === r.id ? 'flash' : ''}">${cols.map(c => {
         const f = defOf(c.k), ed = admin && f.edit ? (f.edit === 'toggle' ? 'tog' : 'ed') : '';
-        if (c.k === 'name') return `<td class="nm ${ed}" data-k="name">${admin ? `<input type="checkbox" class="rsel" data-sel="${esc(r.id)}" ${sel.has(r.id) ? 'checked' : ''} aria-label="Select">` : ''}<span class="nmv">${f.cell(r)}</span>${admin ? `<button type="button" class="rdots" data-row="${esc(r.id)}" title="Row actions">⋯</button>` : ''}</td>`;
+        if (c.k === 'name') return `<td class="nm ${ed}" data-k="name">${admin ? `<input type="checkbox" class="rsel" data-sel="${esc(r.id)}" ${sel.has(r.id) ? 'checked' : ''} aria-label="Select">` : ''}<span class="nmv">${f.cell(r)}</span>${badges(r)}${admin ? `<button type="button" class="rdots" data-row="${esc(r.id)}" title="Row actions">⋯</button>` : ''}</td>`;
         return `<td class="${f.n ? 'n' : ''} ${f.hs ? 'hs' : ''} ${f.cls ? f.cls(r) : ''} ${ed}" data-k="${c.k}">${f.cell(r)}</td>`;
       }).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length}" class="rdim">${W.rows.length ? 'No players match.' : 'No players yet: add one with + Player.'}</td></tr>`}</tbody></table>`;
+      const aw = rule('away');
+      if (aw) box.querySelectorAll('tbody tr[data-id]').forEach(tr => { const r = byId(tr.dataset.id), td = tr.querySelector('td[data-k="last"]'); if (r && td && isAway(r, aw.days)) td.classList.add('hlc', 'hl-' + aw.color); });
       if (W.flash) { const tr = box.querySelector('tr.flash'); if (tr) tr.scrollIntoView({ block: 'center' }); W.flash = ''; }
+    }
+
+    /* ---- the roster's History: each alliance change the reads found, newest first ---- */
+    const views = () => `<span class="rseg">${[['list', 'Players'], ['moves', 'History']].map(([v, l]) => `<button type="button" class="rchip ${W.view === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</span>`;
+    function drawMoves(box, q) {
+      const AL = Admin.settings.alliances, admin = Admin.on;
+      const searchOf = name => (W.rows.find(r => r.name === name) || {}).search;
+      const tag = a => a === null ? '<span class="rtag tNew">New</span>' : a === '' ? '<span class="rtag tLeft">No alliance</span>' : allyTag(a);
+      const list = W.moves.filter(x => (!W.ally || x.from === W.ally || x.to === W.ally) &&
+        (!q || fold(x.name).includes(q) || fold(searchOf(x.name) || '').includes(q)));
+      el('Chips').innerHTML = views() + ['', ...AL].map(a => `<button type="button" class="rchip ${W.ally === a ? 'on' : ''}" data-a="${esc(a)}">${esc(a) || 'All alliances'}</button>`).join('') +
+        (W.rows ? `<span class="rcount">${list.length} ${list.length === 1 ? 'change' : 'changes'}</span>` : '');
+      if (bulk) { bulk.classList.remove('on'); bulk.innerHTML = ''; }
+      if (W.err) { box.innerHTML = `<p class="rnote">${esc(W.err)}</p>`; return; }
+      if (!W.rows) { box.innerHTML = '<p class="rnote">Loading…</p>'; return; }
+      if (!W.moves.length) { box.innerHTML = '<p class="rnote">No alliance changes yet. Each read of an alliance adds who joined, moved or left since the last one.</p>'; return; }
+      const when = at => { const d = new Date(at); return `${d.getDate()} ${d.toLocaleString('en-GB', { month: 'short' })} <span class="rdim">· ${ago(at)}</span>`; };
+      box.innerHTML = `<table class="rtable mvtable"><thead><tr><th>When</th><th class="nm">Name</th><th>Change</th>${admin ? '<th></th>' : ''}</tr></thead><tbody>${list.map(x => {
+        const s = searchOf(x.name);
+        return `<tr><td>${when(x.at)}</td><td class="nm">${esc(x.name)}${s && s !== x.name ? ` <span class="rdim">(${esc(s)})</span>` : ''}</td>
+          <td>${tag(x.from)} <span class="rdim">→</span> ${tag(x.to)}</td>${admin ? `<td><button type="button" class="rgo mini" data-mv="${esc(x.m)}" title="Take this off History">✕</button></td>` : ''}</tr>`;
+      }).join('') || '<tr><td colspan="4" class="rdim">No changes match.</td></tr>'}</tbody></table>`;
     }
 
     /* ---- admin: the header buttons, the bulk bar, the note ---- */
@@ -184,9 +235,9 @@
         note = document.createElement('div'); note.className = 'rfoot radmnote';
         rapp.appendChild(note);                      // at the bottom of the card
       }
-      bar.innerHTML = Admin.on ? `<button type="button" class="rgo pink" data-act="add">+ Player</button>${dated ? '<button type="button" class="rgo pink" data-act="adddate">+ Date</button>' : ''}<button type="button" class="rgo" data-act="csv">Export CSV</button>` : '';
+      bar.innerHTML = Admin.on ? `<button type="button" class="rgo pink" data-act="add">+ Player</button>${dated ? '<button type="button" class="rgo pink" data-act="adddate">+ Date</button>' : ''}${o.id === 'ro' ? '<button type="button" class="rgo" data-act="sendro">Send to sheet</button>' : ''}<button type="button" class="rgo" data-act="csv">Export CSV</button>` : '';
       note.hidden = !Admin.on;
-      note.innerHTML = 'Admin: click a cell to change it · ⋯ for a player · ✎ on a date for its column · tick players to change several at once. Every change is in History and can be undone.' +
+      note.innerHTML = 'Admin: click a cell to change it · ⋯ for a player · ✎ on a date for its column (and to send that day to the sheet again) · tick players to change several at once. Every change is in History and can be undone.' +
         (o.id === 'ro' ? ' ⚠ columns come from the game: its next read of that alliance replaces an edit (MM/CE edits stay).' : ' Names come from the game: its next read replaces an edit. Alliances of players on the Alliance roster card come from there: changing one here changes it on the roster, and every card follows.');
     }
     function drawBulk() {
@@ -388,10 +439,75 @@
       m.querySelector('[data-y]').onclick = () => { m.close(); run('bests-set', { id: r.id, bests: b }, { what: `${r.name} · March CP order`, from: bests(r).map(x => x[0]).join(' › '), to: b.map(x => x[0]).join(' › ') }); };
     }
 
+    /* ---- a day sent to the card's sheet again (admin), for a Send that was forgotten or went wrong ---- */
+    // Rows as the bookmark's Send makes them, with each player's alliance as the card shows it
+    const SEND = { wb: ['/game-ranking', 'ranking'], st: ['/game-snowtrain', 'snowtrain'], et: ['/game-energytower', 'energytower'] };
+    const ours = r => Admin.settings.alliances.includes(r[allyKey]);
+    const allyOrder = r => { const i = Admin.settings.alliances.indexOf(r[allyKey]); return i < 0 ? 99 : i; };
+    const inGroup = who => r => who === 'all' || (who === 'ours') === ours(r);
+    function dayRows(d, who) {
+      const pts = r => o.id === 'st' ? Math.max(0, ...Object.values(dayTypes(r, d))) : r.pts[d];
+      const M = v => Math.round(v / 1e6) + 'M', nm = r => r.name.slice(0, 80), al = r => String(r.ally || '').slice(0, 20);
+      return W.rows.filter(r => r.pts[d] != null).filter(inGroup(who))
+        .sort((a, b) => allyOrder(a) - allyOrder(b) || String(a.ally).localeCompare(String(b.ally)) || pts(b) - pts(a))
+        .flatMap(r => o.id === 'wb' ? [[nm(r), r.pts[d], al(r)]]
+          : o.id === 'et' ? [[nm(r), M(r.pts[d]), al(r)]]
+          : Object.entries(dayTypes(r, d)).map(([t, v]) => [nm(r), M(v), al(r), TYPES.includes(t) ? t : '']));
+    }
+    // a send from a dialog: its button busy while it goes, then what was written and a link to it
+    async function sendRows(m, path, body, title) {
+      const y = m.querySelector('[data-y]'), err = m.querySelector('[data-e]');
+      y.disabled = true; y.textContent = 'Sending…'; err.textContent = '';
+      try {
+        const r = await fetch(API_BASE + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error((j.error && j.error.message) || j.error || 'the sheet did not accept it (' + r.status + ')');
+        const link = j.link || `https://docs.google.com/spreadsheets/d/${j.id}/edit#gid=${j.gid}`;
+        m.innerHTML = `<h3>Sent</h3><p>${Number(j.rows).toLocaleString()} ${Number(j.rows) === 1 ? 'row' : 'rows'} added to the ${esc(title)} sheet${j.date ? `, dated ${esc(j.date)}` : ''}.</p>
+          <div class="arow"><a class="abtn" href="${esc(link)}" target="_blank" rel="noopener">Open in Sheets ↗</a><button type="button" class="abtn pri" data-x>Done</button></div>`;
+        m.querySelector('[data-x]').onclick = m.close;
+      } catch (e) { err.textContent = "✗ Couldn't send: " + (e.message || e); y.disabled = false; y.textContent = 'Send to sheet'; }
+    }
+    function sendDay(d) {
+      const [path, sheet] = SEND[o.id], title = cfg().title, t = Admin.settings.sheets[sheet];
+      if (!t || !t.id) return Admin.toast(`No sheet is set for the ${title} yet — add one in Admin → Sheets & backup.`);
+      const have = W.rows.filter(r => r.pts[d] != null), n = who => have.filter(inGroup(who)).length;
+      if (!have.length) return Admin.toast(`Nobody in ${head(d)}`);
+      const m = Admin.modal(`<h3>Send ${head(d)} to the sheet</h3>
+        <p>Adds that day's rows below the ones already in the ${esc(title)} sheet, dated ${d}. Rows sent before stay as they are, so check the day isn't there already.</p>
+        <label>Players<select>${[['ours', 'Our alliances'], ['other', 'Everyone else'], ['all', 'Everyone']].map(([v, l]) => `<option value="${v}">${l} (${n(v)})</option>`).join('')}</select></label>
+        <p class="aerr" data-e></p>
+        <div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Send to sheet</button></div>`);
+      m.querySelector('[data-x]').onclick = m.close;
+      m.querySelector('[data-y]').onclick = () => {
+        const rows = dayRows(d, m.querySelector('select').value);
+        if (!rows.length) { m.querySelector('[data-e]').textContent = 'Nobody to send in that group.'; return; }
+        sendRows(m, path, { rows, date: d }, title);
+      };
+    }
+    // the roster card has no days: every Active player's Base CP now, as the bookmark's Send makes it
+    function sendRoster() {
+      const AL = Admin.settings.alliances, list = W.rows.filter(r => r.status !== 'Left' && AL.includes(r.alliance));
+      if (!list.length) return Admin.toast('Nobody to send');
+      const m = Admin.modal(`<h3>Send the roster to the sheet</h3>
+        <p>Adds ${list.length} ${list.length === 1 ? 'row' : 'rows'}, every Active player's Base CP, to Alliance Rosters › RawData-CP, dated now. Rows sent before stay as they are.</p>
+        <p class="aerr" data-e></p>
+        <div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Send to sheet</button></div>`);
+      m.querySelector('[data-x]').onclick = m.close;
+      m.querySelector('[data-y]').onclick = () => {
+        const at = new Date(), p = x => String(x).padStart(2, '0');
+        const stamp = `${at.getMonth() + 1}/${at.getDate()}/${at.getFullYear()} ${p(at.getHours())}:${p(at.getMinutes())}:${p(at.getSeconds())}`;
+        const rows = list.slice().sort((a, b) => allyOrder(a) - allyOrder(b) || b.power - a.power)
+          .map(r => [stamp, 'Data Extractor', (r.search || r.name).slice(0, 80), r.name.slice(0, 80), r.alliance, Math.round(r.power / 1e6)]);
+        sendRows(m, '/game-cp', { rows }, 'Base CP');
+      };
+    }
+
     /* ---- a date column's ✎ ---- */
     function dateMenu(btn) {
       const d = btn.dataset.d, title = cfg().title;
       Admin.popover(btn, [
+        ...(SEND[o.id] ? [{ label: '📤 Send this day to sheet…', run: () => sendDay(d) }, '-'] : []),
         { label: '📅 Change date…', run: () => {
           const m = Admin.modal(`<h3>Change ${head(d)} ${d.slice(0, 4)}</h3><p>If the new date already has a column, the two become one (each player's higher value stays).</p>
             <label>New date<input type="date" value="${d}"></label><div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Change date</button></div>`);
@@ -466,7 +582,8 @@
     rapp.addEventListener('click', async e => {
       const t = e.target, b = t.closest('button'), d = b ? b.dataset : {};
       if (b && b.classList.contains('rchip')) {
-        if ('a' in d) W.ally = d.a; else if ('t' in d) W.type = W.type === d.t ? '' : d.t;
+        if ('v' in d) { W.view = d.v; W.ally = W.view === 'moves' ? '' : null; defaults(); }
+        else if ('a' in d) W.ally = d.a; else if ('t' in d) W.type = W.type === d.t ? '' : d.t;
         else if ('c' in d) W.cls = W.cls === d.c ? '' : d.c; else if ('w' in d) W.away = !W.away;
         return draw();
       }
@@ -484,6 +601,13 @@
         if (d.act === 'add') return addPlayer();
         if (d.act === 'adddate') return addDate();
         if (d.act === 'csv') return exportCsv();
+        if (d.act === 'sendro') return sendRoster();
+        if (d.mv) {
+          const x = W.moves.find(y => y.m === d.mv), tx = a => a === null ? 'New' : a || 'No alliance';
+          if (x && await Admin.confirm('Take this off History?', `${esc(x.name)}: ${esc(tx(x.from))} → ${esc(tx(x.to))}, from the Alliance roster card's History. History (admin) can undo it.`, 'Remove'))
+            run('move-delete', { m: x.m }, { what: `Roster · removed a change from History`, from: `${x.name}: ${tx(x.from)} → ${tx(x.to)}`, to: '—' });
+          return;
+        }
         if (d.act === 'clear') { sel.clear(); return draw(); }
         if (d.act === 'merge') return mergeDialog([...sel]);
         if (d.act === 'bulkdel') {

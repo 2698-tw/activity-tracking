@@ -244,7 +244,7 @@ async function appendRows(env, values, name = 'kartz') {
            book: target.book, tab: title, id: target.id, gid: target.gid };
 }
 
-async function writeRanking(env, rows, target = RANKING) {
+async function writeRanking(env, rows, target = RANKING, day) {
   if (!Array.isArray(rows) || !rows.length)
     throw Object.assign(new Error('No rows to send.'), { status: 400 });
   if (rows.length > RANKING_MAX)
@@ -266,9 +266,11 @@ async function writeRanking(env, rows, target = RANKING) {
   const seen = got.values || [];
   let filled = seen.length;
   while (filled > 0 && !(seen[filled - 1] || []).some(v => v !== '' && v != null)) filled--;
-  // The date the list was sent, by the game's day: Top War runs on UTC. USER_ENTERED makes it a
-  // real date in the sheet; asCell keeps a name starting with = or + as plain text.
-  const date = new Date().toISOString().slice(0, 10);
+  // The date the list was sent, by the game's day: Top War runs on UTC; or, for a day sent again from
+  // the admin view, that day (never one still to come). USER_ENTERED makes it a real date in the
+  // sheet; asCell keeps a name starting with = or + as plain text.
+  const today = new Date().toISOString().slice(0, 10);
+  const date = isDay(day) && day <= today ? day : today;
   const first = Math.max(filled, 1) + 1, last = first + rows.length - 1;
   const range = `${tab}!A${first}:${end}${last}`;
   if (target.extra && ((seen[0] || [])[3] !== target.extra || (seen[0] || [])[4] !== 'Alliance')) {
@@ -436,9 +438,10 @@ export default {
       && (origin === new URL(request.url).origin || ALLOWED_ORIGINS.includes(origin));
     const hasPass = !!env.SHARED_PASS
       && request.headers.get('x-kartz-pass') === env.SHARED_PASS;
-    // the game page may reach the ranking route and the roster's MM/CE list, and nothing else
+    // the game page may reach the ranking route, the roster's MM/CE list and the settings (which of
+    // the bookmark's sections to show), and nothing else
     const rankingCall = origin === RANKING_ORIGIN
-      && ['api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update']
+      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update']
         .includes(url.pathname.replace(/^\/+/, ''));
     const allowed = knownOrigin || hasPass || rankingCall;
 
@@ -632,7 +635,8 @@ export default {
       try {
         const target = await sheetTarget(env, rankingRoute);
         if (!target.id) return reply({ error: `No sheet is set for the ${target.book} yet — add one in the admin view (Sheets).` }, 400);
-        return reply(await writeRanking(env, JSON.parse(body).rows, target), 200);
+        const b = JSON.parse(body);
+        return reply(await writeRanking(env, b.rows, target, b.date), 200);
       } catch (e) {
         const status = e.status || (e instanceof SyntaxError ? 400 : 502);
         return reply({ error: String(e && e.message || e) }, status);
@@ -961,7 +965,18 @@ const DEFAULT_SETTINGS = {
     { id: 'st', title: 'Snow Train', show: true, link: 'https://docs.google.com/spreadsheets/d/1d2jgRQlfhYMufn69YaZ-2ZPQ-lGtfvSiOPDTEplUqGs/edit#gid=0' },
     { id: 'et', title: 'Energy Tower', show: true, link: '' }] },
   sheets: Object.fromEntries(Object.entries(SHEET_BASE).map(([k, t]) => [k, { id: t.id, gid: t.gid }])),
+  // which sections the bookmark's panel in the game shows
+  bookmark: { members: true, wb: true, st: true, et: true },
+  // highlights on the cards: players missing from the latest days, roster players away a while, and
+  // players new to a card; each with its number of days, colour and cards
+  highlight: {
+    missed: { on: true, days: 2, color: 'red', cards: ['wb', 'st', 'et'] },
+    away: { on: true, days: 3, color: 'amber', cards: ['ro'] },
+    fresh: { on: true, days: 7, color: 'green', cards: ['ro', 'wb', 'st', 'et'] },
+  },
 };
+const HL_COLORS = ['red', 'amber', 'green', 'blue', 'purple'];
+const HL_CARDS = { missed: ['wb', 'st', 'et'], away: ['ro'], fresh: ['ro', 'wb', 'st', 'et'] };
 // settings as sent, made safe: unknown fields dropped, each value checked, the defaults filling the gaps
 function cleanSettings(s) {
   const out = structuredClone(DEFAULT_SETTINGS);
@@ -1007,6 +1022,15 @@ function cleanSettings(s) {
       out.home.cards = cards;
     }
   }
+  for (const k of Object.keys(out.bookmark)) if (s.bookmark && typeof s.bookmark[k] === 'boolean') out.bookmark[k] = s.bookmark[k];
+  for (const [k, o] of Object.entries(out.highlight)) {
+    const i = s.highlight && s.highlight[k];
+    if (!i || typeof i !== 'object') continue;
+    if (typeof i.on === 'boolean') o.on = i.on;
+    if (Number.isInteger(i.days) && i.days >= 1 && i.days <= 365) o.days = i.days;
+    if (HL_COLORS.includes(i.color)) o.color = i.color;
+    if (Array.isArray(i.cards)) o.cards = HL_CARDS[k].filter(c => i.cards.includes(c));
+  }
   for (const name of Object.keys(SHEET_BASE)) {
     const i = s.sheets && s.sheets[name];
     if (i && /^[\w-]{20,100}$/.test(i.id) && Number.isInteger(i.gid) && i.gid >= 0) out.sheets[name] = { id: i.id, gid: i.gid };
@@ -1029,8 +1053,10 @@ async function rosterCall(env, path, body, reply) {
 }
 
 // What a backup holds and a restore may write: the cards' data and the settings, not History
-const DATA_KEY = /^(rows|reads|settings|(wb|st|et):who|(wb|st|et):day:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et))$/;
-const LOG_MAX = 100;                          // changes kept in History, each with what it replaced
+const DATA_KEY = /^(rows|reads|moves|settings|(wb|st|et):who|(wb|st|et):day:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et))$/;
+const LOG_MAX = 100;
+const MOVES_MAX = 3000;                       // alliance changes kept on the roster card's History
+const MOVE_JOIN = 30 * 60 * 1000;             // leaving and joining within this is one change                          // changes kept in History, each with what it replaced
 const isDay = d => /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));
 const bad = msg => Object.assign(new Error(msg), { status: 400 });
 const text = (v, n, need) => { const t = String(v == null ? '' : v).trim().slice(0, n); if (need && !t) throw bad('It cannot be empty.'); return t; };
@@ -1235,6 +1261,13 @@ const ADMIN_OPS = {
   async 'day-move'(tx, b) { return this.dayChange(tx, b, 'move'); },
   async 'day-delete'(tx, b) { return this.dayChange(tx, b, 'delete'); },
   async 'day-clear'(tx, b) { return this.dayChange(tx, b, 'clear'); },
+  // one alliance change taken off the roster card's History (a read that went wrong)
+  async 'move-delete'(tx, b) {
+    const moves = (await tx.get('moves')) || [], i = moves.findIndex(x => x.m === b.m);
+    if (i < 0) throw bad('That change is no longer there — reload the card.');
+    moves.splice(i, 1);
+    return tx.put('moves', moves);
+  },
   async 'roster-reads'(tx, b) {
     const a = text(b.ally, 20, true), reads = (await tx.get('reads')) || {};
     if (b.action === 'wipe') {
@@ -1333,31 +1366,53 @@ export class RosterStore {
   async keyOf(ns, id, map) { return (await this.keysOf(ns, [id], map))[0]; }
 
   async load() { return (await this.state.storage.get('rows')) || {}; }
+  // Each alliance change a read finds goes into the roster's History (moves, oldest first): a player
+  // read in another alliance (698S → 698N), one missing from their alliance's read (698S → none), one
+  // back after leaving (none → 698N) and a new player in an alliance read before (new → 698S). Leaving
+  // one alliance and turning up in another within MOVE_JOIN (Read all four reads them one after the
+  // other) is one change, 698S → 698N.
   async update(read) {
     const rows = await this.load(), now = Date.now(), seen = new Set();
+    const reads = (await this.state.storage.get('reads')) || {}, moves = (await this.state.storage.get('moves')) || [];
+    const move = (k, name, from, to) => {
+      if (from === '') {
+        for (let i = moves.length - 1; i >= 0; i--) {
+          const x = moves[i]; if (x.k !== k) continue;
+          if (x.to === '' && now - x.at < MOVE_JOIN) { if (x.from === to) moves.splice(i, 1); else { x.to = to; x.at = now; x.name = name; } return; }
+          break;
+        }
+      }
+      moves.push({ m: crypto.randomUUID().slice(0, 8), k, name, from, to, at: now });
+    };
     let added = 0, updated = 0, rejoined = 0, left = 0;
     for (const m of read.members) {
       seen.add(m.uid);
       const was = rows[m.uid];
-      if (!was) added++;
-      else { updated++; if (was.status === 'Left') rejoined++; }
+      if (!was) { added++; if (reads[read.alliance]) move(m.uid, m.name, null, read.alliance); }
+      else {
+        updated++;
+        if (was.status === 'Left') { rejoined++; move(m.uid, m.name, '', read.alliance); }
+        else if (was.alliance !== read.alliance) move(m.uid, m.name, was.alliance, read.alliance);
+      }
       // what the admin view set to stay (MM/CE) wins over the read
       rows[m.uid] = { ...was, ...m, ...(was && was.pin), alliance: read.alliance, status: 'Active', leftAt: 0, seenAt: now, firstAt: (was && was.firstAt) || now };
     }
     for (const uid of Object.keys(rows)) {
       const r = rows[uid];
-      if (r.alliance === read.alliance && r.status === 'Active' && !seen.has(uid)) { r.status = 'Left'; r.leftAt = now; left++; }
+      if (r.alliance === read.alliance && r.status === 'Active' && !seen.has(uid)) { r.status = 'Left'; r.leftAt = now; left++; move(uid, r.name, r.alliance, ''); }
     }
-    const reads = (await this.state.storage.get('reads')) || {};
     reads[read.alliance] = now;
-    await this.state.storage.put({ rows, reads });
+    await this.state.storage.put({ rows, reads, moves: moves.slice(-MOVES_MAX) });
     return { alliance: read.alliance, added, updated, rejoined, left, total: Object.keys(rows).length };
   }
-  // the card's view: every row with its site id instead of its UID, and when each alliance was last read
+  // the card's view: every row with its site id instead of its UID, when each alliance was last read,
+  // and the alliance changes, newest first, under each player's name now (from: null for a new player,
+  // '' for none; to: '' for none)
   async list() {
-    const rows = await this.load(), reads = (await this.state.storage.get('reads')) || {};
+    const rows = await this.load(), reads = (await this.state.storage.get('reads')) || {}, moves = (await this.state.storage.get('moves')) || [];
     const ok = new Set([...ROSTER_ALLIANCES, ...await this.alliances()]), ids = await this.ids('ro', Object.keys(rows));
-    return { reads, rows: Object.entries(rows).filter(([, r]) => ok.has(r.alliance)).map(([k, { uid, pin, ...r }]) => ({ id: ids[k], ...r })) };
+    return { reads, rows: Object.entries(rows).filter(([, r]) => ok.has(r.alliance)).map(([k, { uid, pin, ...r }]) => ({ id: ids[k], ...r })),
+             moves: moves.slice().reverse().map(x => ({ m: x.m, name: (rows[x.k] && rows[x.k].name) || x.name, from: x.from, to: x.to, at: x.at })) };
   }
 
   // Whitebeard (ns 'wb') and the Snow Train (ns 'st'): each UTC day's points under a key of its own

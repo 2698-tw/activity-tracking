@@ -300,6 +300,7 @@
     '.logo{width:28px;height:28px;border-radius:8px;flex:none;object-fit:cover;background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b);-webkit-user-drag:none;pointer-events:none}' +
     '.top b{font-size:15.5px;flex:1}' +
     '.x{border:0;background:rgba(255,255,255,.1);color:#bbb;width:28px;height:28px;border-radius:50%;font-size:16px;cursor:pointer;flex:none}' +
+    '[hidden]{display:none!important}' +
     'h3{margin:12px 2px 7px;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:rgba(235,235,245,.6);font-weight:700}' +
     '.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}' +
     '@media (max-width:380px){.grid{grid-template-columns:repeat(2,1fr)}}' +
@@ -373,21 +374,34 @@
     '.tx-in{animation:txin .35s ease}@keyframes txin{from{opacity:0;transform:translateY(5px)}}' +
     '</style>' +
     '<div class="app"><div class="top" title="Drag to move"><img class="logo" alt="" src="https://2698-tw.github.io/activity-tracking/icon.png"><b>2698 Data Extractor</b><button class="x" id="close" title="Close">×</button></div>' +
-    '<h3>Alliance members</h3><div class="grid">' +
+    '<div data-sec="members"><h3>Alliance members</h3><div class="grid">' +
       Object.keys(ALLY).map(function (t) { return act('a' + t, '', t, 'not read', t); }).join('') + '</div>' +
-    '<div class="stack">' + act('all', 'main', 'Read all four', 'Updates the roster card on the site') +
-      act('cp', 'send', 'Send Base CP to sheet', 'Read an alliance first') + '</div>' +
-    '<h3>Whitebeard ranking</h3><select id="who"><option value="ALL4">698N, W, S, C</option><option value="OTHER">Other</option></select>' +
-    '<div class="row2">' + act('wb', 'main', 'Read', 'Loads every rank') + act('wbs', 'send', 'Send to sheet', 'Read it first') + '</div>' +
-    '<h3>Snow Train</h3>' +
-    '<div class="row2">' + act('snow', 'main', 'Read', 'Opens Our Defence') + act('snows', 'send', 'Send to sheet', 'Read it first') + '</div>' +
-    '<h3>Energy Tower</h3>' +
-    '<div class="row2">' + act('tower', 'main', 'Read', 'Opens Unit Details') + act('towers', 'send', 'Send to sheet', 'Read it first') + '</div>' +
+    '<div class="row2">' + act('all', 'main', 'Read all four', 'Updates the roster card') +
+      act('cp', 'send', 'Send to sheet', 'Read an alliance first') + '</div></div>' +
+    '<div data-sec="wb"><h3>Whitebeard ranking</h3><select id="who"><option value="ALL4">698N, W, S, C</option><option value="OTHER">Other</option></select>' +
+    '<div class="row2">' + act('wb', 'main', 'Read', 'Loads every rank') + act('wbs', 'send', 'Send to sheet', 'Read it first') + '</div></div>' +
+    '<div data-sec="st"><h3>Snow Train</h3>' +
+    '<div class="row2">' + act('snow', 'main', 'Read', 'Opens Our Defence') + act('snows', 'send', 'Send to sheet', 'Read it first') + '</div></div>' +
+    '<div data-sec="et"><h3>Energy Tower</h3>' +
+    '<div class="row2">' + act('tower', 'main', 'Read', 'Opens Unit Details') + act('towers', 'send', 'Send to sheet', 'Read it first') + '</div></div>' +
     '<div class="status idle" id="st"><span class="si"></span><span class="tx">Ready. Tap a button to start.</span></div></div>';
   document.body.appendChild(host);
   var $ = function (s) { return root.querySelector(s); };
   var app = $('.app'), st = $('#st');
   var busy = false;
+
+  // the sections set in the site's admin view (Home page → Bookmark): the last ones known right away,
+  // then the site's own
+  var SECS = 'x2698.sections';
+  function sections(b) {
+    if (!b) return;
+    root.querySelectorAll('[data-sec]').forEach(function (d) { d.hidden = b[d.dataset.sec] === false; });
+  }
+  try { sections(JSON.parse(localStorage.getItem(SECS))); } catch (e) {}
+  fetch(API + '/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (s) { if (s && s.bookmark) { sections(s.bookmark); try { localStorage.setItem(SECS, JSON.stringify(s.bookmark)); } catch (e) {} } })
+    .catch(function () {});
   var V = { wbFilter: 'ALL4', wb: S.wb || null };   // the last Whitebeard read, kept like the member lists
 
   // closing only hides the panel: a read that is running carries on, and the bookmark brings it back

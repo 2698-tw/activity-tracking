@@ -25,9 +25,23 @@ window.Admin = (function () {
     },
     home: { title: '2698 Data Extractor', banner: '2698', cards: [] },
     sheets: {},
+    bookmark: { members: true, wb: true, st: true, et: true },
+    highlight: {
+      missed: { on: true, days: 2, color: 'red', cards: ['wb', 'st', 'et'] },
+      away: { on: true, days: 3, color: 'amber', cards: ['ro'] },
+      fresh: { on: true, days: 7, color: 'green', cards: ['ro', 'wb', 'st', 'et'] },
+    },
   };
+  // the highlight rules: what each marks, and the cards it can go on
+  const HL = {
+    missed: { name: 'Missed days', hint: n => `Players missing from the last ${n} days in a row (or more)`, cards: ['wb', 'st', 'et'] },
+    away: { name: 'Away', hint: n => `Last online more than ${n} days ago (also the Away chip)`, cards: ['ro'] },
+    fresh: { name: 'New players', hint: n => `First seen in the last ${n} days`, cards: ['ro', 'wb', 'st', 'et'] },
+  };
+  const HL_COLORS = ['red', 'amber', 'green', 'blue', 'purple'];
   const SHEET_NAMES = { kartz: 'Kartz ranking (Send on the Kartz page)', cp: 'Base CP (Alliance Rosters, RawData-CP)', ranking: 'Whitebeard ranking (bookmark Send)', snowtrain: 'Snow Train (bookmark Send)', energytower: 'Energy Tower (bookmark Send)' };
   const HOME_NAMES = { kartz: 'Kartz ranking', cp: 'Alliance roster', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower' };
+  const BOOKMARK_NAMES = { members: 'Alliance members', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower' };
   const CARD_NAMES = { wb: 'Whitebeard', st: 'Snow Train', ro: 'Alliance roster', et: 'Energy Tower' };
 
   const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -240,6 +254,29 @@ window.Admin = (function () {
   const arrows = (attr, i, n, first = 0) => `<button type="button" class="abtn sm" data-${attr}u="${i}" ${i > first ? '' : 'disabled'} aria-label="Up">↑</button><button type="button" class="abtn sm" data-${attr}d="${i}" ${i >= first && i < n - 1 ? '' : 'disabled'} aria-label="Down">↓</button>`;
   const swap = (list, i, j) => { [list[i], list[j]] = [list[j], list[i]]; };
 
+  /* ---- highlights: the rules the cards mark players by ---- */
+  const hlOf = k => ({ ...DEFAULTS.highlight[k], ...((A.settings.highlight || {})[k] || {}) });
+  function highlights() {
+    return `<div class="apanel"><h2>Highlights</h2><p class="ahint">Marks on the cards for everyone to see. Each rule: on or off, its number of days, its colour and the cards it goes on.</p><div class="alist">
+      ${Object.entries(HL).map(([k, h]) => { const r = hlOf(k); return `<div class="ali wrapline">
+        <label class="acheck"><input type="checkbox" data-hl="${k}" data-hf="on" ${r.on ? 'checked' : ''}> <b>${h.name}</b></label>
+        <input type="number" data-hl="${k}" data-hf="days" value="${r.days}" min="1" max="365" class="tiny" aria-label="Days"> days
+        <select data-hl="${k}" data-hf="color" class="hlpick">${HL_COLORS.map(c => `<option value="${c}" ${r.color === c ? 'selected' : ''}>${c[0].toUpperCase() + c.slice(1)}</option>`).join('')}</select>
+        <span class="hl hl-${r.color}">${k === 'missed' ? 'missed ' + r.days : k === 'fresh' ? 'new' : 'away'}</span>
+        ${h.cards.length > 1 ? h.cards.map(c => `<label class="acheck"><input type="checkbox" data-hl="${k}" data-hc="${c}" ${r.cards.includes(c) ? 'checked' : ''}> ${CARD_NAMES[c]}</label>`).join('') : `<span class="ahint">${CARD_NAMES[h.cards[0]]}</span>`}
+        <p class="ahint" style="flex-basis:100%;margin:0">${h.hint(r.days)}</p></div>`; }).join('')}</div></div>`;
+  }
+  function hlChange(t, d) {
+    const k = d.hl, r = hlOf(k), h = HL[k];
+    let next = { ...r }, from, to;
+    if (d.hc) { next.cards = h.cards.filter(c => c === d.hc ? t.checked : r.cards.includes(c)); from = r.cards.includes(d.hc) ? 'on' : 'off'; to = t.checked ? 'on' : 'off'; }
+    else if (d.hf === 'on') { next.on = t.checked; from = r.on ? 'on' : 'off'; to = t.checked ? 'on' : 'off'; }
+    else if (d.hf === 'days') { const n = Math.round(+t.value); if (!(n >= 1 && n <= 365)) { t.value = r.days; return; } next.days = n; from = r.days + ' days'; to = n + ' days'; }
+    else { next.color = t.value; from = r.color; to = t.value; }
+    const what = d.hc ? `${h.name} on ${CARD_NAMES[d.hc]}` : d.hf === 'on' ? h.name : `${h.name} · ${d.hf}`;
+    return save(n => { n.highlight = { ...DEFAULTS.highlight, ...n.highlight, [k]: next }; }, { what: `Highlights · ${what}`, from, to });
+  }
+
   function colsPage() {
     const S = A.settings, AL = S.alliances;
     const tag = a => `<span class="rtag t${esc(a)}">${esc(a)}</span>`;
@@ -265,9 +302,11 @@ window.Admin = (function () {
       <p class="ahint">The filter chips on every card, in this order. Renaming one renames it on every player too. The bookmark still labels its own reads 698N, 698S, 698W and 698C.</p>
       <div class="alist">${AL.map((a, i) => `<div class="ali">${tag(a)}<input type="text" data-ar="${i}" value="${esc(a)}" maxlength="12">${arrows('a', i, AL.length)}<button type="button" class="abtn sm" data-ax="${i}" ${AL.length > 1 ? '' : 'disabled'}>Remove</button></div>`).join('')}
         <div class="ali"><input type="text" data-an placeholder="New alliance tag" maxlength="12"><button type="button" class="abtn sm pri" data-aadd>Add</button></div></div></div>
+      ${highlights()}
       <div class="acols">${['wb', 'st', 'et', 'ro'].map(card).join('')}</div>`;
     view.onchange = async e => {
       const t = e.target, d = t.dataset, c = d.c, C = c && S.cards[c];
+      if (d.hl) return hlChange(t, d);
       if (d.ar) {
         const from = AL[d.ar], to = t.value.trim();
         if (!to || to === from) { t.value = from; return; }
@@ -318,9 +357,12 @@ window.Admin = (function () {
       ${H.cards.map((x, i) => `<div class="ali wrapline"><input type="checkbox" data-hs="${i}" ${x.show ? 'checked' : ''} aria-label="Show on the home page">
         <input type="text" data-ht="${i}" value="${esc(x.title)}" maxlength="40" class="short">
         <input type="url" data-hl="${i}" value="${esc(x.link)}" class="long">${arrows('h', i, H.cards.length)}</div>`).join('')}</div>
-      <p class="ahint" style="margin-top:12px"><a href="./">Open the home page ↗</a></p></div>`;
+      <p class="ahint" style="margin-top:12px"><a href="./">Open the home page ↗</a></p></div>
+      <div class="apanel"><h2>Bookmark</h2><p class="ahint">The sections the 2698 Data Extractor bookmark shows in the game. A hidden one keeps its saved reads and comes back when ticked again; it takes effect the next time the bookmark is opened.</p><div class="alist">
+      ${Object.entries(BOOKMARK_NAMES).map(([k, l]) => `<div class="ali"><label class="acheck"><input type="checkbox" data-bm="${k}" ${(A.settings.bookmark || {})[k] !== false ? 'checked' : ''}> ${l}</label></div>`).join('')}</div></div>`;
     view.onchange = e => {
       const t = e.target, d = t.dataset, v = t.value.trim();
+      if (d.bm) return save(n => { n.bookmark = { ...DEFAULTS.bookmark, ...n.bookmark, [d.bm]: t.checked }; }, { what: `Bookmark · ${BOOKMARK_NAMES[d.bm]}`, from: t.checked ? 'hidden' : 'shown', to: t.checked ? 'shown' : 'hidden' });
       if (d.h === 'title') { if (!v) { t.value = H.title; return; } return save(n => { n.home.title = v; }, { what: 'Home · site title', from: H.title, to: v }); }
       if (d.hs) { const x = H.cards[d.hs]; return save(n => { n.home.cards[d.hs].show = t.checked; }, { what: `Home · ${x.title} card`, from: x.show ? 'shown' : 'hidden', to: t.checked ? 'shown' : 'hidden' }); }
       if (d.ht) { const x = H.cards[d.ht]; if (!v) { t.value = x.title; return; } return save(n => { n.home.cards[d.ht].title = v; }, { what: `Home · ${HOME_NAMES[x.id]} card title`, from: x.title, to: v }); }

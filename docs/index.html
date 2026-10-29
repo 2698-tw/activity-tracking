@@ -239,6 +239,15 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .rchip{width:auto;border:0;background:rgba(255,255,255,.08);color:#f3f3f7;border-radius:999px;padding:5px 12px;font:inherit;font-size:12.5px;font-weight:400;cursor:pointer}
 .rchip.on{background:rgba(195,20,65,.35);box-shadow:inset 0 0 0 1px #e0457b}
 .rcount{margin-left:auto;font-size:12.5px;color:rgba(235,235,245,.5)}
+/* highlights (admin → Highlights): a pill by the name, or the cell's own text in the colour */
+.hl{display:inline-block;margin-left:6px;border-radius:999px;padding:0 7px;font-size:11px;font-weight:700;line-height:18px;color:#16181d;vertical-align:1px}
+.hl-red{--hl:#ff7a7a}.hl-amber{--hl:#ffc078}.hl-green{--hl:#7ee2a8}.hl-blue{--hl:#9ec5ff}.hl-purple{--hl:#d8a8ff}
+.hl{background:var(--hl)}.hlc{color:var(--hl)!important;font-weight:700}
+/* the roster card's Players / History switch, and its History */
+.rseg{display:inline-flex;gap:2px;padding:2px;margin-right:6px;border-radius:999px;background:rgba(255,255,255,.06)}
+.rseg .rchip{background:transparent}.rseg .rchip.on{background:#e0457b;box-shadow:none;color:#fff}
+.rtag.tNew{background:transparent;color:#7ee2a8;box-shadow:inset 0 0 0 1px #2f6b4f}
+.mvtable{min-width:0}.mvtable td:first-child{white-space:nowrap}
 .rbody{flex:1;overflow:auto;padding:0 14px 14px}
 .rbody .rnote{color:rgba(235,235,245,.6)}
 .rtable{width:100%;border-collapse:collapse;font-size:13.5px}
@@ -355,6 +364,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .alist{display:grid;gap:7px}
 .ali{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .ali input[type=text],.ali input[type=url],.ali select{flex:1;min-width:120px;width:auto;padding:6px 9px}
+.ali input[type=number]{width:72px;flex:none;padding:6px 9px}.ali select.hlpick{flex:none;min-width:0}
 .ali .short{flex:.6}
 .ali .long{flex:2;min-width:200px}
 .alab{width:110px;flex:none;font-size:13.5px}
@@ -2889,8 +2899,8 @@ loadSetup();
 </script>
 <script src="cp.js?v=6"></script>
 <!-- the admin pill and page, then the Alliance roster, Whitebeard and Snow Train cards -->
-<script src="admin.js?v=4"></script>
-<script src="cards.js?v=5"></script>
+<script src="admin.js?v=6"></script>
+<script src="cards.js?v=7"></script>
 <!-- Kartz: decoding the recording, then packing and reading it -->
 <script src="decode.js?v=4"></script>
 <script src="kartz.js?v=5"></script>
