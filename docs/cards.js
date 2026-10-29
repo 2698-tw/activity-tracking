@@ -96,9 +96,10 @@
       DEF['cp' + n] = { n: 1, val: r => cp(r, n), cell: r => cp(r, n) ? fmt(cp(r, n)) : dim, edit: 'big' };
       DEF['u' + n] = { text: 1, val: r => unit(r, n), cell: r => unitTag(unit(r, n)) || (Admin.on ? dim : ''), edit: 'unit' };
     }
-    const dateDef = d => o.id === 'st'
+    // Snow Train and Energy Tower: whether a player was there that day (its March CP stays behind it)
+    const dateDef = d => o.id === 'st' || o.id === 'et'
       ? { n: 1, val: r => r.pts[d] != null ? 1 : 0, cell: r => r.pts[d] != null ? '<span class="yes">Yes</span>' : '<span class="rdim">No</span>', edit: 'toggle' }
-      : { n: 1, val: r => r.pts[d] ?? -1, cell: r => r.pts[d] == null ? dim : fmt(r.pts[d]), edit: o.id === 'et' ? 'big' : 'num' };
+      : { n: 1, val: r => r.pts[d] ?? -1, cell: r => r.pts[d] == null ? dim : fmt(r.pts[d]), edit: 'num' };
     const defOf = k => /^\d{4}-/.test(k) ? dateDef(k) : DEF[k];
     const columns = () => {
       const out = [];
@@ -183,7 +184,7 @@
       if (!W.rows) { box.innerHTML = '<p class="rnote">Loading…</p>'; return; }
       if (!W.rows.length && !admin) { box.innerHTML = `<p class="rnote">${o.empty}</p>`; return; }
       const cols = columns(), k = W.sort, dir = W.asc ? 1 : -1, d = defOf(k) || DEF.name;
-      rows.sort((a, b) => (d.text ? String(d.val(a) ?? '').localeCompare(String(d.val(b) ?? '')) : d.val(a) - d.val(b)) * dir || (o.id === 'st' ? top(b) - top(a) : 0));
+      rows.sort((a, b) => (d.text ? String(d.val(a) ?? '').localeCompare(String(d.val(b) ?? '')) : d.val(a) - d.val(b)) * dir || (o.id === 'st' ? top(b) - top(a) : o.id === 'et' ? DEF.best.val(b) - DEF.best.val(a) : 0));
       const arrow = c => W.sort === c ? (W.asc ? ' ▲' : ' ▼') : '';
       const game = admin && o.id === 'ro' ? { name: 1, alliance: 1, rank: 1, power: 1, join: 1, last: 1, status: 1 } : {};
       box.innerHTML = `<table class="rtable wbtable"><thead><tr>${cols.map(c => {
@@ -322,10 +323,9 @@
       const show = x => x === '' || x == null || x === -1 || x === 0 ? '—' : typeof x === 'number' && x >= 1e4 ? fmt(x) : String(x);
       if (k === 'name') { if (!v || v === cur) return false; run('row-set', { id: r.id, field: 'name', value: v }, { what: `Renamed ${cur}`, from: cur, to: v }); return true; }
       if (k === 'ally' || k === 'alliance') { if (v === (cur || '')) return false; run('row-set', { id: r.id, field: k, value: v }, { what: `${who} · alliance`, from: cur || '—', to: v || '—' }); return true; }
-      if (/^\d{4}-/.test(k)) {                                     // Whitebeard points (Energy Tower March CP) on a day
-        let n = v === '' ? null : parseNum(v);
+      if (/^\d{4}-/.test(k)) {                                     // Whitebeard points on a day
+        const n = v === '' ? null : parseNum(v);
         if (n !== null && !isFinite(n)) { Admin.toast('Not a number: ' + v); return false; }
-        if (o.id === 'et' && n !== null && n < 1e5) n *= 1e6;        // "79" means 79M
         if ((n ?? -1) === cur) return false;
         run('cell-set', { id: r.id, day: k, value: n }, { what: `${who} · ${head(k)}`, from: show(cur), to: show(n) }); return true;
       }
@@ -364,10 +364,38 @@
     }
     // Snow Train: on a train that day or not
     function toggleDay(r, d) {
+      if (o.id === 'et') {                                           // Energy Tower: No ↔ Yes at their best March CP
+        if (r.pts[d] != null) return run('cell-set', { id: r.id, day: d, value: null }, { what: `${r.name} · ${head(d)}`, from: 'Yes', to: 'No' });
+        const b = DEF.best.val(r);
+        if (!b) { Admin.toast(`Give ${r.name} a March CP first: ⋯ → Edit a day's March CP`); return; }
+        return run('cell-set', { id: r.id, day: d, value: b }, { what: `${r.name} · ${head(d)}`, from: 'No', to: `Yes (${fmt(b)})` });
+      }
       if (r.pts[d] != null) return run('days-set', { id: r.id, days: { [d]: null } }, { what: `${r.name} · ${head(d)}`, from: 'Yes', to: 'No' });
       const b = bests(r)[0];
       if (!b) { Admin.toast(`Give ${r.name} a March CP first, or use ⋯ → Edit day values`); return; }
       run('days-set', { id: r.id, days: { [d]: { [b[0]]: b[1] } } }, { what: `${r.name} · ${head(d)}`, from: 'No', to: 'Yes' });
+    }
+
+    // Energy Tower: one day's March CP for a player, typed (empty = not there that day)
+    function etDay(r) {
+      if (!W.dates.length) return Admin.toast('There are no date columns yet');
+      const d0 = [...W.dates].reverse().find(d => r.pts[d] != null) || W.dates[W.dates.length - 1];
+      const val = d => r.pts[d] != null ? Math.round(r.pts[d] / 1e6) + 'M' : '';
+      const m = Admin.modal(`<h3>${esc(r.name)} · March CP on a day</h3>
+        <label>Day<select>${[...W.dates].reverse().map(d => `<option value="${d}" ${d === d0 ? 'selected' : ''}>${head(d)}</option>`).join('')}</select></label>
+        <label>March CP<input type="text" value="${val(d0)}" placeholder="e.g. 256M · empty = not there"></label>
+        <div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Save</button></div>`);
+      const sel = m.querySelector('select'), inp = m.querySelector('input');
+      sel.onchange = () => { inp.value = val(sel.value); };
+      m.querySelector('[data-x]').onclick = m.close;
+      m.querySelector('[data-y]').onclick = () => {
+        const d = sel.value, v = inp.value.trim();
+        let n = v === '' ? null : parseNum(v);
+        if (n !== null && !isFinite(n)) return Admin.toast('Not a number: ' + v);
+        if (n !== null && n < 1e5) n *= 1e6;                          // "256" means 256M
+        if ((n ?? null) === (r.pts[d] ?? null)) return m.close();
+        m.close(); run('cell-set', { id: r.id, day: d, value: n }, { what: `${r.name} · ${head(d)} March CP`, from: r.pts[d] != null ? fmt(r.pts[d]) : '—', to: n != null ? fmt(n) : '—' });
+      };
     }
 
     /* ---- a player's ⋯ ---- */
@@ -375,6 +403,7 @@
       const r = byId(btn.dataset.row); if (!r) return;
       const items = [{ label: '✏️ Rename', run: () => edit(btn.closest('td')) }];
       if (o.id !== 'ro') items.push({ label: '🔀 Merge with another player…', run: () => mergeDialog([r.id]) });
+      if (o.id === 'et') items.push('-', { label: "📅 Edit a day's March CP…", run: () => etDay(r) });
       if (o.id === 'st') items.push('-',
         { label: '📅 Edit day values…', run: () => dayValues(r) },
         { label: '↕️ Reorder March CP 1–3…', run: () => reorder(r) },
@@ -558,7 +587,7 @@
       const rows = [...el('View').querySelectorAll('tbody tr[data-id]')].map(tr => byId(tr.dataset.id)).filter(Boolean);
       const cell = (r, k) => {
         const f = defOf(k), v = f.val(r);
-        if (/^\d{4}-/.test(k)) return o.id === 'st' ? (v ? 'Yes' : 'No') : v === -1 ? '' : v;
+        if (/^\d{4}-/.test(k)) return o.id === 'st' || o.id === 'et' ? (v ? 'Yes' : 'No') : v === -1 ? '' : v;
         if (k === 'join' || k === 'last') return k === 'last' && r.online ? 'now' : day(k === 'last' ? r.last : r.join);
         if (k === 'rank') return rankText(r.rank);
         if (k === 'status') return f.cell(r);
