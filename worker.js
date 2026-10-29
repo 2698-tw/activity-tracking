@@ -1261,6 +1261,24 @@ const ADMIN_OPS = {
   async 'day-move'(tx, b) { return this.dayChange(tx, b, 'move'); },
   async 'day-delete'(tx, b) { return this.dayChange(tx, b, 'delete'); },
   async 'day-clear'(tx, b) { return this.dayChange(tx, b, 'clear'); },
+  // an alliance change added by hand (one that happened before History was kept, or a read missed):
+  // put in its place by date, and tied to the roster player of that name if there is one, so it shows
+  // their name now
+  async 'move-add'(tx, b) {
+    const AL = await this.alliances(), name = text(b.name, 60, true);
+    const okAlly = a => a === '' || AL.includes(a), from = b.from, to = b.to;   // from: null for a new player
+    if (!(from === null || okAlly(from)) || !okAlly(to)) throw bad('Unknown alliance.');
+    if (from === to) throw bad('From and to are the same.');
+    if (!isDay(b.day)) throw bad('Bad date.');
+    const at = Date.parse(b.day + 'T12:00:00Z');
+    if (at > Date.now() + 864e5) throw bad('That date is still to come.');
+    const rows = (await tx.get('rows')) || {}, all = Object.entries(rows).filter(([, r]) => r.name === name);
+    const hit = all.find(([, r]) => r.alliance === from) || all.find(([, r]) => r.alliance === to) || all[0];
+    const moves = (await tx.get('moves')) || [], x = { m: crypto.randomUUID().slice(0, 8), k: hit ? hit[0] : 'n|' + name, name, from, to, at };
+    let i = moves.length; while (i > 0 && moves[i - 1].at > at) i--;
+    moves.splice(i, 0, x);
+    return tx.put('moves', moves.slice(-MOVES_MAX));
+  },
   // one alliance change taken off the roster card's History (a read that went wrong)
   async 'move-delete'(tx, b) {
     const moves = (await tx.get('moves')) || [], i = moves.findIndex(x => x.m === b.m);

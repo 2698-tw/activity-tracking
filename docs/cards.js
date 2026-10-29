@@ -223,6 +223,30 @@
       }).join('') || '<tr><td colspan="4" class="rdim">No changes match.</td></tr>'}</tbody></table>`;
     }
 
+    // a change added by hand: one from before History was kept, or one a read missed
+    function addMove() {
+      const AL = Admin.settings.alliances, today = new Date().toISOString().slice(0, 10);
+      const opts = list => list.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+      const m = Admin.modal(`<h3>Add a change to History</h3>
+        <label>Name<input type="text" list="mvNames" maxlength="60" placeholder="In-game name"></label>
+        <datalist id="mvNames">${[...new Set(W.rows.map(r => r.name))].map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+        <label>From<select data-f>${opts([...AL.map(a => [a, a]), ['', 'No alliance'], ['new', 'New']])}</select></label>
+        <label>To<select data-t>${opts([['', 'No alliance'], ...AL.map(a => [a, a])])}</select></label>
+        <label>Date<input type="date" value="${today}" max="${today}"></label>
+        <p class="aerr" data-e></p>
+        <div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Add</button></div>`);
+      m.querySelector('[data-x]').onclick = m.close;
+      m.querySelector('[data-y]').onclick = () => {
+        const name = m.querySelector('input[type=text]').value.trim(), f = m.querySelector('[data-f]').value, to = m.querySelector('[data-t]').value;
+        const day = m.querySelector('input[type=date]').value, from = f === 'new' ? null : f, err = m.querySelector('[data-e]');
+        if (!name) { err.textContent = 'Type a name.'; return; }
+        if (from === to) { err.textContent = 'From and To are the same.'; return; }
+        if (!day) { err.textContent = 'Pick a date.'; return; }
+        const tx = a => a === null ? 'New' : a || 'No alliance';
+        m.close(); run('move-add', { name, from, to, day }, { what: 'Roster · added a change to History', from: '—', to: `${name}: ${tx(from)} → ${tx(to)}, ${head(day)}` });
+      };
+    }
+
     /* ---- admin: the header buttons, the bulk bar, the note ---- */
     let bar, bulk, note;
     function drawAdminBar() {
@@ -235,7 +259,7 @@
         note = document.createElement('div'); note.className = 'rfoot radmnote';
         rapp.appendChild(note);                      // at the bottom of the card
       }
-      bar.innerHTML = Admin.on ? `<button type="button" class="rgo pink" data-act="add">+ Player</button>${dated ? '<button type="button" class="rgo pink" data-act="adddate">+ Date</button>' : ''}${o.id === 'ro' ? '<button type="button" class="rgo" data-act="sendro">Send to sheet</button>' : ''}<button type="button" class="rgo" data-act="csv">Export CSV</button>` : '';
+      bar.innerHTML = Admin.on && W.view === 'moves' ? '<button type="button" class="rgo pink" data-act="addmove">+ Change</button>' : Admin.on ? `<button type="button" class="rgo pink" data-act="add">+ Player</button>${dated ? '<button type="button" class="rgo pink" data-act="adddate">+ Date</button>' : ''}${o.id === 'ro' ? '<button type="button" class="rgo" data-act="sendro">Send to sheet</button>' : ''}<button type="button" class="rgo" data-act="csv">Export CSV</button>` : '';
       note.hidden = !Admin.on;
       note.innerHTML = 'Admin: click a cell to change it · ⋯ for a player · ✎ on a date for its column (and to send that day to the sheet again) · tick players to change several at once. Every change is in History and can be undone.' +
         (o.id === 'ro' ? ' ⚠ columns come from the game: its next read of that alliance replaces an edit (MM/CE edits stay).' : ' Names come from the game: its next read replaces an edit. Alliances of players on the Alliance roster card come from there: changing one here changes it on the roster, and every card follows.');
@@ -602,6 +626,7 @@
         if (d.act === 'adddate') return addDate();
         if (d.act === 'csv') return exportCsv();
         if (d.act === 'sendro') return sendRoster();
+        if (d.act === 'addmove') return addMove();
         if (d.mv) {
           const x = W.moves.find(y => y.m === d.mv), tx = a => a === null ? 'New' : a || 'No alliance';
           if (x && await Admin.confirm('Take this off History?', `${esc(x.name)}: ${esc(tx(x.from))} → ${esc(tx(x.to))}, from the Alliance roster card's History. History (admin) can undo it.`, 'Remove'))
