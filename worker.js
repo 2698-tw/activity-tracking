@@ -441,7 +441,7 @@ export default {
     // the game page may reach the ranking route, the roster's MM/CE list and the settings (which of
     // the bookmark's sections to show), and nothing else
     const rankingCall = origin === RANKING_ORIGIN
-      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update']
+      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points']
         .includes(url.pathname.replace(/^\/+/, ''));
     const allowed = knownOrigin || hasPass || rankingCall;
 
@@ -523,8 +523,8 @@ export default {
       return rosterCall(env, '/admin', b, reply);
     }
     // The Snow Train card (#snowtrain) and the Energy Tower card (#energytower) are kept the same way,
-    // from their Unit Details reads.
-    const dayCard = { 'api/wb-update': '/wb-update', 'api/st-update': '/st-update', 'api/et-update': '/et-update',
+    // from their Unit Details reads; the Energy Tower's Rankings add each player's points (api/et-points).
+    const dayCard = { 'api/wb-update': '/wb-update', 'api/st-update': '/st-update', 'api/et-update': '/et-update', 'api/et-points': '/et-points',
                       'api/wb': '/wb-list', 'api/st': '/st-list', 'api/et': '/et-list' }[url.pathname.replace(/^\/+/, '')];
     if (dayCard) {
       if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
@@ -1053,10 +1053,12 @@ async function rosterCall(env, path, body, reply) {
 }
 
 // What a backup holds and a restore may write: the cards' data and the settings, not History
-const DATA_KEY = /^(rows|reads|moves|settings|(wb|st|et):who|(wb|st|et):day:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et))$/;
+const DATA_KEY = /^(rows|reads|moves|settings|(wb|st|et):who|(wb|st|et):day:\d{4}-\d{2}-\d{2}|et:pts:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et))$/;
 const LOG_MAX = 100;
-const MOVES_MAX = 3000;                       // alliance changes kept on the roster card's History
+const MOVES_MAX = 3000;                       // alliance changes kept on the roster card's Log
 const MOVE_JOIN = 30 * 60 * 1000;             // leaving and joining within this is one change                          // changes kept in History, each with what it replaced
+// where a card keeps its days: the Energy Tower's Rankings points beside its Unit Details days
+const dayPrefixes = ns => ns === 'et' ? ['et:day:', 'et:pts:'] : [ns + ':day:'];
 const isDay = d => /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:00:00Z'));
 const bad = msg => Object.assign(new Error(msg), { status: 400 });
 const text = (v, n, need) => { const t = String(v == null ? '' : v).trim().slice(0, n); if (need && !t) throw bad('It cannot be empty.'); return t; };
@@ -1129,6 +1131,15 @@ const ADMIN_OPS = {
     if (b.value == null) delete pts[k]; else pts[k] = num(b.value, 0, 1e13);
     return tx.put(ns + ':day:' + b.day, pts);
   },
+  // the Energy Tower: one player's Rankings points on one day, or none (the day shows Yes/No again)
+  async 'score-set'(tx, b) {
+    if (cardOf(b) !== 'et' || !isDay(b.day)) throw bad('Bad cell.');
+    const who = (await tx.get('et:who')) || {}, k = await this.keyOf('et', b.id, who);
+    if (!(await tx.get('et:day:' + b.day))) throw bad('There is no column for ' + b.day + '.');
+    const pts = (await tx.get('et:pts:' + b.day)) || {};
+    if (b.value == null) delete pts[k]; else pts[k] = num(b.value, 0, 1e9);
+    return Object.keys(pts).length ? tx.put('et:pts:' + b.day, pts) : tx.del('et:pts:' + b.day);
+  },
   // Snow Train: one player's March CP per unit type on some days (null: not on a train that day),
   // and their March CP 1–3 worked out again from all their days if asked
   async 'days-set'(tx, b) {
@@ -1182,7 +1193,7 @@ const ADMIN_OPS = {
     const who = (await tx.get(ns + ':who')) || {}, keys = await this.keysOf(ns, b.ids, who);
     for (const k of keys) delete who[k];
     await tx.put(ns + ':who', who);
-    for (const [dk, pts] of await tx.list(ns + ':day:')) {
+    for (const pre of dayPrefixes(ns)) for (const [dk, pts] of await tx.list(pre)) {
       if (!keys.some(k => k in pts)) continue;
       for (const k of keys) delete pts[k];
       await tx.put(dk, pts);
@@ -1202,7 +1213,7 @@ const ADMIN_OPS = {
     const who = (await tx.get(ns + ':who')) || {}, keep = await this.keyOf(ns, b.keep, who);
     const others = (await this.keysOf(ns, b.ids, who)).filter(k => k !== keep);
     if (!others.length) throw bad('Pick another player to merge with.');
-    for (const [dk, pts] of await tx.list(ns + ':day:')) {
+    for (const pre of dayPrefixes(ns)) for (const [dk, pts] of await tx.list(pre)) {
       if (!others.some(k => k in pts)) continue;
       for (const o of others) {
         if (!(o in pts)) continue;
@@ -1279,7 +1290,7 @@ const ADMIN_OPS = {
     moves.splice(i, 0, x);
     return tx.put('moves', moves.slice(-MOVES_MAX));
   },
-  // one alliance change taken off the roster card's History (a read that went wrong)
+  // one alliance change taken off the roster card's Log (a read that went wrong)
   async 'move-delete'(tx, b) {
     const moves = (await tx.get('moves')) || [], i = moves.findIndex(x => x.m === b.m);
     if (i < 0) throw bad('That change is no longer there — reload the card.');
@@ -1355,6 +1366,7 @@ export class RosterStore {
       if (path === '/st-list') return Response.json(await this.wbList('st'));
       if (path === '/et-update') return Response.json(await this.wbUpdate(await request.json(), 'et'));
       if (path === '/et-list') return Response.json(await this.wbList('et'));
+      if (path === '/et-points') return Response.json(await this.etPoints(await request.json()));
       if (path === '/settings') return Response.json(await this.getSettings());
       if (path === '/admin') return Response.json(await this.admin(await request.json()));
       return Response.json({ error: 'unknown roster call' }, { status: 404 });
@@ -1384,7 +1396,7 @@ export class RosterStore {
   async keyOf(ns, id, map) { return (await this.keysOf(ns, [id], map))[0]; }
 
   async load() { return (await this.state.storage.get('rows')) || {}; }
-  // Each alliance change a read finds goes into the roster's History (moves, oldest first): a player
+  // Each alliance change a read finds goes into the roster card's Log (moves, oldest first): a player
   // read in another alliance (698S → 698N), one missing from their alliance's read (698S → none), one
   // back after leaving (none → 698N) and a new player in an alliance read before (new → 698S). Leaving
   // one alliance and turning up in another within MOVE_JOIN (Read all four reads them one after the
@@ -1468,6 +1480,24 @@ export class RosterStore {
     await this.state.storage.put({ [ns + ':day:' + day]: pts, [ns + ':who']: who });
     return { day, players: read.rows.length, replaced: had, merged: keep && had, ...(ns === 'et' ? { allies } : {}) };
   }
+  // The Energy Tower's Rankings (this warzone's players and their points): each player's points that
+  // day (et:pts:<day>, the highest of the day's reads), shown in the card's date column in place of
+  // Yes. That day's column is made if there is none yet, and a player not on the card yet is added,
+  // with their alliance from the roster card the way the Unit Details reads have it.
+  async etPoints(read) {
+    const st = this.state.storage, day = new Date().toISOString().slice(0, 10);
+    const pts = (await st.get('et:pts:' + day)) || {}, had = Object.keys(pts).length > 0, col = await st.get('et:day:' + day);
+    const who = (await st.get('et:who')) || {}, alias = (await st.get('adm:alias:et')) || {}, roster = await this.load();
+    let added = 0;
+    for (const r of read.rows) {
+      const key = alias[r.key] || r.key, was = who[key], ro = roster[r.key];
+      if (!was) added++;
+      pts[key] = Math.max(pts[key] ?? -Infinity, r.points);
+      who[key] = { ...(was || {}), name: r.name, ally: ro ? (ro.status === 'Left' ? 'Left' : ro.alliance) : (was && was.ally) || r.ally || '' };
+    }
+    await st.put({ ['et:pts:' + day]: pts, 'et:who': who, ...(col ? {} : { ['et:day:' + day]: {} }) });
+    return { day, players: read.rows.length, added, merged: had };
+  }
 
   // each Snow Train player's best per unit type over the days there are, the types in the order they
   // first appear
@@ -1499,8 +1529,18 @@ export class RosterStore {
       await tx.put(ns + ':day:' + b.to, into);
     }
     if (action === 'clear') await tx.put(dk, {}); else await tx.del(dk);
+    // the Energy Tower's points for that day go with it
+    const sk = 'et:pts:' + day, score = ns === 'et' && await tx.get(sk);
+    if (score) {
+      if (action === 'move') {
+        const into = (await tx.get('et:pts:' + b.to)) || {};
+        for (const [k, v] of Object.entries(score)) into[k] = Math.max(into[k] ?? -Infinity, v);
+        await tx.put('et:pts:' + b.to, into);
+      }
+      await tx.del(sk);
+    }
     const seen = {};
-    for (const pts of (await tx.list(ns + ':day:')).values()) for (const k of Object.keys(pts)) seen[k] = 1;
+    for (const pre of dayPrefixes(ns)) for (const pts of (await tx.list(pre)).values()) for (const k of Object.keys(pts)) seen[k] = 1;
     const bests = ns === 'st' ? await this.bestsFromDays(tx, who) : {};
     for (const k of Object.keys(who)) {
       if (!seen[k] && !who[k].manual) delete who[k];
@@ -1517,12 +1557,14 @@ export class RosterStore {
     const days = await this.state.storage.list({ prefix: ns + ':day:' });
     const dates = [...days.keys()].map(k => k.slice(ns.length + 5)).sort();
     const ids = await this.ids(ns, Object.keys(who));
+    const scores = ns === 'et' ? await this.state.storage.list({ prefix: 'et:pts:' }) : new Map();
     const rows = Object.entries(who).map(([key, w]) => {
-      const p = {};
+      const p = {}, sc = {};
       for (const d of dates) { const v = days.get(ns + ':day:' + d)[key]; if (v != null) p[d] = v; }
+      for (const [k, s] of scores) if (s[key] != null) sc[k.slice(7)] = s[key];
       const ro = roster[key], ally = ro ? (ro.status === 'Left' ? 'Left' : ro.alliance) : w.ally, link = ro ? { roster: 1, ...(ro.status === 'Left' ? { left: 1 } : {}) } : {};
       return ns === 'st' ? { id: ids[key], name: w.name, ally, ...link, type: w.type || '', bests: bestsOf(w), pts: p }
-                         : { id: ids[key], name: w.name, ally, ...link, pts: p };
+                         : { id: ids[key], name: w.name, ally, ...link, pts: p, ...(ns === 'et' ? { score: sc } : {}) };
     });
     return { dates, rows };
   }

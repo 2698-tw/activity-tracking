@@ -9,7 +9,9 @@
  *   Snow Train: the Snow Train screen opened as its building opens it, then its own Our Defence button;
  *     sent to SS P2 Snow Train (api/game-snowtrain).
  *   Energy Tower: its Unit Details, opened as the tower's own Unit Details button opens them; the
- *     site's Energy Tower card (api/et-update) and its sheet (api/game-energytower).
+ *     site's Energy Tower card (api/et-update) and its sheet (api/game-energytower). Its Rankings,
+ *     opened as the event's Rankings button opens them, give each player's points for the card's
+ *     date columns (api/et-points).
  * The panel is buttons only. Each alliance read updates the site's Alliance roster card
  * (api/roster-update) and each Whitebeard read the site's Whitebeard card (api/wb-update).
  * Nothing here sends anything to the game: the game makes its own usual requests for what it opens.
@@ -199,6 +201,33 @@
     });
   }
 
+  // the Energy Tower's Rankings: OpenUI(CQ26ArkRankPop), what the event's Rankings button runs (the
+  // game loads the ranking for the event it has open), read, and closed again; one already open is
+  // read as it is and left open. Only this warzone's players: the game's own Your Warzone filter.
+  var rankPop = function () { return findComp(function (c) { return c.__classname__ === 'CQ26ArkRankPop'; }); };
+  async function readEnergyPoints(step) {
+    var pop = rankPop(), opened = [], U = ui();
+    var dc = req('DataCenter'), me = dc && dc.DATA && dc.DATA.UserData, sid = me && me.OriginServerId;
+    if (sid == null) throw new Error('the game has not loaded your warzone yet');
+    var have = function () { return pop && pop._data && Array.isArray(pop._data.rankInfo); };
+    if (!have()) {
+      var WR = win('CQ26ArkRankPop'), m = req('CQ26Controller'), C = m && m.CQ26Controller && m.CQ26Controller.getInstance();
+      if (!U || !WR || !C || !C.arkData || C.arkData.cid == null) throw new Error('no Energy Tower in the game right now — open the event once, then try again');
+      if (!pop) { step('Opening the Rankings…', .15); U.OpenUI(WR); opened.push(WR); }
+      for (var t0 = Date.now(); Date.now() - t0 < 12000; await wait(200)) { pop = rankPop(); if (have()) break; }
+      await wait(300);
+    }
+    var close = function () { opened.forEach(function (w) { try { U.CloseUI(w); } catch (e) {} }); };
+    if (!have()) { close(); throw new Error('the Rankings did not load'); }
+    var list = pop._data.rankInfo.filter(function (e) { return Number(e.sid) === Number(sid); });
+    close();
+    if (!list.length) throw new Error('no one from your warzone has points yet');
+    return list.map(function (e) {
+      var p = parse(e.playerInfo);
+      return { uid: String(e.uid || ''), name: String(p.username || p.nickname || ''), points: Number(e.score) || 0 };
+    });
+  }
+
   // what a march is, by the units most of its slots hold: the game's unit table types them 101 army,
   // 201 navy, 301 air force (a mech or two of another kind does not change it)
   var UNIT = { 101: 'Army', 201: 'Navy', 301: 'Air Force' };
@@ -226,7 +255,7 @@
   S.members = S.members || {}; S.prev = S.prev || {};
   // only the four alliances: a read of another one saved by an earlier version is dropped
   [S.members, S.prev].forEach(function (o) { Object.keys(o).forEach(function (t) { if (!ALLY[t]) delete o[t]; }); });
-  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null, st: S.st || null, et: S.et || null })); } catch (e) {} }
+  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null, st: S.st || null, et: S.et || null, etp: S.etp || null })); } catch (e) {} }
   var fold = function (s) { return String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, ''); };
   // MM/CE from the roster. Names repeat ("Woody" is 698S's in-game name and 698C's search name; 698S
   // has two Gikeys), so the candidates are tried in order: in-game name in the player's own alliance,
@@ -383,7 +412,8 @@
     '<div data-sec="st"><h3>Snow Train</h3>' +
     '<div class="row2">' + act('snow', 'main', 'Read', 'Opens Our Defence') + act('snows', 'send', 'Send to sheet', 'Read it first') + '</div></div>' +
     '<div data-sec="et"><h3>Energy Tower</h3>' +
-    '<div class="row2">' + act('tower', 'main', 'Read', 'Opens Unit Details') + act('towers', 'send', 'Send to sheet', 'Read it first') + '</div></div>' +
+    '<div class="row2">' + act('tower', 'main', 'Read', 'Opens Unit Details') + act('towers', 'send', 'Send to sheet', 'Read it first') + '</div>' +
+    '<div class="stack">' + act('towerp', 'main', 'Read points', 'Opens Rankings') + '</div></div>' +
     '<div class="status idle" id="st"><span class="si"></span><span class="tx">Ready. Tap a button to start.</span></div></div>';
   document.body.appendChild(host);
   var $ = function (s) { return root.querySelector(s); };
@@ -498,6 +528,8 @@
     var etb = $('#tower'), ets = $('#towers');
     if (!etb.classList.contains('busy') && !etb.classList.contains('err')) sub(etb, S.et ? S.et.rows.length + ' players · ' + ago(S.et.at / 1000) : 'Opens Unit Details');
     if (!ets.classList.contains('busy') && !ets.classList.contains('done')) sub(ets, S.et ? S.et.rows.length + ' players ready' : 'Read it first');
+    var etp = $('#towerp');
+    if (!etp.classList.contains('busy') && !etp.classList.contains('err')) sub(etp, S.etp ? S.etp.n + ' players · ' + ago(S.etp.at / 1000) : 'Opens Rankings');
   }
 
   /* reading alliances */
@@ -724,6 +756,28 @@
     sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
     status('ok', 'Energy Tower sent<small>' + Number(j.rows).toLocaleString() + ' rows added, dated ' + esc(j.date) +
       ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
+  };
+
+  /* Energy Tower points: its Rankings to the site's card (api/et-points), each player's points in
+     that day's column */
+  $('#towerp').onclick = async function () {
+    if (busy) return; lock(true);
+    var b = $('#towerp'); start(b); sub(b, 'opening…');
+    try {
+      var rows = await readEnergyPoints(function (t, p) { status('work', t, p); setP(b, p); });
+      status('work', 'Read <b>' + rows.length + '</b> players', .5);
+      setP(b, .6); sub(b, 'saving…');
+      status('work', 'Updating the Energy Tower card…', .7);
+      var u = await postJson('/et-points', { rows: rows });
+      S.etp = { at: Date.now(), n: rows.length }; save();
+      setP(b, 1); finish(b, true); sub(b, rows.length + ' players · now');
+      status('ok', 'Energy Tower points read · ' + rows.length + ' players<small>Card: points in the ' + esc(u.day) + ' UTC column' +
+        (u.added ? ' · ' + Number(u.added) + ' new on the card' : '') + '</small>');
+    } catch (e) {
+      finish(b, false); sub(b, 'tap to try again');
+      status('bad', 'Points not saved<small>' + esc(e.message || e) + '</small>');
+    }
+    lock(false); refresh();
   };
 
   refresh();

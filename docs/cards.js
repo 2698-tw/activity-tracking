@@ -3,6 +3,8 @@
 //  - Whitebeard: each read under its UTC date (api/wb-update), a column per day.
 //  - Snow Train: each Unit Details read the same way (api/st-update); March CP 1, 2, 3 are a player's
 //    best per unit type, in the order the types first appeared; each day is Yes / No.
+//  - Energy Tower: Unit Details reads the same way (api/et-update), and the Rankings' points for each
+//    day (api/et-points), shown in place of Yes.
 //  - Alliance roster: each alliance read updates its rows (api/roster-update); players missing from a
 //    read stay, marked Left.
 // These pages show it (api/wb, api/st, api/roster) with no UIDs: each row carries only an id the
@@ -96,8 +98,14 @@
       DEF['cp' + n] = { n: 1, val: r => cp(r, n), cell: r => cp(r, n) ? fmt(cp(r, n)) : dim, edit: 'big' };
       DEF['u' + n] = { text: 1, val: r => unit(r, n), cell: r => unitTag(unit(r, n)) || (Admin.on ? dim : ''), edit: 'unit' };
     }
-    // Snow Train and Energy Tower: whether a player was there that day (its March CP stays behind it)
-    const dateDef = d => o.id === 'st' || o.id === 'et'
+    // Energy Tower: a day's Rankings points where there are some, else Yes/No as on the Snow Train
+    const sc = (r, d) => (r.score || {})[d];
+    const onDay = (r, d) => r.pts[d] != null || sc(r, d) != null;
+    // Snow Train: whether a player was there that day (its March CP stays behind it)
+    const dateDef = d => o.id === 'et'
+      ? { n: 1, val: r => sc(r, d) ?? (r.pts[d] != null ? 0 : -1), edit: 'score',
+          cell: r => sc(r, d) != null ? Math.round(sc(r, d)).toLocaleString('en-US') : r.pts[d] != null ? '<span class="yes">Yes</span>' : '<span class="rdim">No</span>' }
+      : o.id === 'st'
       ? { n: 1, val: r => r.pts[d] != null ? 1 : 0, cell: r => r.pts[d] != null ? '<span class="yes">Yes</span>' : '<span class="rdim">No</span>', edit: 'toggle' }
       : { n: 1, val: r => r.pts[d] ?? -1, cell: r => r.pts[d] == null ? dim : fmt(r.pts[d]), edit: 'num' };
     const defOf = k => /^\d{4}-/.test(k) ? dateDef(k) : DEF[k];
@@ -135,7 +143,7 @@
     const rule = k => { const h = (Admin.settings.highlight || {})[k]; return h && h.on && h.cards.includes(o.id) ? h : null; };
     const DAY = 864e5;
     // days in a row, up to the latest, a player is missing from (only once they have been on a day)
-    const missedRun = r => { if (!Object.keys(r.pts || {}).length) return 0; let n = 0; for (let i = W.dates.length - 1; i >= 0 && r.pts[W.dates[i]] == null; i--) n++; return n; };
+    const missedRun = r => { if (!W.dates.some(d => onDay(r, d))) return 0; let n = 0; for (let i = W.dates.length - 1; i >= 0 && !onDay(r, W.dates[i]); i--) n++; return n; };
     // new: first seen within the rule's days, and not on the card from its start (its first day, or the
     // roster's first read), when everyone was new
     function isNew(r, days) {
@@ -143,7 +151,7 @@
         const first = Math.min(...W.rows.map(x => x.firstAt || Infinity));
         return !!r.firstAt && Date.now() - r.firstAt < days * DAY && r.firstAt - first > DAY / 2;
       }
-      const ds = Object.keys(r.pts || {}).sort();
+      const ds = W.dates.filter(d => onDay(r, d));
       return !!ds.length && ds[0] !== W.dates[0] && Date.now() - Date.parse(ds[0] + 'T00:00:00Z') < days * DAY;
     }
     const isAway = (r, days) => r.status !== 'Left' && !r.online && r.last && Date.now() / 1000 - r.last > days * 86400;
@@ -299,7 +307,7 @@
       else if (f.edit === 'rank') html = opts([[1, 'R1'], [2, 'R2'], [3, 'R3'], [4, 'R4'], [5, 'R5'], [6, 'R4 ★']], cur);
       else if (f.edit === 'date') html = `<input type="date" class="cellin" value="${k === 'last' ? day(r.last) : day(r.join)}">`;
       else {
-        const shown = f.edit === 'big' ? (cur > 0 ? Math.round(cur / 1e6) + 'M' : '') : f.edit === 'num' ? (cur === -1 ? '' : cur) : cur;
+        const shown = f.edit === 'big' ? (cur > 0 ? Math.round(cur / 1e6) + 'M' : '') : f.edit === 'num' ? (cur === -1 ? '' : cur) : f.edit === 'score' ? sc(r, k) ?? '' : cur;
         html = `<input class="cellin" value="${esc(shown)}" placeholder="${f.edit === 'text' ? '' : 'empty = clear'}">`;
       }
       const target = k === 'name' ? td.querySelector('.nmv') : td, keep = target.innerHTML;
@@ -323,6 +331,13 @@
       const show = x => x === '' || x == null || x === -1 || x === 0 ? '—' : typeof x === 'number' && x >= 1e4 ? fmt(x) : String(x);
       if (k === 'name') { if (!v || v === cur) return false; run('row-set', { id: r.id, field: 'name', value: v }, { what: `Renamed ${cur}`, from: cur, to: v }); return true; }
       if (k === 'ally' || k === 'alliance') { if (v === (cur || '')) return false; run('row-set', { id: r.id, field: k, value: v }, { what: `${who} · alliance`, from: cur || '—', to: v || '—' }); return true; }
+      if (/^\d{4}-/.test(k) && o.id === 'et') {                    // Energy Tower Rankings points on a day
+        const n = v === '' ? null : parseNum(v), was = sc(r, k) ?? null;
+        if (n !== null && !isFinite(n)) { Admin.toast('Not a number: ' + v); return false; }
+        if (n === was) return false;
+        const yn = r.pts[k] != null ? 'Yes' : 'No';
+        run('score-set', { id: r.id, day: k, value: n }, { what: `${who} · ${head(k)} points`, from: was ?? yn, to: n ?? yn }); return true;
+      }
       if (/^\d{4}-/.test(k)) {                                     // Whitebeard points on a day
         const n = v === '' ? null : parseNum(v);
         if (n !== null && !isFinite(n)) { Admin.toast('Not a number: ' + v); return false; }
@@ -364,12 +379,6 @@
     }
     // Snow Train: on a train that day or not
     function toggleDay(r, d) {
-      if (o.id === 'et') {                                           // Energy Tower: No ↔ Yes at their best March CP
-        if (r.pts[d] != null) return run('cell-set', { id: r.id, day: d, value: null }, { what: `${r.name} · ${head(d)}`, from: 'Yes', to: 'No' });
-        const b = DEF.best.val(r);
-        if (!b) { Admin.toast(`Give ${r.name} a March CP first: ⋯ → Edit a day's March CP`); return; }
-        return run('cell-set', { id: r.id, day: d, value: b }, { what: `${r.name} · ${head(d)}`, from: 'No', to: `Yes (${fmt(b)})` });
-      }
       if (r.pts[d] != null) return run('days-set', { id: r.id, days: { [d]: null } }, { what: `${r.name} · ${head(d)}`, from: 'Yes', to: 'No' });
       const b = bests(r)[0];
       if (!b) { Admin.toast(`Give ${r.name} a March CP first, or use ⋯ → Edit day values`); return; }
@@ -587,7 +596,7 @@
       const rows = [...el('View').querySelectorAll('tbody tr[data-id]')].map(tr => byId(tr.dataset.id)).filter(Boolean);
       const cell = (r, k) => {
         const f = defOf(k), v = f.val(r);
-        if (/^\d{4}-/.test(k)) return o.id === 'st' || o.id === 'et' ? (v ? 'Yes' : 'No') : v === -1 ? '' : v;
+        if (/^\d{4}-/.test(k)) return o.id === 'et' ? sc(r, k) ?? (r.pts[k] != null ? 'Yes' : 'No') : o.id === 'st' ? (v ? 'Yes' : 'No') : v === -1 ? '' : v;
         if (k === 'join' || k === 'last') return k === 'last' && r.online ? 'now' : day(k === 'last' ? r.last : r.join);
         if (k === 'rank') return rankText(r.rank);
         if (k === 'status') return f.cell(r);
