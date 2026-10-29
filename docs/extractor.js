@@ -354,7 +354,7 @@
     '.act:active{transform:scale(.97)}' +
     '.act.main{background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b)}' +
     '.act .t{display:block;font-weight:800;font-size:15px;position:relative}' +
-    '.act .s{display:block;font-size:11.5px;color:rgba(235,235,245,.6);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative}' +
+    '.act .s{display:block;font-size:11.5px;color:rgba(235,235,245,.6);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative}.act .s:empty::before{content:"\\a0"}' +
     '.act.main .s{color:rgba(255,255,255,.75)}' +
     '.grid .act{padding:10px 9px}' +
     '.grid .act .t{white-space:nowrap;font-size:14.5px;padding-right:16px}' +
@@ -423,10 +423,10 @@
     '<div data-sec="wb"><h3>Whitebeard ranking</h3><select id="who"><option value="ALL4">698N, W, S, C</option><option value="OTHER">Other</option></select>' +
     '<div class="row2">' + act('wb', 'main', 'Read', 'Loads every rank') + act('wbs', 'send', 'Send to sheet', 'Read it first') + '</div></div>' +
     '<div data-sec="st"><h3>Snow Train</h3>' +
-    '<div class="row2">' + act('snow', 'main', 'Read', 'Opens Our Defence') + act('snows', 'send', 'Send to sheet', 'Read it first') + '</div></div>' +
+    '<div class="row2">' + act('snow', 'main', 'Read garrison', '') + act('snows', 'send', 'Send to sheet', 'Read it first') + '</div></div>' +
     '<div data-sec="et"><h3>Energy Tower</h3>' +
-    '<div class="row2">' + act('tower', 'main', 'Read', 'Opens Unit Details') + act('towers', 'send', 'Send to sheet', 'Read it first') + '</div>' +
-    '<div class="stack">' + act('towerp', 'main', 'Read points', 'Opens Rankings') + '</div></div>' +
+    '<div class="row2">' + act('tower', 'main', 'Read garrison', '') + act('towers', 'send', 'Send to sheet', 'Read it first') + '</div>' +
+    '<div class="stack">' + act('towerp', 'main', 'Read points', '') + '</div></div>' +
     '<div class="status idle" id="st"><span class="si"></span><span class="tx">Ready. Tap a button to start.</span></div></div>';
   document.body.appendChild(host);
   var $ = function (s) { return root.querySelector(s); };
@@ -536,13 +536,13 @@
     if (!wb.classList.contains('busy') && !wb.classList.contains('err')) sub(wb, V.wb ? V.wb.rows.length + ' players · ' + ago(V.wb.at / 1000) : 'Loads every rank');
     if (!wbs.classList.contains('busy')) { wbs.classList.remove('done'); sub(wbs, V.wb ? wbChosen().length + ' players ready' : 'Read it first'); }
     var stb = $('#snow'), sts = $('#snows');
-    if (!stb.classList.contains('busy') && !stb.classList.contains('err')) sub(stb, S.st ? S.st.rows.length + ' players · ' + ago(S.st.at / 1000) : 'Opens Our Defence');
+    if (!stb.classList.contains('busy') && !stb.classList.contains('err')) sub(stb, S.st ? S.st.rows.length + ' players · ' + ago(S.st.at / 1000) : '');
     if (!sts.classList.contains('busy') && !sts.classList.contains('done')) sub(sts, S.st ? S.st.rows.length + ' players ready' : 'Read it first');
     var etb = $('#tower'), ets = $('#towers');
-    if (!etb.classList.contains('busy') && !etb.classList.contains('err')) sub(etb, S.et ? S.et.rows.length + ' players · ' + ago(S.et.at / 1000) : 'Opens Unit Details');
+    if (!etb.classList.contains('busy') && !etb.classList.contains('err')) sub(etb, S.et ? S.et.rows.length + ' players · ' + ago(S.et.at / 1000) : '');
     if (!ets.classList.contains('busy') && !ets.classList.contains('done')) { var etn = etRows().length; sub(ets, etn ? etn + ' players ready' : 'Read it first'); }
     var etp = $('#towerp');
-    if (!etp.classList.contains('busy') && !etp.classList.contains('err')) sub(etp, S.etp ? S.etp.n + ' players · ' + ago(S.etp.at / 1000) : 'Opens Rankings');
+    if (!etp.classList.contains('busy') && !etp.classList.contains('err')) sub(etp, S.etp ? S.etp.n + ' players · ' + ago(S.etp.at / 1000) : '');
   }
 
   /* reading alliances */
@@ -719,7 +719,7 @@
   $('#snows').onclick = async function () {
     if (busy) return;
     var b = $('#snows');
-    if (!S.st) return nudge(b, 'Nothing to send yet<small>Tap Read first.</small>');
+    if (!S.st) return nudge(b, 'Nothing to send yet<small>Tap Read garrison first.</small>');
     var order = function (t) { return MAIN.indexOf(t) >= 0 ? MAIN.indexOf(t) : 99; };
     var rows = S.st.rows.slice().sort(function (a, c) { return order(a.ally) - order(c.ally) || a.ally.localeCompare(c.ally) || c.power - a.power; })
       .map(function (r) { return [r.name.slice(0, 80), Math.round(r.power / 1e6) + 'M', r.ally.slice(0, 20), r.type || '']; });   // 256,158,825 → 256M
@@ -773,7 +773,7 @@
     if (busy) return;
     var b = $('#towers');
     var list = etRows();
-    if (!list.length) return nudge(b, 'Nothing to send yet<small>Tap Read or Read points first.</small>');
+    if (!list.length) return nudge(b, 'Nothing to send yet<small>Tap Read garrison or Read points first.</small>');
     var order = function (t) { return MAIN.indexOf(t) >= 0 ? MAIN.indexOf(t) : 99; };
     var rows = list.sort(function (a, c) { return order(a.ally) - order(c.ally) || a.ally.localeCompare(c.ally) || c.power - a.power || (c.points || 0) - (a.points || 0); })
       .map(function (r) { return [r.name.slice(0, 80), r.power ? Math.round(r.power / 1e6) + 'M' : '', r.ally.slice(0, 20), r.points == null ? '' : r.points]; });   // 78,951,860 → 79M
