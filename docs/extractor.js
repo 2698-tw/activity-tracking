@@ -132,6 +132,18 @@
       for (var t0 = Date.now(); !owner && Date.now() - t0 < 12000;) { await wait(250); owner = wbList(); }
       if (!owner) throw new Error('the Whitebeard ranking did not load — is the event running?');
     }
+    // always Defeat Ranking → Warzone Ranking: the window keeps the tab it was last left on, and one
+    // already open is read as it is. The tab is tapped the way a finger does (its own handler loads it).
+    if (owner.toggleBaseNode && owner.toggleBaseNode.active) {
+      var tap = async function (t) {
+        await wait(between(300, 700)); t.check();
+        for (var t2 = Date.now(); Date.now() - t2 < 10000; await wait(150)) if (owner._rankList.length) break;
+        await wait(300);
+      };
+      if (owner._pageType !== 0 && owner.toggleList[0]) await tap(owner.toggleList[0]);
+      if (owner._pageSubType !== 2 && owner.toggleSubList[2]) await tap(owner.toggleSubList[2]);
+      if (owner._pageType !== 0 || owner._pageSubType !== 2) throw new Error('could not switch the ranking to Defeat Ranking → Warzone Ranking');
+    }
     var list = owner._rankList, scroller = owner.node.getComponentInChildren(cc.ScrollView);
     var L = labels(), m = L.map(function (l) { return l[1].match(/^([\d,]+)\s+Commanders/); }).filter(Boolean)[0];
     var want = m ? Number(m[1].replace(/,/g, '')) : Infinity;
@@ -148,6 +160,10 @@
       progress(list.length, want);
       await wait(Math.random() < 0.12 ? between(1000, 2000) : between(250, 900));
     }
+    // only this warzone's players, in case a World or Sector list is showing after all
+    var dc = req('DataCenter'), me = dc && dc.DATA && dc.DATA.UserData, sid = me && me.OriginServerId;
+    if (sid != null && list.some(function (e) { return e.sid != null && Number(e.sid) !== Number(sid); }))
+      throw new Error('the ranking shows other warzones too — pick Warzone Ranking in the window and tap Read again');
     var rows = list.map(function (e) {
       var p = parse(e.playerInfo);
       return { rank: Number(e.rank), uid: String(e.uid || p.uid || ''), name: String(p.username || p.nickname || ''), points: Number(e.score), ally: String(e.allianceTag || '') };
