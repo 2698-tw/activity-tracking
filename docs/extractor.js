@@ -232,12 +232,15 @@
     });
   }
 
-  // the Mammoth Assault's View Queues: the Mammoth Assault screen's own View Queues button
-  // (onClickLookTroop, which opens CQ26DBTroopsInfoPanel), read, and closed again. A View Queues window
-  // already open is read as it is and left open. One march per player; the game gives no alliance
+  // the Mammoth Assault's View Queues: the Energy Building opened on its Mammoth Assault tab
+  // (OpenUI(CQ26TowerUnionPanel, 1), as the event's card opens it), or that tab tapped if the building
+  // is open on another one, then the screen's own View Queues button (onClickLookTroop, which opens
+  // CQ26DBTroopsInfoPanel), read, and what was opened closed again. A View Queues window already open
+  // is read as it is and left open. One march per player; the game gives no alliance
   // here, so the Worker fills it in from the roster card, as for the Energy Tower.
   var queuesPanel = function () { return findComp(function (c) { return c.__classname__ === 'CQ26DBTroopsInfoPanel' && Array.isArray(c._marchArray); }); };
   var mammothScreen = function () { return findComp(function (c) { return c.__classname__ === 'CQ26DBMainComponent'; }); };
+  var energyBuilding = function () { return findComp(function (c) { return c.__classname__ === 'CQ26TowerUnionPanel' && Array.isArray(c.toggleList); }); };
   var longText = function (v) {                          // the game's 64-bit numbers ({_low, _high} or {low, high})
     if (v == null) return '';
     if (typeof v !== 'object') return String(v);
@@ -247,11 +250,19 @@
   async function readMammoth(step) {
     var panel = queuesPanel(), opened = [], U = ui();
     if (!panel || !panel._marchArray.length) {
-      var screen = mammothScreen(), WQ = win('CQ26DBTroopsInfoPanel');
-      if (!U || !WQ || !screen) throw new Error('open Mammoth Assault in the Energy Building first, then tap Read garrison');
+      var screen = mammothScreen(), WQ = win('CQ26DBTroopsInfoPanel'), WB = win('CQ26TowerUnionPanel');
+      if (!U || !WQ || !WB) throw new Error('no Mammoth Assault in the game right now');
+      if (!screen) {
+        var bld = energyBuilding();
+        step('Opening Mammoth Assault…', .08);
+        if (!bld) { U.OpenUI(WB, 1); opened.push(WB); }
+        else { var tg = bld.toggleList[1]; if (tg && tg.check) tg.check(); else bld.onClickToggle(null, '1'); }
+        for (var t2 = Date.now(); Date.now() - t2 < 12000; await wait(200)) { screen = mammothScreen(); if (screen && screen._serInfo) break; screen = null; }
+        if (!screen) { opened.forEach(function (w) { try { U.CloseUI(w); } catch (e) {} }); throw new Error('Mammoth Assault did not load — is the event running?'); }
+      }
       if (!panel) {
         await wait(between(300, 700));                   // a person's pause before tapping View Queues
-        step('Opening View Queues…', .15); screen.onClickLookTroop(); opened.push(WQ);
+        step('Opening View Queues…', .15); screen.onClickLookTroop(); opened.unshift(WQ);
       }
       for (var t0 = Date.now(); Date.now() - t0 < 12000; await wait(200)) { panel = queuesPanel(); if (panel && panel._marchArray.length) break; panel = null; }
       await wait(400);                                   // let a late page of the list arrive, if any
