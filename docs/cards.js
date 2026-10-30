@@ -510,10 +510,10 @@
     function dayRows(d, who) {
       const pts = r => o.id === 'st' ? Math.max(0, ...Object.values(dayTypes(r, d))) : r.pts[d];
       const M = v => Math.round(v / 1e6) + 'M', nm = r => r.name.slice(0, 80), al = r => String(r.ally || '').slice(0, 20);
-      return W.rows.filter(r => o.id === 'et' ? onDay(r, d) : r.pts[d] != null).filter(inGroup(who))
+      return W.rows.filter(r => o.id === 'et' || r.pts[d] != null).filter(inGroup(who))   // Energy Tower: everyone, No as 0
         .sort((a, b) => allyOrder(a) - allyOrder(b) || String(a.ally).localeCompare(String(b.ally)) || (pts(b) || 0) - (pts(a) || 0) || (sc(b, d) || 0) - (sc(a, d) || 0))
         .flatMap(r => o.id === 'wb' ? [[nm(r), r.pts[d], al(r)]]
-          : o.id === 'et' ? [[nm(r), r.pts[d] != null ? M(r.pts[d]) : '', al(r), sc(r, d) ?? '']]
+          : o.id === 'et' ? [[nm(r), r.pts[d] != null ? M(r.pts[d]) : '', al(r), sc(r, d) ?? (r.pts[d] != null ? '' : 0)]]
           : Object.entries(dayTypes(r, d)).map(([t, v]) => [nm(r), M(v), al(r), TYPES.includes(t) ? t : '']));
     }
     // a send from a dialog: its button busy while it goes, then what was written and a link to it

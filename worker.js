@@ -661,7 +661,7 @@ export default {
         const r = await env.ROSTER.get(env.ROSTER.idFromName('roster')).fetch('https://roster/et-day', { method: 'POST', body: '{}' });
         const j = await r.json();
         if (!r.ok) throw new Error(j.error || 'the Energy Tower card could not be read');
-        if (!j.rows.length) return reply({ error: `The Energy Tower card has no one on ${j.day} (UTC) yet — tap Read garrison or Read points first.` }, 400);
+        if (!j.there) return reply({ error: `The Energy Tower card has no one on ${j.day} (UTC) yet — tap Read garrison or Read points first.` }, 400);
         return reply(await writeRanking(env, j.rows, target, j.day), 200);
       } catch (e) {
         return reply({ error: String(e && e.message || e) }, e.status || 502);
@@ -1513,18 +1513,20 @@ export class RosterStore {
     return { day, players: read.rows.length, replaced: had, merged: keep && had, ...(ns === 'et' ? { allies } : {}) };
   }
   // Today's Energy Tower column as sheet rows, the way the card shows it: [name, March CP (79M), alliance,
-  // points], one per player there that day (in a garrison read, or with points), our alliances first
+  // points], one per player on the card, our alliances first. A player not there that day (No on the
+  // card) goes as 0 points; one in a garrison read but not in the Rankings, with no points.
   async etDay() {
     const st = this.state.storage, day = new Date().toISOString().slice(0, 10);
     const cps = (await st.get('et:day:' + day)) || {}, pts = (await st.get('et:pts:' + day)) || {};
     const who = (await st.get('et:who')) || {}, roster = await this.load(), order = (await this.getSettings()).alliances;
     const rank = a => { const i = order.indexOf(a); return i < 0 ? 99 : i; };
-    const rows = [...new Set([...Object.keys(cps), ...Object.keys(pts)])].filter(k => who[k]).map(k => {
+    const rows = Object.keys(who).map(k => {
       const ro = roster[k];
-      return { name: String(who[k].name || ''), ally: String((ro ? (ro.status === 'Left' ? 'Left' : ro.alliance) : who[k].ally) || ''), cp: cps[k], pt: pts[k] };
+      return { name: String(who[k].name || ''), ally: String((ro ? (ro.status === 'Left' ? 'Left' : ro.alliance) : who[k].ally) || ''), cp: cps[k], pt: pts[k] ?? (cps[k] != null ? null : 0) };
     });
     rows.sort((a, b) => rank(a.ally) - rank(b.ally) || a.ally.localeCompare(b.ally) || (b.cp || 0) - (a.cp || 0) || (b.pt || 0) - (a.pt || 0));
-    return { day, rows: rows.map(r => [r.name.slice(0, 80), r.cp != null ? Math.round(r.cp / 1e6) + 'M' : '', r.ally.slice(0, 20), r.pt ?? '']) };
+    return { day, there: new Set([...Object.keys(cps), ...Object.keys(pts)]).size,
+             rows: rows.map(r => [r.name.slice(0, 80), r.cp != null ? Math.round(r.cp / 1e6) + 'M' : '', r.ally.slice(0, 20), r.pt ?? '']) };
   }
 
   // The Energy Tower's Rankings (this warzone's players and their points): each player's points that
