@@ -22,31 +22,32 @@ window.Admin = (function () {
       ro: { title: 'Alliance roster', sort: 'power', filter: '', fmt: 'M', unitFilters: false,
             cols: [col('name', 'Name'), col('alliance', 'Alliance'), col('rank', 'Rank'), col('power', 'Power'), col('cls', 'MM/CE'), col('join', 'Joined'), col('last', 'Last online'), col('status', 'Status')] },
       et: { title: 'Energy Tower', sort: 'best', filter: '', fmt: 'M', unitFilters: false, cols: [col('name', 'Name'), col('best', 'Best March CP'), col('ally', 'Alliance'), col('@dates', 'Date columns')] },
+      ma: { title: 'Mammoth Assault', sort: 'best', filter: '', fmt: 'M', unitFilters: false, cols: [col('name', 'Name'), col('best', 'Best March CP'), col('ally', 'Alliance'), col('@dates', 'Date columns')] },
     },
     home: { title: '2698 Data Extractor', banner: '2698', cards: [] },
     sheets: {},
-    bookmark: { members: true, wb: true, st: true, et: true },
+    bookmark: { members: true, wb: true, st: true, et: true, ma: true },
     highlight: {
-      missed: { on: true, days: 2, color: 'red', cards: ['wb', 'st', 'et'] },
+      missed: { on: true, days: 2, color: 'red', cards: ['wb', 'st', 'et', 'ma'] },
       away: { on: true, days: 3, color: 'amber', cards: ['ro'] },
-      fresh: { on: true, days: 7, color: 'green', cards: ['ro', 'wb', 'st', 'et'] },
+      fresh: { on: true, days: 7, color: 'green', cards: ['ro', 'wb', 'st', 'et', 'ma'] },
     },
   };
   // the highlight rules: what each marks, and the cards it can go on
   const HL = {
-    missed: { name: 'Missed days', hint: n => `Players missing from the last ${n} days in a row (or more)`, cards: ['wb', 'st', 'et'] },
+    missed: { name: 'Missed days', hint: n => `Players missing from the last ${n} days in a row (or more)`, cards: ['wb', 'st', 'et', 'ma'] },
     away: { name: 'Away', hint: n => `Last online more than ${n} days ago (also the Away chip)`, cards: ['ro'] },
-    fresh: { name: 'New players', hint: n => `First seen in the last ${n} days`, cards: ['ro', 'wb', 'st', 'et'] },
+    fresh: { name: 'New players', hint: n => `First seen in the last ${n} days`, cards: ['ro', 'wb', 'st', 'et', 'ma'] },
   };
   const HL_COLORS = ['red', 'amber', 'green', 'blue', 'purple'];
-  const SHEET_NAMES = { kartz: 'Kartz ranking (Send on the Kartz page)', cp: 'Base CP (Alliance Rosters, RawData-CP)', ranking: 'Whitebeard ranking (bookmark Send)', snowtrain: 'Snow Train (bookmark Send)', energytower: 'Energy Tower (bookmark Send)' };
-  const HOME_NAMES = { kartz: 'Kartz ranking', cp: 'Alliance roster', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower' };
-  const BOOKMARK_NAMES = { members: 'Alliance members', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower' };
-  const CARD_NAMES = { wb: 'Whitebeard', st: 'Snow Train', ro: 'Alliance roster', et: 'Energy Tower' };
+  const SHEET_NAMES = { kartz: 'Kartz ranking (Send on the Kartz page)', cp: 'Base CP (Alliance Rosters, RawData-CP)', ranking: 'Whitebeard ranking (bookmark Send)', snowtrain: 'Snow Train (bookmark Send)', energytower: 'Energy Tower (bookmark Send)', mammoth: 'Mammoth Assault (bookmark Send)' };
+  const HOME_NAMES = { kartz: 'Kartz ranking', cp: 'Alliance roster', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault' };
+  const BOOKMARK_NAMES = { members: 'Alliance members', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault' };
+  const CARD_NAMES = { wb: 'Whitebeard', st: 'Snow Train', ro: 'Alliance roster', et: 'Energy Tower', ma: 'Mammoth Assault' };
 
   const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
                   set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
-  try { const s = JSON.parse(store.get('site.settings')); if (s && s.cards) A.settings = s; } catch {}
+  try { const s = JSON.parse(store.get('site.settings')); if (s && s.cards && s.cards.ma) A.settings = s; } catch {}   // saved before a card was added: the defaults until the Worker's come
   if (!A.settings) A.settings = DEFAULTS;
 
   async function post(path, body, pass) {
@@ -303,7 +304,7 @@ window.Admin = (function () {
       <div class="alist">${AL.map((a, i) => `<div class="ali">${tag(a)}<input type="text" data-ar="${i}" value="${esc(a)}" maxlength="12">${arrows('a', i, AL.length)}<button type="button" class="abtn sm" data-ax="${i}" ${AL.length > 1 ? '' : 'disabled'}>Remove</button></div>`).join('')}
         <div class="ali"><input type="text" data-an placeholder="New alliance tag" maxlength="12"><button type="button" class="abtn sm pri" data-aadd>Add</button></div></div></div>
       ${highlights()}
-      <div class="acols">${['wb', 'st', 'et', 'ro'].map(card).join('')}</div>`;
+      <div class="acols">${['wb', 'st', 'et', 'ma', 'ro'].map(card).join('')}</div>`;
     view.onchange = async e => {
       const t = e.target, d = t.dataset, c = d.c, C = c && S.cards[c];
       if (d.hl) return hlChange(t, d);
@@ -327,7 +328,7 @@ window.Admin = (function () {
     view.onclick = async e => {
       const b = e.target.closest('button'); if (!b) return;
       const d = b.dataset;
-      for (const c of ['wb', 'st', 'et', 'ro']) {
+      for (const c of ['wb', 'st', 'et', 'ma', 'ro']) {
         const u = d['c' + c + 'u'], dn = d['c' + c + 'd'];
         if (u == null && dn == null) continue;
         const L = S.cards[c].cols, i = +(u ?? dn), j = u != null ? i - 1 : i + 1;
@@ -399,8 +400,8 @@ window.Admin = (function () {
         try {
           await A.busy(b, () => A.saveSettings(n => {
             n.sheets[k] = { id, gid };
-            // the Energy Tower's home card has no Open in Sheets link until its sheet is set
-            const h = k === 'energytower' && n.home.cards.find(c => c.id === 'et');
+            // the Energy Tower's and the Mammoth Assault's home cards have no Open in Sheets link until their sheet is set
+            const h = { energytower: 'et', mammoth: 'ma' }[k] && n.home.cards.find(c => c.id === { energytower: 'et', mammoth: 'ma' }[k]);
             if (h && !h.link) h.link = link({ id, gid });
           }, { what: `Sheets · ${SHEET_NAMES[k]}`, from: T[k].id ? `${T[k].id.slice(0, 10)}… tab ${T[k].gid}` : 'none', to: `${id.slice(0, 10)}… tab ${gid}` }));
         } catch (x) { err.textContent = '✗ ' + x.message; }

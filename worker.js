@@ -144,11 +144,13 @@ const TARGETS = {
 const RANKING = { id: '12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc', gid: 0, book: 'Game rankings' };
 // The Snow Train's Unit Details (docs/extractor.js): Date, Name, March CP and Alliance, the same way
 // but Unit Type (Army, Navy, Air Force) in D and Alliance in E; the headers are set to match on a send
-const SNOW_TRAIN = { id: '1d2jgRQlfhYMufn69YaZ-2ZPQ-lGtfvSiOPDTEplUqGs', gid: 0, book: 'SS P2 Snow Train', extra: 'Unit Type' };
+const SNOW_TRAIN = { id: '1d2jgRQlfhYMufn69YaZ-2ZPQ-lGtfvSiOPDTEplUqGs', gid: 0, book: 'SS P2 Snow Train', extra: 'Unit Type', flag: 'Garrisoned?' };
 // The Energy Tower's Unit Details (docs/extractor.js): Date, Name, March CP and Alliance, like the
 // rankings, then each player's Rankings points that day in E (its header set on a send). No sheet
 // until one is set in the admin view (Sheets).
 const ENERGY_TOWER = { id: '', gid: 0, book: 'Energy Tower', points: 'Points' };
+// The Mammoth Assault's View Queues: Date, Name, March CP, Alliance, Garrisoned? (the sheet is set in the admin view)
+const MAMMOTH = { id: '', gid: 0, book: 'Mammoth Assault', flag: 'Garrisoned?', head: ['Date', 'Name', 'March CP', 'Alliance', 'Garrisoned?'] };
 const RANKING_ORIGIN = 'https://h5.topwargame.com';
 const RANKING_MAX = 3000;
 // The alliances that take part in a Kartz round (api/round-*).
@@ -251,13 +253,16 @@ async function writeRanking(env, rows, target = RANKING, day) {
   if (rows.length > RANKING_MAX)
     throw Object.assign(new Error(`At most ${RANKING_MAX} rows at a time.`), { status: 400 });
   // points are a number, or millions written as the game shows them (256M, for March CP)
-  // (the Energy Tower: March CP empty for a player only in its Rankings, points empty for one not in them)
-  const n = target.extra || target.points ? 4 : 3, pts = !!target.points;
+  // (the Energy Tower: March CP empty for a player only in its Rankings, points empty for one not in them;
+  // the Snow Train and Mammoth Assault: Yes or No last, for whether they were there that day, March CP
+  // empty for a No)
+  const flag = !!target.flag, pts = !!target.points, mid = !!(target.extra || pts), n = 3 + mid + flag;
   if (!rows.every(r => Array.isArray(r) && r.length === n && typeof r[0] === 'string' && r[0].length <= 80
-                       && (Number.isFinite(r[1]) || /^\d{1,6}M$/.test(r[1]) || (pts && r[1] === '')) && typeof r[2] === 'string' && r[2].length <= 20
-                       && (n === 3 || (pts ? r[3] === '' || (Number.isFinite(r[3]) && r[3] >= 0) : /^(Army|Navy|Air Force|)$/.test(r[3])))))
-    throw Object.assign(new Error(`Every row must be [name, points, alliance${n === 4 ? pts ? ', Rankings points' : ', unit type' : ''}].`), { status: 400 });
-  const end = n === 4 ? 'E' : 'D';
+                       && (Number.isFinite(r[1]) || /^\d{1,6}M$/.test(r[1]) || ((pts || flag) && r[1] === '')) && typeof r[2] === 'string' && r[2].length <= 20
+                       && (!mid || (pts ? r[3] === '' || (Number.isFinite(r[3]) && r[3] >= 0) : /^(Army|Navy|Air Force|)$/.test(r[3])))
+                       && (!flag || /^(Yes|No)$/.test(r[n - 1]))))
+    throw Object.assign(new Error(`Every row must be [name, points, alliance${mid ? pts ? ', Rankings points' : ', unit type' : ''}${flag ? ', Yes or No' : ''}].`), { status: 400 });
+  const end = 'DEF'[n - 3];
 
   const token = await googleToken(env);
   const tab = `'${(await tabTitle(token, target)).replace(/'/g, "''")}'`;
@@ -276,6 +281,12 @@ async function writeRanking(env, rows, target = RANKING, day) {
   const date = dayAhead(day) ? day : today;
   const first = Math.max(filled, 1) + 1, last = first + rows.length - 1;
   const range = `${tab}!A${first}:${end}${last}`;
+  // a new sheet: its header row (row 1 is kept for it either way)
+  if (target.head && !(seen[0] || []).some(v => v !== '' && v != null)) {
+    const head = `${tab}!A1:${end}1`;
+    await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(head)}?valueInputOption=RAW`, { range: head, values: [target.head] }, target);
+    seen[0] = target.head;
+  }
   if (target.extra && ((seen[0] || [])[3] !== target.extra || (seen[0] || [])[4] !== 'Alliance')) {
     const head = `${tab}!D1:E1`;
     await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(head)}?valueInputOption=RAW`, { range: head, values: [[target.extra, 'Alliance']] }, target);
@@ -284,10 +295,14 @@ async function writeRanking(env, rows, target = RANKING, day) {
     const head = `${tab}!E1`;
     await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(head)}?valueInputOption=RAW`, { range: head, values: [[target.points]] }, target);
   }
+  if (flag && (seen[0] || [])[n] !== target.flag) {
+    const head = `${tab}!${end}1`;
+    await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(head)}?valueInputOption=RAW`, { range: head, values: [[target.flag]] }, target);
+  }
   const out = await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
     { range, majorDimension: 'ROWS',
-      values: rows.map(([name, points, ally, type]) => pts ? [date, asCell(name), points, asCell(ally), type]
-        : n === 4 ? [date, asCell(name), points, type, asCell(ally)] : [date, asCell(name), points, asCell(ally)]) }, target);
+      values: rows.map(([name, points, ally, ...more]) => target.extra ? [date, asCell(name), points, more[0], asCell(ally), ...more.slice(1)]
+        : [date, asCell(name), points, asCell(ally), ...more]) }, target);
   return { rows: out.updatedRows || rows.length, range: out.updatedRange || range, date,
            link: `https://docs.google.com/spreadsheets/d/${target.id}/edit#gid=${target.gid}&range=A${first}` };
 }
@@ -322,7 +337,7 @@ async function tabTitle(token, target) {
 
 // Where each Send goes: the spreadsheet and tab set in the admin view (Sheets), else the ones above.
 // Columns and checks stay as fixed here.
-const SHEET_BASE = { kartz: TARGETS.kartz, cp: TARGETS.cp, ranking: RANKING, snowtrain: SNOW_TRAIN, energytower: ENERGY_TOWER };
+const SHEET_BASE = { kartz: TARGETS.kartz, cp: TARGETS.cp, ranking: RANKING, snowtrain: SNOW_TRAIN, energytower: ENERGY_TOWER, mammoth: MAMMOTH };
 async function sheetTarget(env, name) {
   let s = null;
   try {
@@ -449,7 +464,7 @@ export default {
     // the game page may reach the ranking route, the roster's MM/CE list and the settings (which of
     // the bookmark's sections to show), and nothing else
     const rankingCall = origin === RANKING_ORIGIN
-      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points', 'api/et-send']
+      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points', 'api/et-send', 'api/st-send', 'api/ma-update', 'api/ma-send']
         .includes(url.pathname.replace(/^\/+/, ''));
     const allowed = knownOrigin || hasPass || rankingCall;
 
@@ -532,8 +547,9 @@ export default {
     }
     // The Snow Train card (#snowtrain) and the Energy Tower card (#energytower) are kept the same way,
     // from their Unit Details reads; the Energy Tower's Rankings add each player's points (api/et-points).
+    // The Mammoth Assault card (#mammoth) is kept like the Energy Tower, from its View Queues.
     const dayCard = { 'api/wb-update': '/wb-update', 'api/st-update': '/st-update', 'api/et-update': '/et-update', 'api/et-points': '/et-points',
-                      'api/wb': '/wb-list', 'api/st': '/st-list', 'api/et': '/et-list' }[url.pathname.replace(/^\/+/, '')];
+                      'api/ma-update': '/ma-update', 'api/wb': '/wb-list', 'api/st': '/st-list', 'api/et': '/et-list', 'api/ma': '/ma-list' }[url.pathname.replace(/^\/+/, '')];
     if (dayCard) {
       if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
       if (dayCard.endsWith('-list')) return rosterCall(env, dayCard, null, reply);
@@ -636,7 +652,7 @@ export default {
     // A ranking list read from the game by the bookmark (docs/bookmark.html): added below the lists
     // already in the Game rankings sheet. The sheet and columns are fixed above.
     // The Snow Train's and the Energy Tower's Unit Details go to their own sheets the same way.
-    const rankingRoute = { 'api/game-ranking': 'ranking', 'api/game-snowtrain': 'snowtrain', 'api/game-energytower': 'energytower' }[url.pathname.replace(/^\/+/, '')];
+    const rankingRoute = { 'api/game-ranking': 'ranking', 'api/game-snowtrain': 'snowtrain', 'api/game-energytower': 'energytower', 'api/game-mammoth': 'mammoth' }[url.pathname.replace(/^\/+/, '')];
     if (rankingRoute) {
       const body = await request.text();
       if (body.length > 512 * 1024) return reply({ error: 'Request too large.' }, 413);
@@ -651,17 +667,22 @@ export default {
       }
     }
 
-    // The bookmark's Energy Tower Send: today's column as the card has it (every garrison read of the
-    // day combined, and the Rankings points), not only the reads on the device that sends it; added
-    // below the rows already in the sheet, like the other sends.
-    if (url.pathname.replace(/^\/+/, '') === 'api/et-send') {
+    // The bookmark's Energy Tower, Snow Train and Mammoth Assault Sends: today's column as the card has it (every garrison
+    // read of the day combined, and the Energy Tower's Rankings points), not only the reads on the device
+    // that sends it, with the players not there that day too; added below the rows already in the sheet,
+    // like the other sends.
+    const daySend = { 'api/et-send': ['energytower', '/et-day', 'Energy Tower', 'Read garrison or Read points'],
+                      'api/st-send': ['snowtrain', '/st-day', 'Snow Train', 'Read garrison'],
+                      'api/ma-send': ['mammoth', '/ma-day', 'Mammoth Assault', 'Read garrison'] }[url.pathname.replace(/^\/+/, '')];
+    if (daySend) {
+      const [sheet, path, title, how] = daySend;
       try {
-        const target = await sheetTarget(env, 'energytower');
+        const target = await sheetTarget(env, sheet);
         if (!target.id) return reply({ error: `No sheet is set for the ${target.book} yet — add one in the admin view (Sheets).` }, 400);
-        const r = await env.ROSTER.get(env.ROSTER.idFromName('roster')).fetch('https://roster/et-day', { method: 'POST', body: '{}' });
+        const r = await env.ROSTER.get(env.ROSTER.idFromName('roster')).fetch('https://roster' + path, { method: 'POST', body: '{}' });
         const j = await r.json();
-        if (!r.ok) throw new Error(j.error || 'the Energy Tower card could not be read');
-        if (!j.there) return reply({ error: `The Energy Tower card has no one on ${j.day} (UTC) yet — tap Read garrison or Read points first.` }, 400);
+        if (!r.ok) throw new Error(j.error || `the ${title} card could not be read`);
+        if (!j.there) return reply({ error: `The ${title} card has no one on ${j.day} (UTC) yet — tap ${how} first.` }, 400);
         return reply(await writeRanking(env, j.rows, target, j.day), 200);
       } catch (e) {
         return reply({ error: String(e && e.message || e) }, e.status || 502);
@@ -984,26 +1005,29 @@ const DEFAULT_SETTINGS = {
                  col('join', 'Joined'), col('last', 'Last online'), col('status', 'Status')] },
     et: { title: 'Energy Tower', sort: 'best', filter: '', fmt: 'M', unitFilters: false,
           cols: [col('name', 'Name'), col('best', 'Best March CP'), col('ally', 'Alliance'), col('@dates', 'Date columns')] },
+    ma: { title: 'Mammoth Assault', sort: 'best', filter: '', fmt: 'M', unitFilters: false,
+          cols: [col('name', 'Name'), col('best', 'Best March CP'), col('ally', 'Alliance'), col('@dates', 'Date columns')] },
   },
   home: { title: '2698 Data Extractor', banner: '2698', cards: [
     { id: 'kartz', title: 'Kartz ranking', show: true, link: 'https://docs.google.com/spreadsheets/d/1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE/edit#gid=1243524383' },
     { id: 'cp', title: 'Alliance roster', show: true, link: 'https://docs.google.com/spreadsheets/d/1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8/edit' },
     { id: 'wb', title: 'Whitebeard ranking', show: true, link: 'https://docs.google.com/spreadsheets/d/12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc/edit#gid=0' },
     { id: 'st', title: 'Snow Train', show: true, link: 'https://docs.google.com/spreadsheets/d/1d2jgRQlfhYMufn69YaZ-2ZPQ-lGtfvSiOPDTEplUqGs/edit#gid=0' },
-    { id: 'et', title: 'Energy Tower', show: true, link: '' }] },
+    { id: 'et', title: 'Energy Tower', show: true, link: '' },
+    { id: 'ma', title: 'Mammoth Assault', show: true, link: '' }] },
   sheets: Object.fromEntries(Object.entries(SHEET_BASE).map(([k, t]) => [k, { id: t.id, gid: t.gid }])),
   // which sections the bookmark's panel in the game shows
-  bookmark: { members: true, wb: true, st: true, et: true },
+  bookmark: { members: true, wb: true, st: true, et: true, ma: true },
   // highlights on the cards: players missing from the latest days, roster players away a while, and
   // players new to a card; each with its number of days, colour and cards
   highlight: {
-    missed: { on: true, days: 2, color: 'red', cards: ['wb', 'st', 'et'] },
+    missed: { on: true, days: 2, color: 'red', cards: ['wb', 'st', 'et', 'ma'] },
     away: { on: true, days: 3, color: 'amber', cards: ['ro'] },
-    fresh: { on: true, days: 7, color: 'green', cards: ['ro', 'wb', 'st', 'et'] },
+    fresh: { on: true, days: 7, color: 'green', cards: ['ro', 'wb', 'st', 'et', 'ma'] },
   },
 };
 const HL_COLORS = ['red', 'amber', 'green', 'blue', 'purple'];
-const HL_CARDS = { missed: ['wb', 'st', 'et'], away: ['ro'], fresh: ['ro', 'wb', 'st', 'et'] };
+const HL_CARDS = { missed: ['wb', 'st', 'et', 'ma'], away: ['ro'], fresh: ['ro', 'wb', 'st', 'et', 'ma'] };
 // settings as sent, made safe: unknown fields dropped, each value checked, the defaults filling the gaps
 function cleanSettings(s) {
   const out = structuredClone(DEFAULT_SETTINGS);
@@ -1013,7 +1037,7 @@ function cleanSettings(s) {
     const a = [...new Set(s.alliances.map(x => str(x, 12)).filter(x => /^[^\s<>"'&]{1,12}$/.test(x)))].slice(0, 12);
     if (a.length) out.alliances = a;
   }
-  for (const c of ['wb', 'st', 'ro', 'et']) {
+  for (const c of ['wb', 'st', 'ro', 'et', 'ma']) {
     const i = s.cards && s.cards[c], o = out.cards[c];
     if (!i || typeof i !== 'object') continue;
     o.title = str(i.title, 40) || o.title;
@@ -1080,7 +1104,7 @@ async function rosterCall(env, path, body, reply) {
 }
 
 // What a backup holds and a restore may write: the cards' data and the settings, not History
-const DATA_KEY = /^(rows|reads|moves|settings|(wb|st|et):who|(wb|st|et):day:\d{4}-\d{2}-\d{2}|et:pts:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et))$/;
+const DATA_KEY = /^(rows|reads|moves|settings|(wb|st|et|ma):who|(wb|st|et|ma):day:\d{4}-\d{2}-\d{2}|et:pts:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et|ma))$/;
 const LOG_MAX = 100;
 const MOVES_MAX = 3000;                       // alliance changes kept on the roster card's Log
 const MOVE_JOIN = 30 * 60 * 1000;             // leaving and joining within this is one change                          // changes kept in History, each with what it replaced
@@ -1093,7 +1117,7 @@ const isDay = d => /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(Date.parse(d + 'T00:0
 const bad = msg => Object.assign(new Error(msg), { status: 400 });
 const text = (v, n, need) => { const t = String(v == null ? '' : v).trim().slice(0, n); if (need && !t) throw bad('It cannot be empty.'); return t; };
 const num = (v, lo, hi) => { const n = Number(v); if (!Number.isFinite(n) || n < lo || n > hi) throw bad('Not a valid number: ' + v); return n; };
-const cardOf = b => { if (!['wb', 'st', 'ro', 'et'].includes(b.card)) throw bad('Unknown card.'); return b.card; };
+const cardOf = b => { if (!['wb', 'st', 'ro', 'et', 'ma'].includes(b.card)) throw bad('Unknown card.'); return b.card; };
 // a Snow Train day's value as sent by the admin view: { unit type: March CP }
 const cleanTypes = v => {
   if (!v || typeof v !== 'object') throw bad('Bad day value.');
@@ -1151,10 +1175,10 @@ const ADMIN_OPS = {
     else throw bad('That cannot be changed.');
     return tx.put(ns + ':who', who);
   },
-  // Whitebeard and the Energy Tower: one player's points (March CP) on one day, or none
+  // Whitebeard, the Energy Tower and the Mammoth Assault: one player's points (March CP) on one day, or none
   async 'cell-set'(tx, b) {
     const ns = cardOf(b);
-    if (!['wb', 'et'].includes(ns) || !isDay(b.day)) throw bad('Bad cell.');
+    if (!['wb', 'et', 'ma'].includes(ns) || !isDay(b.day)) throw bad('Bad cell.');
     const who = (await tx.get(ns + ':who')) || {}, k = await this.keyOf(ns, b.id, who);
     const pts = await tx.get(ns + ':day:' + b.day);
     if (!pts) throw bad('There is no column for ' + b.day + '.');
@@ -1357,7 +1381,7 @@ const ADMIN_OPS = {
     s.alliances = s.alliances.map(a => a === from ? to : a);
     for (const c of Object.values(s.cards)) if (c.filter === from) c.filter = to;
     await tx.put('settings', cleanSettings(s));
-    for (const ns of ['wb', 'st', 'et']) {
+    for (const ns of ['wb', 'st', 'et', 'ma']) {
       const who = (await tx.get(ns + ':who')) || {};
       if (!Object.values(who).some(w => w.ally === from)) continue;
       for (const w of Object.values(who)) if (w.ally === from) w.ally = to;
@@ -1398,6 +1422,10 @@ export class RosterStore {
       if (path === '/et-list') return Response.json(await this.wbList('et'));
       if (path === '/et-points') return Response.json(await this.etPoints(await request.json()));
       if (path === '/et-day') return Response.json(await this.etDay());
+      if (path === '/st-day') return Response.json(await this.stDay());
+      if (path === '/ma-update') return Response.json(await this.wbUpdate(await request.json(), 'ma'));
+      if (path === '/ma-list') return Response.json(await this.wbList('ma'));
+      if (path === '/ma-day') return Response.json(await this.maDay());
       if (path === '/settings') return Response.json(await this.getSettings());
       if (path === '/admin') return Response.json(await this.admin(await request.json()));
       return Response.json({ error: 'unknown roster call' }, { status: 404 });
@@ -1481,7 +1509,8 @@ export class RosterStore {
   // types, latest first, under wb:who
   // The Snow Train keeps, per player, the highest March CP ever read (best) and which days they were
   // on a train; a second read the same day (another train) adds to that day rather than replacing it.
-  // The Energy Tower (ns 'et') keeps a day the same way, each player's highest March CP that day; the
+  // The Energy Tower (ns 'et') and the Mammoth Assault (ns 'ma', its View Queues) keep a day the same
+  // way, each player's highest March CP that day; the
   // game gives no alliance there, so each player's comes from the roster card (by UID; Left if they
   // have left), else the one they had, and is sent back (allies, in the order of the rows) for the
   // bookmark's sheet rows.
@@ -1493,10 +1522,10 @@ export class RosterStore {
     const pts = keep && before ? before : {};
     const who = (await this.state.storage.get(ns + ':who')) || {};
     const alias = (await this.state.storage.get('adm:alias:' + ns)) || {};
-    const roster = ns === 'et' ? await this.load() : null, allies = [];
+    const garrison = ns === 'et' || ns === 'ma', roster = garrison ? await this.load() : null, allies = [];
     for (const r of read.rows) {
       const key = alias[r.key] || r.key, was = who[key] || {};
-      if (ns === 'et') {
+      if (garrison) {
         const ro = roster[r.key], ally = ro ? (ro.status === 'Left' ? 'Left' : ro.alliance) : r.ally || was.ally || '';
         pts[key] = Math.max(pts[key] ?? -Infinity, r.points); who[key] = { name: r.name, ally }; allies.push(ally); continue;
       }
@@ -1510,7 +1539,7 @@ export class RosterStore {
       who[key] = { name: r.name, ally: r.ally, type: ty || was.type || '', bests };
     }
     await this.state.storage.put({ [ns + ':day:' + day]: pts, [ns + ':who']: who });
-    return { day, players: read.rows.length, replaced: had, merged: keep && had, ...(ns === 'et' ? { allies } : {}) };
+    return { day, players: read.rows.length, replaced: had, merged: keep && had, ...(garrison ? { allies } : {}) };
   }
   // Today's Energy Tower column as sheet rows, the way the card shows it: [name, March CP (79M), alliance,
   // points], one per player on the card, our alliances first. A player not there that day (No on the
@@ -1527,6 +1556,41 @@ export class RosterStore {
     rows.sort((a, b) => rank(a.ally) - rank(b.ally) || a.ally.localeCompare(b.ally) || (b.cp || 0) - (a.cp || 0) || (b.pt || 0) - (a.pt || 0));
     return { day, there: new Set([...Object.keys(cps), ...Object.keys(pts)]).size,
              rows: rows.map(r => [r.name.slice(0, 80), r.cp != null ? Math.round(r.cp / 1e6) + 'M' : '', r.ally.slice(0, 20), r.pt ?? '']) };
+  }
+
+  // Today's Mammoth Assault column as sheet rows: [name, March CP (79M), alliance, Yes] for a player in
+  // the garrison that day and [name, '', alliance, No] for everyone else on the card; our alliances first.
+  async maDay() {
+    const st = this.state.storage, day = new Date().toISOString().slice(0, 10);
+    const cps = (await st.get('ma:day:' + day)) || {}, who = (await st.get('ma:who')) || {};
+    const roster = await this.load(), order = (await this.getSettings()).alliances;
+    const rank = a => { const i = order.indexOf(a); return i < 0 ? 99 : i; };
+    const rows = Object.keys(who).map(k => {
+      const ro = roster[k];
+      return { name: String(who[k].name || '').slice(0, 80), ally: String((ro ? (ro.status === 'Left' ? 'Left' : ro.alliance) : who[k].ally) || '').slice(0, 20), cp: cps[k] };
+    });
+    rows.sort((a, b) => rank(a.ally) - rank(b.ally) || a.ally.localeCompare(b.ally) || (b.cp || 0) - (a.cp || 0));
+    return { day, there: Object.keys(cps).length,
+             rows: rows.map(r => r.cp != null ? [r.name, Math.round(r.cp / 1e6) + 'M', r.ally, 'Yes'] : [r.name, '', r.ally, 'No']) };
+  }
+
+  // Today's Snow Train column as sheet rows: [name, March CP (256M), alliance, unit type, Yes], one per
+  // unit type a player had on a train that day, and [name, '', alliance, their usual unit type, No] for
+  // everyone else on the card; our alliances first, the alliance as the card shows it.
+  async stDay() {
+    const st = this.state.storage, day = new Date().toISOString().slice(0, 10);
+    const pts = (await st.get('st:day:' + day)) || {}, who = (await st.get('st:who')) || {};
+    const roster = await this.load(), order = (await this.getSettings()).alliances;
+    const rank = a => { const i = order.indexOf(a); return i < 0 ? 99 : i; }, type = t => UNIT_TYPES.includes(t) ? t : '';
+    const rows = Object.keys(who).map(k => {
+      const ro = roster[k], w = who[k], types = asTypes(pts[k], w.type);
+      return { name: String(w.name || '').slice(0, 80), ally: String((ro ? (ro.status === 'Left' ? 'Left' : ro.alliance) : w.ally) || '').slice(0, 20),
+               type: type(w.type), types, top: Math.max(0, ...Object.values(types)), there: pts[k] != null };
+    });
+    rows.sort((a, b) => rank(a.ally) - rank(b.ally) || a.ally.localeCompare(b.ally) || b.top - a.top);
+    return { day, there: rows.filter(r => r.there).length,
+             rows: rows.flatMap(r => r.there ? Object.entries(r.types).map(([t, v]) => [r.name, Math.round(v / 1e6) + 'M', r.ally, type(t), 'Yes'])
+                                             : [[r.name, '', r.ally, r.type, 'No']]) };
   }
 
   // The Energy Tower's Rankings (this warzone's players and their points): each player's points that

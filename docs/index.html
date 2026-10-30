@@ -15,7 +15,7 @@
 try { const t = JSON.parse(localStorage.getItem('kartz.theme'));
       if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
 // No #kartz or #cp in the address: the home page, shown from the first paint (cp.js takes over).
-if (!/^#(kartz|cp|roster|whitebeard|snowtrain|energytower|admin)$/.test(location.hash)) document.documentElement.classList.add('athome');
+if (!/^#(kartz|cp|roster|whitebeard|snowtrain|energytower|mammoth|admin)$/.test(location.hash)) document.documentElement.classList.add('athome');
 // Another view in the address (#roster…): that one from the first paint too, not Kartz, the page's
 // own first view, while cp.js loads.
 else if (location.hash !== '#kartz') document.documentElement.dataset.view = location.hash.slice(1);
@@ -176,7 +176,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .athome #app{display:none}
 html[data-view] #tab-kartz{display:none}
 html[data-view=cp] #tab-cp,html[data-view=roster] #tab-roster,html[data-view=whitebeard] #tab-wb,html[data-view=snowtrain] #tab-st,
-html[data-view=energytower] #tab-et,html[data-view=admin] #tab-admin{display:block}
+html[data-view=energytower] #tab-et,html[data-view=mammoth] #tab-ma,html[data-view=admin] #tab-admin{display:block}
 .homeband{position:relative;overflow:hidden;height:140px;display:flex;align-items:center;
   background:linear-gradient(180deg,#3a1d2c,#6e2c3a 55%,#b9524a)}
 .homeband .themebtn{position:absolute;top:14px;right:max(16px, env(safe-area-inset-right));z-index:2;color:#fff;border-color:rgba(255,255,255,.35)}
@@ -219,6 +219,8 @@ html[data-view=energytower] #tab-et,html[data-view=admin] #tab-admin{display:blo
 .hcard.st .go{color:#0b4f6c}
 .hcard.et{background:linear-gradient(135deg,#1f5130,#2f8a4c 55%,#8fd14f)}
 .hcard.et .go{color:#1f5130}
+.hcard.ma{background:linear-gradient(135deg,#4a2c17,#8a5a2b 55%,#d1a05a)}
+.hcard.ma .go{color:#4a2c17}
 .hcard .open[hidden]{display:none}
 .hcard .open{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.55);color:#fff}
 /* ---------------- alliance roster, Whitebeard and Snow Train cards (cards.js) ---------------- */
@@ -411,6 +413,8 @@ html[data-view=energytower] #tab-et,html[data-view=admin] #tab-admin{display:blo
         <div class="acts"><a class="go" href="#snowtrain">Open</a><a class="open" href="https://docs.google.com/spreadsheets/d/1d2jgRQlfhYMufn69YaZ-2ZPQ-lGtfvSiOPDTEplUqGs/edit#gid=0" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
       <div class="hcard et" data-card="et"><b>Energy Tower</b>
         <div class="acts"><a class="go" href="#energytower">Open</a><a class="open" href="" target="_blank" rel="noopener" hidden>Open in Sheets ↗</a></div></div>
+      <div class="hcard ma" data-card="ma"><b>Mammoth Assault</b>
+        <div class="acts"><a class="go" href="#mammoth">Open</a><a class="open" href="" target="_blank" rel="noopener" hidden>Open in Sheets ↗</a></div></div>
     </div>
   </div>
 </div>
@@ -421,7 +425,7 @@ html[data-view=energytower] #tab-et,html[data-view=admin] #tab-admin{display:blo
 (function () {
   const home = document.getElementById('home'), title = document.getElementById('bandTitle');
   try { const t = JSON.parse(localStorage.getItem('site.settings')).home.title; if (t) title.textContent = t; } catch {}
-  const atHome = () => !/^#(kartz|cp|roster|whitebeard|snowtrain|energytower|admin)$/.test(location.hash);
+  const atHome = () => !/^#(kartz|cp|roster|whitebeard|snowtrain|energytower|mammoth|admin)$/.test(location.hash);
   function write() {
     home.classList.remove('writing');
     title.parentNode.style.setProperty('--w', title.offsetWidth + 'px');
@@ -636,6 +640,19 @@ html[data-view=energytower] #tab-et,html[data-view=admin] #tab-admin{display:blo
   <div class="rreads" id="etReads"></div>
   <div class="rbar" id="etChips"></div>
   <div class="rbody" id="etView"></div>
+</div>
+</div>
+
+<!-- Mammoth Assault: every View Queues read the bookmark makes, a column per UTC day (cards.js) -->
+<div id="tab-ma" class="hide">
+<div class="rapp">
+  <div class="rhead"><b>Mammoth Assault</b>
+    <label class="rsearch"><span aria-hidden="true">🔍</span><input id="maQ" type="text" placeholder="Search a name" autocomplete="off"></label>
+    <button type="button" class="rgo" id="maReload">Reload</button>
+  </div>
+  <div class="rreads" id="maReads"></div>
+  <div class="rbar" id="maChips"></div>
+  <div class="rbody" id="maView"></div>
 </div>
 </div>
 
@@ -2906,7 +2923,7 @@ loadSetup();
 <script src="cp.js?v=7"></script>
 <!-- the admin pill and page, then the Alliance roster, Whitebeard and Snow Train cards -->
 <script src="admin.js?v=6"></script>
-<script src="cards.js?v=13"></script>
+<script src="cards.js?v=15"></script>
 <!-- Kartz: decoding the recording, then packing and reading it -->
 <script src="decode.js?v=4"></script>
 <script src="kartz.js?v=5"></script>

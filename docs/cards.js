@@ -1,10 +1,11 @@
-/* ---------------- The cards: Whitebeard (#whitebeard), Snow Train (#snowtrain), Energy Tower (#energytower), Alliance roster (#roster) ---------------- */
+/* ---------------- The cards: Whitebeard (#whitebeard), Snow Train (#snowtrain), Energy Tower (#energytower), Mammoth Assault (#mammoth), Alliance roster (#roster) ---------------- */
 // What the 2698 Data Extractor bookmark (docs/extractor.js) reads in the game, kept on the Worker:
 //  - Whitebeard: each read under its UTC date (api/wb-update), a column per day.
 //  - Snow Train: each Unit Details read the same way (api/st-update); March CP 1, 2, 3 are a player's
 //    best per unit type, in the order the types first appeared; each day is Yes / No.
 //  - Energy Tower: Unit Details reads the same way (api/et-update), and the Rankings' points for each
 //    day (api/et-points), shown in place of Yes.
+//  - Mammoth Assault: View Queues reads the same way (api/ma-update); each day is Yes / No.
 //  - Alliance roster: each alliance read updates its rows (api/roster-update); players missing from a
 //    read stay, marked Left.
 // These pages show it (api/wb, api/st, api/roster) with no UIDs: each row carries only an id the
@@ -91,7 +92,7 @@
       join: { hs: 1, val: r => r.join || 0, cell: r => day(r.join), edit: 'date' },
       last: { val: r => r.online ? Infinity : r.last || 0, cell: r => r.online ? '<span class="rdot"></span>now' : ago(r.last * 1000), edit: 'date' },
       status: { text: 1, hs: 1, val: r => r.status, cell: r => r.status === 'Left' ? `Left ${day(r.leftAt / 1000)}` : 'Active', edit: 'status' },
-      // Energy Tower: the highest March CP over the days there are (edited through the days)
+      // Energy Tower and Mammoth Assault: the highest March CP over the days there are (edited through the days)
       best: { n: 1, val: r => Math.max(0, ...Object.values(r.pts || {})), cell: r => { const b = Math.max(0, ...Object.values(r.pts || {})); return b ? fmt(b) : dim; } },
     };
     for (const n of [1, 2, 3]) {
@@ -105,7 +106,7 @@
     const dateDef = d => o.id === 'et'
       ? { n: 1, val: r => sc(r, d) ?? (r.pts[d] != null ? 0 : -1), edit: 'score',
           cell: r => sc(r, d) != null ? Math.round(sc(r, d)).toLocaleString('en-US') : r.pts[d] != null ? '<span class="yes">Yes</span>' : '<span class="rdim">No</span>' }
-      : o.id === 'st'
+      : o.id === 'st' || o.id === 'ma'
       ? { n: 1, val: r => r.pts[d] != null ? 1 : 0, cell: r => r.pts[d] != null ? '<span class="yes">Yes</span>' : '<span class="rdim">No</span>', edit: 'toggle' }
       : { n: 1, val: r => r.pts[d] ?? -1, cell: r => r.pts[d] == null ? dim : fmt(r.pts[d]), edit: 'num' };
     const defOf = k => /^\d{4}-/.test(k) ? dateDef(k) : DEF[k];
@@ -192,7 +193,7 @@
       if (!W.rows) { box.innerHTML = '<p class="rnote">Loading…</p>'; return; }
       if (!W.rows.length && !admin) { box.innerHTML = `<p class="rnote">${o.empty}</p>`; return; }
       const cols = columns(), k = W.sort, dir = W.asc ? 1 : -1, d = defOf(k) || DEF.name;
-      rows.sort((a, b) => (d.text ? String(d.val(a) ?? '').localeCompare(String(d.val(b) ?? '')) : d.val(a) - d.val(b)) * dir || (o.id === 'st' ? top(b) - top(a) : o.id === 'et' ? DEF.best.val(b) - DEF.best.val(a) : 0));
+      rows.sort((a, b) => (d.text ? String(d.val(a) ?? '').localeCompare(String(d.val(b) ?? '')) : d.val(a) - d.val(b)) * dir || (o.id === 'st' ? top(b) - top(a) : o.id === 'et' || o.id === 'ma' ? DEF.best.val(b) - DEF.best.val(a) : 0));
       const arrow = c => W.sort === c ? (W.asc ? ' ▲' : ' ▼') : '';
       const game = admin && o.id === 'ro' ? { name: 1, alliance: 1, rank: 1, power: 1, join: 1, last: 1, status: 1 } : {};
       box.innerHTML = `<table class="rtable wbtable"><thead><tr>${cols.map(c => {
@@ -377,8 +378,14 @@
       if (v === (cur || '')) return false;
       run('row-set', { id: r.id, field: k, value: v }, { what: `${who} · ${label}`, from: cur || '—', to: v || '—' }); return true;
     }
-    // Snow Train: on a train that day or not
+    // Snow Train: on a train that day or not; Mammoth Assault: in the garrison or not (Yes with their best March CP)
     function toggleDay(r, d) {
+      if (o.id === 'ma') {
+        if (r.pts[d] != null) return run('cell-set', { id: r.id, day: d, value: null }, { what: `${r.name} · ${head(d)}`, from: 'Yes', to: 'No' });
+        const b = DEF.best.val(r);
+        if (!b) { Admin.toast(`Use ⋯ → Edit a day's March CP to give ${r.name} one`); return; }
+        return run('cell-set', { id: r.id, day: d, value: b }, { what: `${r.name} · ${head(d)}`, from: 'No', to: 'Yes' });
+      }
       if (r.pts[d] != null) return run('days-set', { id: r.id, days: { [d]: null } }, { what: `${r.name} · ${head(d)}`, from: 'Yes', to: 'No' });
       const b = bests(r)[0];
       if (!b) { Admin.toast(`Give ${r.name} a March CP first, or use ⋯ → Edit day values`); return; }
@@ -412,7 +419,7 @@
       const r = byId(btn.dataset.row); if (!r) return;
       const items = [{ label: '✏️ Rename', run: () => edit(btn.closest('td')) }];
       if (o.id !== 'ro') items.push({ label: '🔀 Merge with another player…', run: () => mergeDialog([r.id]) });
-      if (o.id === 'et') items.push('-', { label: "📅 Edit a day's March CP…", run: () => etDay(r) });
+      if (o.id === 'et' || o.id === 'ma') items.push('-', { label: "📅 Edit a day's March CP…", run: () => etDay(r) });
       if (o.id === 'st') items.push('-',
         { label: '📅 Edit day values…', run: () => dayValues(r) },
         { label: '↕️ Reorder March CP 1–3…', run: () => reorder(r) },
@@ -503,18 +510,20 @@
 
     /* ---- a day sent to the card's sheet again (admin), for a Send that was forgotten or went wrong ---- */
     // Rows as the bookmark's Send makes them, with each player's alliance as the card shows it
-    const SEND = { wb: ['/game-ranking', 'ranking'], st: ['/game-snowtrain', 'snowtrain'], et: ['/game-energytower', 'energytower'] };
+    const SEND = { wb: ['/game-ranking', 'ranking'], st: ['/game-snowtrain', 'snowtrain'], et: ['/game-energytower', 'energytower'], ma: ['/game-mammoth', 'mammoth'] };
     const ours = r => Admin.settings.alliances.includes(r[allyKey]);
     const allyOrder = r => { const i = Admin.settings.alliances.indexOf(r[allyKey]); return i < 0 ? 99 : i; };
     const inGroup = who => r => who === 'all' || (who === 'ours') === ours(r);
     function dayRows(d, who) {
       const pts = r => o.id === 'st' ? Math.max(0, ...Object.values(dayTypes(r, d))) : r.pts[d];
       const M = v => Math.round(v / 1e6) + 'M', nm = r => r.name.slice(0, 80), al = r => String(r.ally || '').slice(0, 20);
-      return W.rows.filter(r => o.id === 'et' || r.pts[d] != null).filter(inGroup(who))   // Energy Tower: everyone, No as 0
+      return W.rows.filter(r => o.id !== 'wb' || r.pts[d] != null).filter(inGroup(who))   // Energy Tower and Snow Train: everyone, No as 0 / No
         .sort((a, b) => allyOrder(a) - allyOrder(b) || String(a.ally).localeCompare(String(b.ally)) || (pts(b) || 0) - (pts(a) || 0) || (sc(b, d) || 0) - (sc(a, d) || 0))
         .flatMap(r => o.id === 'wb' ? [[nm(r), r.pts[d], al(r)]]
           : o.id === 'et' ? [[nm(r), r.pts[d] != null ? M(r.pts[d]) : '', al(r), sc(r, d) ?? (r.pts[d] != null ? '' : 0)]]
-          : Object.entries(dayTypes(r, d)).map(([t, v]) => [nm(r), M(v), al(r), TYPES.includes(t) ? t : '']));
+          : o.id === 'ma' ? [r.pts[d] != null ? [nm(r), M(r.pts[d]), al(r), 'Yes'] : [nm(r), '', al(r), 'No']]
+          : r.pts[d] == null ? [[nm(r), '', al(r), TYPES.includes(r.type) ? r.type : '', 'No']]
+          : Object.entries(dayTypes(r, d)).map(([t, v]) => [nm(r), M(v), al(r), TYPES.includes(t) ? t : '', 'Yes']));
     }
     // a send from a dialog: its button busy while it goes, then what was written and a link to it
     async function sendRows(m, path, body, title) {
@@ -533,7 +542,7 @@
     function sendDay(d) {
       const [path, sheet] = SEND[o.id], title = cfg().title, t = Admin.settings.sheets[sheet];
       if (!t || !t.id) return Admin.toast(`No sheet is set for the ${title} yet — add one in Admin → Sheets & backup.`);
-      const have = W.rows.filter(r => r.pts[d] != null), n = who => have.filter(inGroup(who)).length;
+      const have = W.rows.filter(r => r.pts[d] != null), n = who => (o.id === 'wb' ? have : W.rows).filter(inGroup(who)).length;   // the players the send has, No included
       if (!have.length) return Admin.toast(`Nobody in ${head(d)}`);
       const m = Admin.modal(`<h3>Send ${head(d)} to the sheet</h3>
         <p>Adds that day's rows below the ones already in the ${esc(title)} sheet, dated ${d}. Rows sent before stay as they are, so check the day isn't there already.</p>
@@ -596,7 +605,7 @@
       const rows = [...el('View').querySelectorAll('tbody tr[data-id]')].map(tr => byId(tr.dataset.id)).filter(Boolean);
       const cell = (r, k) => {
         const f = defOf(k), v = f.val(r);
-        if (/^\d{4}-/.test(k)) return o.id === 'et' ? sc(r, k) ?? (r.pts[k] != null ? 'Yes' : 'No') : o.id === 'st' ? (v ? 'Yes' : 'No') : v === -1 ? '' : v;
+        if (/^\d{4}-/.test(k)) return o.id === 'et' ? sc(r, k) ?? (r.pts[k] != null ? 'Yes' : 'No') : o.id === 'st' || o.id === 'ma' ? (v ? 'Yes' : 'No') : v === -1 ? '' : v;
         if (k === 'join' || k === 'last') return k === 'last' && r.online ? 'now' : day(k === 'last' ? r.last : r.join);
         if (k === 'rank') return rankText(r.rank);
         if (k === 'status') return f.cell(r);
@@ -720,6 +729,8 @@
     empty: 'Nothing yet. Open a Snow Train\'s Unit Details in the game and tap Read on the 2698 Data Extractor bookmark, and it appears here.' });
   makeCard({ id: 'et', el: 'et', tab: 'tab-et', api: '/et', hash: '#energytower',
     empty: 'Nothing yet. Tap Read under Energy Tower on the 2698 Data Extractor bookmark in the game, and it appears here.' });
+  makeCard({ id: 'ma', el: 'ma', tab: 'tab-ma', api: '/ma', hash: '#mammoth',
+    empty: 'Nothing yet. Open the Mammoth Assault\'s View Queues in the game and tap Read garrison on the 2698 Data Extractor bookmark, and it appears here.' });
   makeCard({ id: 'ro', el: 'roster', tab: 'tab-roster', api: '/roster', hash: '#roster',
     empty: 'Nothing yet. Read an alliance with the 2698 Data Extractor bookmark in the game, and its members appear here.' });
 })();

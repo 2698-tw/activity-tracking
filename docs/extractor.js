@@ -12,6 +12,8 @@
  *     site's Energy Tower card (api/et-update) and its sheet (api/game-energytower). Its Rankings,
  *     opened as the event's Rankings button opens them, give each player's points for the card's
  *     date columns (api/et-points).
+ *   Mammoth Assault: its View Queues, opened with the Mammoth Assault screen's own View Queues button;
+ *     the site's Mammoth Assault card (api/ma-update) and its sheet (api/ma-send).
  * The panel is buttons only. Each alliance read updates the site's Alliance roster card
  * (api/roster-update) and each Whitebeard read the site's Whitebeard card (api/wb-update).
  * Nothing here sends anything to the game: the game makes its own usual requests for what it opens.
@@ -230,6 +232,40 @@
     });
   }
 
+  // the Mammoth Assault's View Queues: the Mammoth Assault screen's own View Queues button
+  // (onClickLookTroop, which opens CQ26DBTroopsInfoPanel), read, and closed again. A View Queues window
+  // already open is read as it is and left open. One march per player; the game gives no alliance
+  // here, so the Worker fills it in from the roster card, as for the Energy Tower.
+  var queuesPanel = function () { return findComp(function (c) { return c.__classname__ === 'CQ26DBTroopsInfoPanel' && Array.isArray(c._marchArray); }); };
+  var mammothScreen = function () { return findComp(function (c) { return c.__classname__ === 'CQ26DBMainComponent'; }); };
+  var longText = function (v) {                          // the game's 64-bit numbers ({_low, _high} or {low, high})
+    if (v == null) return '';
+    if (typeof v !== 'object') return String(v);
+    var lo = '_low' in v ? v._low : v.low, hi = '_high' in v ? v._high : v.high;
+    return lo == null ? String(v) : String(hi * 4294967296 + (lo >>> 0));
+  };
+  async function readMammoth(step) {
+    var panel = queuesPanel(), opened = [], U = ui();
+    if (!panel || !panel._marchArray.length) {
+      var screen = mammothScreen(), WQ = win('CQ26DBTroopsInfoPanel');
+      if (!U || !WQ || !screen) throw new Error('open Mammoth Assault in the Energy Building first, then tap Read garrison');
+      if (!panel) {
+        await wait(between(300, 700));                   // a person's pause before tapping View Queues
+        step('Opening View Queues…', .15); screen.onClickLookTroop(); opened.push(WQ);
+      }
+      for (var t0 = Date.now(); Date.now() - t0 < 12000; await wait(200)) { panel = queuesPanel(); if (panel && panel._marchArray.length) break; panel = null; }
+      await wait(400);                                   // let a late page of the list arrive, if any
+    }
+    var close = function () { opened.forEach(function (w) { try { U.CloseUI(w); } catch (e) {} }); };
+    if (!panel) { close(); throw new Error('View Queues did not load, or no one is in the garrison yet'); }
+    var list = panel._marchArray.slice();
+    close();
+    return list.map(function (e) {
+      var p = parse(e.playerInfo), tv = e.troopView || {};
+      return { uid: longText(e.uid), name: String(p.username || p.nickname || ''), ally: '', power: Number(longText(tv.battlePower)) || 0 };
+    }).filter(function (r) { return r.name || r.uid; });
+  }
+
   // the Energy Tower's Rankings: OpenUI(CQ26ArkRankPop), what the event's Rankings button runs (the
   // game loads the ranking for the event it has open), read, and closed again; one already open is
   // read as it is and left open. Only this warzone's players: the game's own Your Warzone filter.
@@ -284,7 +320,7 @@
   S.members = S.members || {}; S.prev = S.prev || {};
   // only the four alliances: a read of another one saved by an earlier version is dropped
   [S.members, S.prev].forEach(function (o) { Object.keys(o).forEach(function (t) { if (!ALLY[t]) delete o[t]; }); });
-  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null, st: S.st || null, et: S.et || null, etp: S.etp || null })); } catch (e) {} }
+  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null, st: S.st || null, et: S.et || null, etp: S.etp || null, ma: S.ma || null })); } catch (e) {} }
   var fold = function (s) { return String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, ''); };
   // MM/CE from the roster. Names repeat ("Woody" is 698S's in-game name and 698C's search name; 698S
   // has two Gikeys), so the candidates are tried in order: in-game name in the player's own alliance,
@@ -370,6 +406,9 @@
     '.act:active{transform:scale(.97)}' +
     '.act.main{background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b)}' +
     '.act .t{display:block;font-weight:800;font-size:15px;position:relative}' +
+    // a Mac draws the system font a lot heavier than Windows does: thinner strokes, and a step lighter
+    '.app{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}' +
+    '.mac .act .t,.mac .top b{font-weight:700}.mac h3{font-weight:600}' +
     '.act .s{display:block;font-size:11.5px;color:rgba(235,235,245,.6);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative}.act .s:empty::before{content:"\\a0"}' +
     '.act.main .s{color:rgba(255,255,255,.75)}' +
     '.grid .act{padding:10px 9px}' +
@@ -436,7 +475,7 @@
     '.status a{color:#9ec5ff}' +
     '.tx-in{animation:txin .35s ease}@keyframes txin{from{opacity:0;transform:translateY(5px)}}' +
     '</style>' +
-    '<div class="app"><div class="top" title="Drag to move"><img class="logo" alt="" src="https://2698-tw.github.io/activity-tracking/icon.png"><b>2698 Data Extractor</b><button class="x" id="close" title="Close">×</button></div>' +
+    '<div class="app' + (/Mac/.test(navigator.platform || navigator.userAgent) ? ' mac' : '') + '"><div class="top" title="Drag to move"><img class="logo" alt="" src="https://2698-tw.github.io/activity-tracking/icon.png"><b>2698 Data Extractor</b><button class="x" id="close" title="Close">×</button></div>' +
     '<div data-sec="members"><h3>Alliance members</h3><div class="grid">' +
       Object.keys(ALLY).map(function (t) { return act('a' + t, '', t, 'not read', t); }).join('') + '</div>' +
     '<div class="row2">' + act('all', 'main', 'Read all four', 'Updates the roster card') +
@@ -445,10 +484,12 @@
       '<label class="wbday" title="The date the event ends: the read goes on the card and the sheet under it"><span>End date</span><input type="date" id="wbday"></label></div>' +
     '<div class="row2">' + act('wb', 'main', 'Read', 'Loads every rank') + act('wbs', 'send', 'Send to sheet', 'Read it first') + '</div></div>' +
     '<div data-sec="st"><h3>Snow Train</h3>' +
-    '<div class="row2">' + act('snow', 'main', 'Read garrison', '') + act('snows', 'send', 'Send to sheet', 'Read it first') + '</div></div>' +
+    '<div class="row2">' + act('snow', 'main', 'Read garrison', '') + act('snows', 'send', 'Send to sheet', "Today's card") + '</div></div>' +
     '<div data-sec="et"><h3>Energy Tower</h3>' +
     '<div class="row2">' + act('tower', 'main', 'Read garrison', '') + act('towers', 'send', 'Send to sheet', "Today's card") + '</div>' +
     '<div class="row2">' + act('towerp', 'main', 'Read points', '') + '</div></div>' +
+    '<div data-sec="ma"><h3>Mammoth Assault</h3>' +
+    '<div class="row2">' + act('mam', 'main', 'Read garrison', '') + act('mams', 'send', 'Send to sheet', "Today's card") + '</div></div>' +
     '<div class="status idle" id="st"><span class="si"></span><span class="tx">Ready. Tap a button to start.</span></div></div>';
   document.body.appendChild(host);
   var $ = function (s) { return root.querySelector(s); };
@@ -461,6 +502,7 @@
   function sections(b) {
     if (!b) return;
     root.querySelectorAll('[data-sec]').forEach(function (d) { d.hidden = b[d.dataset.sec] === false; });
+    fit();
   }
   try { sections(JSON.parse(localStorage.getItem(SECS))); } catch (e) {}
   fetch(API + '/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
@@ -473,12 +515,25 @@
   $('#close').onclick = function () { host.style.display = 'none'; };
 
   // the header moves the panel; where it was left is remembered on this device
+  // The panel's size on screen, as at 100% on a computer: the browser's own zoom on this page is undone
+  // (Chrome on a Mac at 110% made it a tenth bigger), and a window too short for it shrinks it further,
+  // down to 70%. Z is that zoom; inside the panel's layer every length is the screen's divided by Z.
+  var Z = 1;
+  function fit() {
+    var page = outerWidth && innerWidth ? outerWidth / innerWidth : 1;        // the browser's zoom, near enough
+    var undo = page > 1.04 && page < 3 ? 1 / page : 1;
+    host.style.zoom = 1;
+    var tall = app.scrollHeight + 24;
+    Z = Math.max(.7, Math.min(undo, innerHeight / tall));
+    host.style.zoom = Z;
+  }
+  fit();
   var POS = 'x2698.pos';
-  function place(x, y) {
-    var w = app.offsetWidth, h = app.offsetHeight;
-    x = Math.max(4, Math.min(innerWidth - w - 4, x)); y = Math.max(4, Math.min(innerHeight - Math.min(h, 60) - 4, y));
+  function place(x, y) {                                          // x, y: on screen
+    var w = app.offsetWidth, h = app.offsetHeight, W = innerWidth / Z, H = innerHeight / Z;
+    x = Math.max(4, Math.min(W - w - 4, x / Z)); y = Math.max(4, Math.min(H - Math.min(h, 60) - 4, y / Z));
     app.style.left = x + 'px'; app.style.top = y + 'px'; app.style.transform = 'none';
-    app.style.maxHeight = (innerHeight - y - 8) + 'px';         // scrolls inside rather than running off the bottom
+    app.style.maxHeight = (H - y - 8) + 'px';                     // scrolls inside rather than running off the bottom
     return [x, y];
   }
   try { var saved = JSON.parse(localStorage.getItem(POS)); if (saved) place(saved[0], saved[1]); } catch (e) {}
@@ -497,8 +552,12 @@
       try { localStorage.setItem(POS, JSON.stringify([Math.round(r.left), Math.round(r.top)])); } catch (x) {}
     }
     top.addEventListener('pointerup', drop); top.addEventListener('pointercancel', drop);
-    // keep it on screen when the window gets smaller
-    addEventListener('resize', function () { if (app.style.transform === 'none') place(parseFloat(app.style.left), parseFloat(app.style.top)); });
+    // sized again, and kept on screen, when the window or the browser's zoom changes
+    addEventListener('resize', function () {
+      var r = app.getBoundingClientRect(), moved = app.style.transform === 'none';
+      app.style.maxHeight = ''; fit();
+      if (moved) place(r.left, r.top);
+    });
   })();
   window.__x2698 = { toggle: function () { host.style.display = host.style.display === 'none' ? '' : 'none'; }, busy: function () { return busy; } };
   $('#who').onchange = function () { V.wbFilter = $('#who').value; refresh(); };
@@ -559,10 +618,13 @@
     if (!wbs.classList.contains('busy')) { wbs.classList.remove('done'); sub(wbs, V.wb ? wbChosen().length + ' players' + (V.wb.day ? ' · ' + dayText(V.wb.day) : '') : 'Read it first'); }
     var stb = $('#snow'), sts = $('#snows');
     if (!stb.classList.contains('busy') && !stb.classList.contains('err')) sub(stb, S.st ? S.st.rows.length + ' players · ' + ago(S.st.at / 1000) : '');
-    if (!sts.classList.contains('busy') && !sts.classList.contains('done')) sub(sts, S.st ? S.st.rows.length + ' players ready' : 'Read it first');
+    if (!sts.classList.contains('busy') && !sts.classList.contains('done')) sub(sts, "Today's card");
     var etb = $('#tower'), ets = $('#towers');
     if (!etb.classList.contains('busy') && !etb.classList.contains('err')) sub(etb, S.et ? S.et.rows.length + ' players · ' + ago(S.et.at / 1000) : '');
     if (!ets.classList.contains('busy') && !ets.classList.contains('done')) sub(ets, "Today's card");
+    var mab = $('#mam'), mas = $('#mams');
+    if (!mab.classList.contains('busy') && !mab.classList.contains('err')) sub(mab, S.ma ? S.ma.rows.length + ' players · ' + ago(S.ma.at / 1000) : '');
+    if (!mas.classList.contains('busy') && !mas.classList.contains('done')) sub(mas, "Today's card");
     var etp = $('#towerp');
     if (!etp.classList.contains('busy') && !etp.classList.contains('err')) sub(etp, S.etp ? S.etp.n + ' players · ' + ago(S.etp.at / 1000) : '');
   }
@@ -722,8 +784,10 @@
       ' · <a href="' + esc(j.link || SHEET) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
   };
 
-  /* Snow Train: the open Unit Details window to SS P2 Snow Train (api/game-snowtrain), as Date, Name,
-     March CP, Unit Type, Alliance; the four alliances first, then everyone else */
+  /* Snow Train: the open Unit Details window to the site's card (api/st-update), and on Send to SS P2
+     Snow Train as Date, Name, March CP, Unit Type, Alliance, Garrisoned?: today's column as the card has
+     it, every read of the day combined and everyone on the card not there as No (api/st-send); the four
+     alliances first, then everyone else */
   $('#snow').onclick = async function () {
     if (busy) return; lock(true);
     var b = $('#snow'); start(b); sub(b, 'opening…');
@@ -750,14 +814,10 @@
   $('#snows').onclick = async function () {
     if (busy) return;
     var b = $('#snows');
-    if (!S.st) return nudge(b, 'Nothing to send yet<small>Tap Read garrison first.</small>');
-    var order = function (t) { return MAIN.indexOf(t) >= 0 ? MAIN.indexOf(t) : 99; };
-    var rows = S.st.rows.slice().sort(function (a, c) { return order(a.ally) - order(c.ally) || a.ally.localeCompare(c.ally) || c.power - a.power; })
-      .map(function (r) { return [r.name.slice(0, 80), Math.round(r.power / 1e6) + 'M', r.ally.slice(0, 20), r.type || '']; });   // 256,158,825 → 256M
-    var j = await sendTo(b, '/game-snowtrain', { rows: rows }, rows.length + ' Snow Train rows');
+    var j = await sendTo(b, '/st-send', {}, 'today\'s Snow Train');
     if (!j) return;
     sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
-    status('ok', 'Snow Train sent<small>' + Number(j.rows).toLocaleString() + ' rows added, dated ' + esc(j.date) +
+    status('ok', 'Snow Train sent<small>' + Number(j.rows).toLocaleString() + ' rows from the card added, dated ' + esc(j.date) +
       ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
   };
 
@@ -796,6 +856,44 @@
     if (!j) return;
     sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
     status('ok', 'Energy Tower sent<small>' + Number(j.rows).toLocaleString() + ' rows from the card added, dated ' + esc(j.date) +
+      ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
+  };
+
+  /* Mammoth Assault: its View Queues to the site's card (api/ma-update), which fills in each player's
+     alliance from the roster card, and on Send to its sheet as Date, Name, March CP, Alliance,
+     Garrisoned?: today's column as the card has it, every read of the day combined and everyone on the
+     card not there as No (api/ma-send) */
+  $('#mam').onclick = async function () {
+    if (busy) return; lock(true);
+    var b = $('#mam'); start(b); sub(b, 'opening…');
+    try {
+      var rows = await readMammoth(function (t, p) { status('work', t, p); setP(b, p); });
+      status('work', 'Read <b>' + rows.length + '</b> players', .5);
+      S.ma = { at: Date.now(), rows: rows }; save(); $('#mams').classList.remove('done');
+      setP(b, .6); sub(b, 'saving…');
+      status('work', 'Updating the Mammoth Assault card…', .7);
+      var card;
+      try {
+        var u = await postJson('/ma-update', { rows: rows.map(function (r) { return { uid: r.uid, name: r.name, ally: r.ally, points: r.power }; }) });
+        (u.allies || []).forEach(function (a, i) { if (a && rows[i]) rows[i].ally = a; });
+        save();
+        card = (u.merged ? 'Card: added to today\'s column' : 'Card: new column added') + ' (' + u.day + ' UTC)';
+      } catch (e) { card = 'Card not updated (' + esc(e.message || e) + ')'; }
+      setP(b, 1); finish(b, true); sub(b, rows.length + ' players · now');
+      status('ok', 'Mammoth Assault read · ' + rows.length + ' players<small>' + card + ' · tap Send to sheet for its sheet.</small>');
+    } catch (e) {
+      finish(b, false); sub(b, 'tap to try again');
+      status('bad', 'Nothing read<small>' + esc(e.message || e) + '</small>');
+    }
+    lock(false); refresh();
+  };
+  $('#mams').onclick = async function () {
+    if (busy) return;
+    var b = $('#mams');
+    var j = await sendTo(b, '/ma-send', {}, 'today\'s Mammoth Assault');
+    if (!j) return;
+    sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
+    status('ok', 'Mammoth Assault sent<small>' + Number(j.rows).toLocaleString() + ' rows from the card added, dated ' + esc(j.date) +
       ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
   };
 
