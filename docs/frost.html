@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Frost Crystal Contest</title>
 <link rel="icon" href="icon.png">
-<!-- Frost Crystal Contest (frost.html): the top 20 players by base CP on each server of the contest's
-     battlefields. The bookmark's Read battlefields reads both in the game (the contest's own map, then
+<!-- Frost Crystal Contest (frost.html): the top 10 players by base CP on each server of the contest's
+     battlefields, laid out like the contest's map: each server one line, 100M and over one by one. The bookmark's Read battlefields reads both in the game (the contest's own map, then
      each server's Individual CP Ranking) and keeps them on the Worker (api/frost-read) for everyone. -->
 <style>
 :root{--bg:#eef4f9;--card:#fff;--ink:#14212e;--dim:#62748a;--line:#dbe5ee;--head:#f4f8fb;--acc:#1789a8;--us:#e8f6ea;--usink:#1f7a3a;--bad:#b42318;
@@ -31,29 +31,22 @@ button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
 button:disabled{opacity:.55;cursor:default}
 .status{color:var(--dim)}
 .status.bad{color:var(--bad)}
-.field{margin:0 0 22px}
-.field h2{margin:0 0 8px;font-size:16px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline}
-.field h2 small{font-weight:500;color:var(--dim);font-size:13px}
-.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-@media (max-width:1100px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:560px){.grid{grid-template-columns:minmax(0,1fr)}}
-.srv{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-.srv.us{border-color:var(--usink)}
-.srv .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:9px 11px;background:var(--head);border-bottom:1px solid var(--line)}
-.srv .top b{font-size:15px}
-.srv.us .top{background:var(--us)}
-.srv.us .top b{color:var(--usink)}
-.srv .place{font-size:12px;font-weight:700;color:var(--dim);margin-right:6px}
-.srv .sum{font-size:12px;color:var(--dim);text-align:right}
-.srv .sum strong{color:var(--ink);font-size:13px}
-table{width:100%;border-collapse:collapse;font-size:13px}
-td{padding:4px 8px;border-top:1px solid var(--line);white-space:nowrap}
-tr:first-child td{border-top:0}
-td.n{color:var(--dim);width:1%;text-align:right}
-td.nm{overflow:hidden;text-overflow:ellipsis;max-width:0;width:80%}
-td.cp{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+/* the battlefields as the contest's map lays them out: one in the middle, then one left and one right */
+:root{--b1:#dbe6fb;--b1l:#b9cdf3;--b2:#e6def2;--b2l:#cdbfe3;--b3:#dfecd9;--b3l:#bfd8b4}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--b1:#1b2840;--b1l:#2c4166;--b2:#2a2238;--b2l:#44385c;--b3:#1f2e22;--b3l:#34503a}}
+:root[data-theme="dark"]{--b1:#1b2840;--b1l:#2c4166;--b2:#2a2238;--b2l:#44385c;--b3:#1f2e22;--b3l:#34503a}
+.map{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 16px}
+.bf{grid-column:2 / span 2;background:var(--bg1);border:1px solid var(--bl);border-radius:10px;overflow:hidden;--bg1:var(--b1);--bl:var(--b1l)}
+.bf.l{grid-column:1 / span 2;--bg1:var(--b2);--bl:var(--b2l)}
+.bf.r{grid-column:3 / span 2;--bg1:var(--b3);--bl:var(--b3l)}
+@media (max-width:820px){.map{grid-template-columns:minmax(0,1fr)}.bf,.bf.l,.bf.r{grid-column:auto}}
+.bf h2{margin:0;padding:8px 12px;font-size:15px}
+.bf ul{list-style:none;margin:0;padding:0}
+.bf li{display:flex;gap:10px;padding:6px 12px;border-top:1px solid var(--bl);font-size:14px;font-variant-numeric:tabular-nums}
+.bf li b{flex:none;min-width:3.6em}
+.bf li.us{font-weight:700;color:var(--usink)}
 .empty{padding:14px 11px;color:var(--dim)}
-.skel{height:420px;border-radius:10px;background:linear-gradient(90deg,var(--card),var(--head),var(--card));background-size:200% 100%;animation:sk 1.4s linear infinite;border:1px solid var(--line)}
+.skel{height:200px;border-radius:10px;background:linear-gradient(90deg,var(--card),var(--head),var(--card));background-size:200% 100%;animation:sk 1.4s linear infinite;border:1px solid var(--line)}
 @keyframes sk{to{background-position:-200% 0}}
 </style>
 </head>
@@ -76,17 +69,16 @@ if (window.frameElement) document.getElementById('homeLink').remove();
 <script>
 (function () {
   const API = location.hostname.endsWith('.workers.dev') ? '/api' : 'https://data-collection.jk06nm04.workers.dev/api';
-  const US = '2698', TOP = 20;
+  const US = '2698', TOP = 10, BIG = 100e6;          // each server's top 10; 100M and over one by one
   const $ = id => document.getElementById(id);
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-  const M = v => (v / 1e6).toFixed(1) + 'M';
+  const M = v => Math.round(v / 1e6) + 'M';
   let read = null;                                  // {fields, servers: {sid: [[name, cp], …]}, at}
 
   const top = s => ((read.servers || {})[s] || []).slice(0, TOP);
   const total = s => top(s).reduce((a, p) => a + p[1], 0);
-
   async function load() {
-    $('out').innerHTML = '<div class="grid">' + '<div class="skel"></div>'.repeat(4) + '</div>';
+    $('out').innerHTML = '<div class="map">' + '<div class="skel bf"></div>'.repeat(3) + '</div>';
     try {
       const r = await fetch(API + '/frost-read', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
       const j = await r.json().catch(() => null);
@@ -103,22 +95,22 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     }
   }
 
-  function card(s, place) {
-    const t = top(s), sum = t.reduce((a, p) => a + p[1], 0);
-    return `<div class="srv${s === US ? ' us' : ''}"><div class="top"><b><span class="place">#${place}</span>S${esc(s)}</b>
-      <span class="sum">Top ${TOP} <strong>${t.length ? M(sum) : '—'}</strong>${t.length ? `<br>avg ${M(sum / t.length)}` : ''}</span></div>
-      ${t.length ? `<table>${t.map((p, i) => `<tr><td class="n">${i + 1}</td><td class="nm" title="${esc(p[0])}">${esc(p[0])}</td><td class="cp">${M(p[1])}</td></tr>`).join('')}</table>`
-        : '<div class="empty">This server was not read.</div>'}</div>`;
+  // a server's line: its players of 100M and over one by one, the rest of its top 10 as "highest to lowest"
+  function line(s) {
+    const t = top(s).map(p => p[1]);
+    if (!t.length) return 'not read';
+    const big = t.filter(v => v >= BIG - 5e5), rest = t.slice(big.length);
+    return big.map(M).concat(rest.length ? [rest.length > 1 ? `${M(rest[0])} to ${M(rest[rest.length - 1])}` : M(rest[0])] : []).join(', ');
   }
 
   function draw() {
-    $('out').innerHTML = read.fields.map((f, i) => {
+    $('out').innerHTML = '<div class="map">' + read.fields.map((f, i) => {
       const ranked = f.slice().sort((a, b) => total(b) - total(a));
-      return `<section class="field"><h2>Battlefield ${i + 1}<small>${f.map(s => 'S' + s).join(' · ')}</small></h2>
-        <div class="grid">${ranked.map(s => card(s, ranked.indexOf(s) + 1)).join('')}</div></section>`;
-    }).join('');
+      return `<section class="bf${['', ' l', ' r'][i % 3]}"><h2>Battlefield ${i + 1}: ${ranked.map(esc).join(', ')}</h2>
+        <ul>${ranked.map(s => `<li${s === US ? ' class="us"' : ''}><b>${esc(s)}:</b><span>${line(s)}</span></li>`).join('')}</ul></section>`;
+    }).join('') + '</div>';
     const t = new Date(read.at).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-    $('status').textContent = `${read.fields.flat().length} servers · read from the game ${t}`;
+    $('status').textContent = `${read.fields.flat().length} servers · top ${TOP} by base CP · read from the game ${t}`;
   }
 
   $('csv').onclick = () => {
@@ -127,7 +119,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     read.fields.forEach((f, i) => f.forEach(s => top(s).forEach((p, j) => rows.push([i + 1, s, j + 1, p[0], p[1]]))));
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob(['﻿' + rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' }));
-    a.download = 'frost-crystal-top20-' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.download = 'frost-crystal-top10-' + new Date().toISOString().slice(0, 10) + '.csv';
     a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
   load();
