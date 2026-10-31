@@ -690,8 +690,9 @@ export default {
     }
 
     // The Frost Crystal Contest page (frost.html): the contest's battlefields and the top 20 by base CP of
-    // every server on them, read in the game by the bookmark (Read battlefields). An empty body reads the
-    // last read (null until one); only the bookmark, or the admin password, saves {fields, servers}.
+    // every server on them, read in the game by the bookmark (Read battlefields), one read kept per contest
+    // date (the day its battle starts, UTC). An empty body gives every date's read, {days: {date: read}};
+    // only the bookmark, or the admin password, saves {day, fields, servers}, replacing that date's read.
     if (url.pathname.replace(/^\/+/, '') === 'api/frost-read') {
       if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
       const body = await request.text();
@@ -701,6 +702,7 @@ export default {
       if (b.fields === undefined) return rosterCall(env, '/frost-get', null, reply);
       if (origin !== RANKING_ORIGIN && !hasPass) return reply({ error: 'Battlefields are read in the game, with the bookmark.' }, 403);
       const f = b.fields, sv = b.servers;
+      if (!/^20\d\d-\d\d-\d\d$/.test(b.day || '')) return reply({ error: 'day must be the contest date, YYYY-MM-DD' }, 400);
       if (!Array.isArray(f) || !f.length || f.length > 16
           || !f.every(x => Array.isArray(x) && x.length >= 1 && x.length <= 6 && x.every(v => /^\d{1,5}$/.test(v)))
           || new Set(f.flat()).size !== f.flat().length)
@@ -711,7 +713,7 @@ export default {
               && Number.isInteger(p[1]) && p[1] >= 0 && p[1] < 1e12)))
         return reply({ error: 'servers must be {server: [[name, base CP], …]} for servers on the battlefields' }, 400);
       return rosterCall(env, '/frost-set', {
-        fields: f.map(x => x.map(String)),
+        day: b.day, fields: f.map(x => x.map(String)),
         servers: Object.fromEntries(Object.entries(sv).map(([k, l]) => [k, l.slice(0, 20).map(p => [p[0], p[1]])])),
       }, reply);
     }
@@ -1159,7 +1161,7 @@ async function rosterCall(env, path, body, reply) {
 }
 
 // What a backup holds and a restore may write: the cards' data and the settings, not History
-const DATA_KEY = /^(rows|reads|moves|settings|frost:map|frost:read|events|(wb|st|et|ma):who|(wb|st|et|ma):day:\d{4}-\d{2}-\d{2}|et:pts:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et|ma))$/;
+const DATA_KEY = /^(rows|reads|moves|settings|frost:map|frost:read|frost:day:\d{4}-\d{2}-\d{2}|events|(wb|st|et|ma):who|(wb|st|et|ma):day:\d{4}-\d{2}-\d{2}|et:pts:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et|ma))$/;
 const LOG_MAX = 100;
 const MOVES_MAX = 3000;                       // alliance changes kept on the roster card's Log
 const MOVE_JOIN = 30 * 60 * 1000;             // leaving and joining within this is one change                          // changes kept in History, each with what it replaced
@@ -1464,6 +1466,16 @@ const ADMIN_OPS = {
 // brings back anyone who returns. Rows are never deleted by a read; the admin view can.
 export class RosterStore {
   constructor(state, env) { this.state = state; this.env = env; }
+  // Every contest date's Frost read, {days: {date: {fields, servers, at}}}. The one read saved before
+  // reads were kept by date (S2698's first contest, whose battle was on 1 Nov 2026) moves to that date.
+  async frostDays() {
+    const st = this.state.storage, old = await st.get('frost:read');
+    if (old) { if (!(await st.get('frost:day:2026-11-01'))) await st.put('frost:day:2026-11-01', old); await st.delete('frost:read'); }
+    const days = {};
+    for (const [k, v] of await st.list({ prefix: 'frost:day:' })) days[k.slice(10)] = v;
+    return { days };
+  }
+
   async fetch(request) {
     try {
       const path = new URL(request.url).pathname;
@@ -1482,11 +1494,13 @@ export class RosterStore {
       if (path === '/ma-list') return Response.json(await this.wbList('ma'));
       if (path === '/ma-day') return Response.json(await this.maDay());
       if (path === '/settings') return Response.json(await this.getSettings());
-      if (path === '/frost-get') return Response.json((await this.state.storage.get('frost:read')) || null);
+      if (path === '/frost-get') return Response.json(await this.frostDays());
       if (path === '/frost-set') {
-        const read = { ...(await request.json()), at: Date.now() };
-        await this.state.storage.put('frost:read', read);
-        return Response.json({ at: read.at, servers: Object.keys(read.servers).length });
+        const { day, ...read } = await request.json();
+        await this.frostDays();                                 // the read from before dates, moved to its date first
+        read.at = Date.now();
+        await this.state.storage.put('frost:day:' + day, read);
+        return Response.json({ day, at: read.at, servers: Object.keys(read.servers).length });
       }
       if (path === '/ev-get') return Response.json((await this.state.storage.get('events')) || null);
       if (path === '/ev-set') {

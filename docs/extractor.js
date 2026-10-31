@@ -454,6 +454,12 @@
     }
     return { map: map, close: function () { if (opened) try { ui().CloseUI(W); } catch (e) {} } };
   }
+  // the contest's date, for the Frost page's date tabs: the day (UTC) its battle starts, as the game has it
+  function contestDay() {
+    var m = req('CQ26Controller'), C = m && m.CQ26Controller && m.CQ26Controller.getInstance();
+    var st = C && C.wlBattleData && C.wlBattleData.status, t = st ? secs(st.timeFightStart) : 0;
+    return new Date(t > 1.7e9 ? t * 1000 : Date.now()).toISOString().slice(0, 10);
+  }
   // a person's pause between servers: 2 to 5 seconds, now and then longer
   var restBetween = function () { return wait(Math.random() < .12 ? between(6000, 10000) : between(2000, 5000)); };
 
@@ -1204,11 +1210,11 @@
       var got = Object.keys(servers).length;
       if (!got) throw new Error('no server\'s ranking loaded');
       setP(b, .92); sub(b, 'saving…'); status('work', 'Saving <b>' + got + '</b> servers for the Frost page…', .95);
-      await postJson('/frost-read', { fields: fields, servers: servers });
+      await postJson('/frost-read', { day: contestDay(), fields: fields, servers: servers });
       S.fr = { at: Date.now(), n: got }; save();
       var left = all.filter(function (s) { return !servers[s]; });
       setP(b, 1); finish(b, true); sub(b, got + ' servers · now');
-      status('ok', 'Battlefields read · ' + got + ' of ' + all.length + ' servers<small>' +
+      status('ok', 'Battlefields read · ' + got + ' of ' + all.length + ' servers · ' + contestDay() + '<small>' +
         (left.length ? 'Not loaded: ' + left.map(function (s) { return 'S' + s; }).join(', ') + '. ' : '') + 'On the site\'s Frost page for everyone.</small>');
     } catch (e) {
       finish(b, false); sub(b, 'tap to try again');
