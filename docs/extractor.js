@@ -277,6 +277,86 @@
     }).filter(function (r) { return r.name || r.uid; });
   }
 
+  // The season's events for the site's home page: each section's own stage times, from the season
+  // state the game already holds and the Energy Building's three event tabs (opened, read and closed
+  // again like Read garrison). Only the current round's are known to the game; the site shifts them
+  // to the later rounds. Neutral City, Monster Feast, Realm, Storm Duel, Desolate Tundra and Whitebeard
+  // show only a countdown in their sections, so theirs come from the season's own timetable, every round.
+  var timeNode = function () { return findComp(function (c) { return c.__classname__ === 'CQ26TowerTimeNode' && Array.isArray(c._data) && c._data.length; }); };
+  var secs = function (v) { var n = Number(longText(v)); return n > 1e11 ? Math.round(n / 1000) : n; };
+  async function readEvents(step) {
+    var m = req('CQ26Controller'), C = m && m.CQ26Controller && m.CQ26Controller.getInstance();
+    var cfg = C && C.activityCfg, now = Date.now() / 1000;
+    if (!cfg || !C.status || !(cfg.roundCfg || []).length) throw new Error('no Seal Stone season in the game right now');
+    var T = (req('TableManager') || {}).TABLE, TN = (req('TableName') || {}).TableName, L = (req('LocalManager') || {}).LOCAL;
+    if (!T || !TN || !L) throw new Error('the game has changed: no timetable found');
+    var rounds = cfg.roundCfg.map(function (r) { return { round: r.round, st: r.roundBeginSec, et: r.roundEndSec }; });
+    var cur = rounds.filter(function (r) { return r.round === C.status.round; })[0]
+      || rounds.filter(function (r) { return r.st <= now && now < r.et; })[0] || rounds[0];
+    var events = [];
+    var add = function (id, round, stages) {
+      stages = stages.filter(function (s) { return s[1] > 1.7e9 && s[2] >= s[1]; });
+      if (stages.length) events.push({ id: id, round: round, stages: stages });
+    };
+    // the timetable: minutes from the season's start, by the type of each row
+    rounds.forEach(function (r) {
+      var rows = T.getTableByKeyFromBuffer(TN.series_frost_calendar_time, 'group', cfg.cfg.timeGroup, 'round_id', r.round) || [];
+      var at = {}; rows.forEach(function (x) { at[x.type] = [cfg.cfg.roundBeginSec + x.beginTime * 60, cfg.cfg.roundBeginSec + x.endTime * 60]; });
+      var st = function (name, ty) { return at[ty] ? [name, at[ty][0], at[ty][1]] : null; };
+      var pick = function (a) { return a.filter(Boolean); };
+      add('wb', r.round, pick([st('Open', 1)]));
+      add('tundra', r.round, pick([st('Expansion', 11)]));
+      add('feast', r.round, pick([st('Preparation', 37), st('Feast', 14)]));
+      add('nc', r.round, pick([st('Declaration', 17), st('Publicity', 18), st('Battle', 19)]));
+      add('realm', r.round, pick([st('Preparation', 20), st('Team-Up', 21), st('Battle', 22), st('Round settlement', 24)]));
+      add('storm', r.round, pick([st('Matchmaking', 26), st('Publicity', 27), st('Selection', 28), st('Trial matchmaking', 29),
+        st('Trial publicity', 30), st('Zone selection', 31), st('Preparation', 32), st('Battle', 33)]));
+      // the Frost Crystal Contest: the timetable's block, its battle from the section when it is this round's
+      if (at[12]) {
+        var wl = C.wlBattleData && C.wlBattleData.status, fight = at[12][1] - 3600;
+        if (r === cur && wl && secs(wl.timeFightStart) > at[12][0]) fight = secs(wl.timeFightStart);
+        add('frost', r.round, [['Preview', r.st, at[12][0]], ['Ready', at[12][0], fight], ['Battle', fight, at[12][1]]]);
+      }
+    });
+    // the Blizzard: once a season
+    var bz = C.info && C.info.temperatureInfo && secs(C.info.temperatureInfo.blizzardBeginSec);
+    if (bz) add('blizzard', 0, [['Starts', bz, bz]]);
+    // the Energy Building's tabs: 1 Mammoth Assault, 2 Snow Train, 3 Defend Energy
+    var U = ui(), WB = win('CQ26TowerUnionPanel'), opened = false, bld = energyBuilding();
+    if (U && WB) {
+      try {
+        if (!bld) { step('Opening the Energy Building…', .15); U.OpenUI(WB, 1); opened = true; }
+        for (var t0 = Date.now(); Date.now() - t0 < 12000 && !(bld = energyBuilding()); await wait(200));
+        if (!bld) throw new Error('the Energy Building did not open');
+        var tab = async function (i) {
+          var tg = bld.toggleList[i]; if (tg && tg.check) tg.check(); else bld.onClickToggle(null, String(i));
+          await wait(between(500, 900));
+        };
+        await tab(1); step('Reading Mammoth Assault…', .3);
+        var ma = null;
+        for (var t1 = Date.now(); Date.now() - t1 < 8000; await wait(200)) { var s1 = mammothScreen(); ma = s1 && s1._serInfo && s1._serInfo.thisTurnInfo; if (ma) break; }
+        if (ma) add('ma', cur.round, [['Preparation', secs(ma.timeTurnStart), secs(ma.timeStrikeStart)], ['Assault', secs(ma.timeStrikeStart), secs(ma.timeTurnEnd)]]);
+        var used = [];                                 // each tab has its own stage bar
+        var stages = async function (i, id, label) {
+          await tab(i); step('Reading ' + label + '…', i === 2 ? .5 : .7);
+          for (var t2 = Date.now(); Date.now() - t2 < 8000; await wait(200)) {
+            var n = timeNode(), d = n && n._data;
+            if (d && d[0] && d[0].startTime >= cur.st - 60 && d[0].startTime < cur.et && used.indexOf(n) < 0) {
+              used.push(n);
+              add(id, cur.round, d.slice().sort(function (a, b) { return a.startTime - b.startTime; })
+                .map(function (x) { return [String(L.getText(x.title) || x.title).replace(/^\s+|\s+$/g, '').replace(/ Stage$/, ''), secs(x.startTime), secs(x.endTime)]; }));
+              return;
+            }
+          }
+        };
+        await stages(2, 'st', 'Snow Train');
+        await stages(3, 'et', 'Defend Energy');
+      } finally { if (opened) try { U.CloseUI(WB); } catch (e) {} }
+    }
+    if (!events.length) throw new Error('no event times found');
+    return { rounds: rounds, round: cur.round, events: events };
+  }
+
   // the Energy Tower's Rankings: OpenUI(CQ26ArkRankPop), what the event's Rankings button runs (the
   // game loads the ranking for the event it has open), read, and closed again; one already open is
   // read as it is and left open. Only this warzone's players: the game's own Your Warzone filter.
@@ -331,7 +411,7 @@
   S.members = S.members || {}; S.prev = S.prev || {};
   // only the four alliances: a read of another one saved by an earlier version is dropped
   [S.members, S.prev].forEach(function (o) { Object.keys(o).forEach(function (t) { if (!ALLY[t]) delete o[t]; }); });
-  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null, st: S.st || null, et: S.et || null, etp: S.etp || null, ma: S.ma || null })); } catch (e) {} }
+  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null, st: S.st || null, et: S.et || null, etp: S.etp || null, ma: S.ma || null, ev: S.ev || null })); } catch (e) {} }
   var fold = function (s) { return String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, ''); };
   // MM/CE from the roster. Names repeat ("Woody" is 698S's in-game name and 698C's search name; 698S
   // has two Gikeys), so the candidates are tried in order: in-game name in the player's own alliance,
@@ -501,6 +581,8 @@
     '<div class="row2">' + act('towerp', 'main', 'Read points', '') + '</div></div>' +
     '<div data-sec="ma"><h3>Mammoth Assault</h3>' +
     '<div class="row2">' + act('mam', 'main', 'Read garrison', '') + act('mams', 'send', 'Send to sheet', "Today's card") + '</div></div>' +
+    '<div data-sec="ev"><h3>Events</h3>' +
+    '<div class="row2">' + act('evr', 'main', 'Read events', 'For the home page') + '</div></div>' +
     '<div class="status idle" id="st"><span class="si"></span><span class="tx">Ready. Tap a button to start.</span></div></div>';
   document.body.appendChild(host);
   var $ = function (s) { return root.querySelector(s); };
@@ -636,6 +718,8 @@
     var mab = $('#mam'), mas = $('#mams');
     if (!mab.classList.contains('busy') && !mab.classList.contains('err')) sub(mab, S.ma ? S.ma.rows.length + ' players · ' + ago(S.ma.at / 1000) : '');
     if (!mas.classList.contains('busy') && !mas.classList.contains('done')) sub(mas, "Today's card");
+    var evb = $('#evr');
+    if (!evb.classList.contains('busy') && !evb.classList.contains('err')) sub(evb, S.ev ? S.ev.n + ' events · ' + ago(S.ev.at / 1000) : 'For the home page');
     var etp = $('#towerp');
     if (!etp.classList.contains('busy') && !etp.classList.contains('err')) sub(etp, S.etp ? S.etp.n + ' players · ' + ago(S.etp.at / 1000) : '');
   }
@@ -906,6 +990,24 @@
     sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
     status('ok', 'Mammoth Assault sent<small>' + Number(j.rows).toLocaleString() + ' rows from the card added, dated ' + esc(j.date) +
       ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
+  };
+
+  /* Events: every section's stage times to the site's home page (api/events) */
+  $('#evr').onclick = async function () {
+    if (busy) return; lock(true);
+    var b = $('#evr'); start(b); sub(b, 'reading…');
+    try {
+      var ev = await readEvents(function (t, p) { status('work', t, p); setP(b, p); });
+      setP(b, .85); sub(b, 'saving…'); status('work', 'Saving <b>' + ev.events.length + '</b> events for the home page…', .9);
+      await postJson('/events', ev);
+      S.ev = { at: Date.now(), n: ev.events.length }; save();
+      setP(b, 1); finish(b, true); sub(b, ev.events.length + ' events · now');
+      status('ok', 'Events saved · round ' + ev.round + '<small>' + ev.events.length + ' events and their stages, on the site\'s home page for everyone.</small>');
+    } catch (e) {
+      finish(b, false); sub(b, 'tap to try again');
+      status('bad', 'Events not saved<small>' + esc(e.message || e) + '</small>');
+    }
+    lock(false); refresh();
   };
 
   /* Energy Tower points: its Rankings to the site's card (api/et-points), each player's points in

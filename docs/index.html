@@ -193,25 +193,27 @@ html[data-view=energytower] #tab-et,html[data-view=mammoth] #tab-ma,html[data-vi
 @keyframes nib{0%{opacity:0;transform:translateX(0)}8%{opacity:1}92%{opacity:1}100%{opacity:0;transform:translateX(var(--w,340px))}}
 /* the cards come in straight away, not waiting for the name's font */
 .cardsin .hcard{animation:cardIn .4s cubic-bezier(.2,.8,.2,1) both}
-.cardsin .hcard:nth-child(2){animation-delay:.05s}.cardsin .hcard:nth-child(3){animation-delay:.1s}.cardsin .hcard:nth-child(4){animation-delay:.15s}
+.cardsin .hcard:nth-child(2){animation-delay:.04s}.cardsin .hcard:nth-child(3){animation-delay:.08s}.cardsin .hcard:nth-child(4){animation-delay:.12s}.cardsin .hcard:nth-child(5){animation-delay:.16s}.cardsin .hcard:nth-child(6){animation-delay:.2s}
 @keyframes cardIn{from{opacity:0;transform:translateY(14px) scale(.98)}}
 @media (prefers-reduced-motion:reduce){.writing .bandtitle{clip-path:none}.writing .bandtitle,.writing .bandinner::after,.cardsin .hcard{animation:none}}
 /* on a phone the name sits below the Admin pill and theme button, so they never overlap */
 @media (max-width:640px){.homeband{height:120px;align-items:flex-end;padding-bottom:12px}.bandtitle{font-size:34px}}
-.homebody{padding:18px 16px 64px}
-.homecards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-@media (max-width:640px){.homecards{grid-template-columns:1fr;gap:12px}}
-.hcard{position:relative;overflow:hidden;border-radius:14px;padding:20px 18px 16px;color:#fff;
-  display:flex;flex-direction:column;gap:18px;background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b)}
+.homebody{margin:0 auto;padding:18px 16px 64px;max-width:1120px}
+/* the upcoming events on the left, the cards on the right as one list; on a phone the cards come first */
+.homegrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:20px;align-items:start}
+.homegrid .events{order:0}.homegrid .homecards{order:1}
+@media (max-width:760px){.homegrid{grid-template-columns:1fr}.homegrid .events{order:2}}
+.homecards{display:flex;flex-direction:column;gap:10px}
+.hcard{position:relative;overflow:hidden;border-radius:14px;padding:14px 100px 14px 16px;color:#fff;min-height:58px;
+  display:flex;align-items:center;gap:14px;background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b)}
 .hcard.cp{background:linear-gradient(135deg,#c31441,#f26b3a 55%,#f5b04c)}
 .hcard::after{content:"";position:absolute;right:-40px;top:-40px;width:140px;height:140px;border-radius:50%;
   background:rgba(255,255,255,.12);pointer-events:none}
-.hcard b{position:relative;font-size:21px}
-.hcard .acts{position:relative;display:flex;gap:8px}
-.hcard .acts a{flex:1;text-align:center;border-radius:8px;padding:9px 6px;font-weight:700;text-decoration:none;white-space:nowrap;
-  transition:transform .06s ease, filter .12s ease}
-.hcard .acts a:active{transform:translateY(1px);filter:brightness(.9)}
-.hcard .go{background:#fff;color:#7b1a31}
+.hcard b{position:relative;font-size:19px;min-width:0}
+@media (max-width:640px){.hcard b{font-size:18px}}
+.hcard .go{position:relative;margin-left:auto;min-width:96px;text-align:center;border-radius:8px;padding:7px 14px;font-weight:700;text-decoration:none;white-space:nowrap;
+  background:#fff;color:#7b1a31;transition:transform .06s ease, filter .12s ease}
+.hcard .go:active{transform:translateY(1px);filter:brightness(.9)}
 .hcard.cp .go{color:#c2410c}
 .hcard.wb{background:linear-gradient(135deg,#1d2b64,#3a3f9e 55%,#7a5cd6)}
 .hcard.wb .go{color:#2b2f86}
@@ -221,8 +223,41 @@ html[data-view=energytower] #tab-et,html[data-view=mammoth] #tab-ma,html[data-vi
 .hcard.et .go{color:#1f5130}
 .hcard.ma{background:linear-gradient(135deg,#4a2c17,#8a5a2b 55%,#d1a05a)}
 .hcard.ma .go{color:#4a2c17}
+/* the sheet: a small chip in the card's top right */
 .hcard .open[hidden]{display:none}
-.hcard .open{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.55);color:#fff}
+.hcard .open{position:absolute;top:8px;right:10px;z-index:1;display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;
+  font-size:12px;font-weight:600;text-decoration:none;color:#fff;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.4)}
+.hcard .open:hover{background:rgba(0,0,0,.3)}
+.hcard .open svg{width:13px;height:13px}
+/* ---- upcoming events (the game's Seal Stone calendar) ---- */
+.events{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 14px 10px}
+.events h2{display:flex;align-items:baseline;gap:8px;margin:0 0 10px}
+.events h2 .r{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:500}
+.evday{font-size:12px;font-weight:700;color:var(--muted);margin:12px 0 6px;display:flex;gap:6px}
+.evday:first-of-type{margin-top:0}
+.evday.today{color:var(--ink)}
+.ev{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:9px;text-decoration:none;color:var(--ink)}
+a.ev:hover{background:var(--line)}
+.ev i{flex:none;width:4px;align-self:stretch;border-radius:2px;background:var(--c)}
+.ev .n{flex:1;min-width:0;font-weight:600;font-size:14px}
+.ev .n small{display:block;font-weight:400;color:var(--muted);font-size:12px}
+.ev .s{flex:none;font-size:12px;color:var(--muted);text-align:right;white-space:nowrap}
+.ev.live .s{color:#16a34a;font-weight:700}
+.ev.live .s::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;margin-right:5px;vertical-align:1px;box-shadow:0 0 0 3px rgba(34,197,94,.2)}
+.ev.done{opacity:.45}
+.ev.tog{cursor:pointer}
+.ev.tog:hover{background:var(--line)}
+.ev .go2{color:var(--muted);text-decoration:none;font-weight:700;padding:0 4px;border-radius:5px}
+.ev .go2:hover{color:var(--ink);background:var(--line)}
+.stages{list-style:none;margin:0 0 6px 13px;padding:2px 0 2px 14px;border-left:2px solid color-mix(in srgb,var(--c) 35%,transparent)}
+.stages li{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:3px 8px 3px 0;color:var(--muted);position:relative}
+.stages li::before{content:"";position:absolute;left:-19px;top:9px;width:8px;height:8px;border-radius:50%;background:var(--panel);border:2px solid color-mix(in srgb,var(--c) 45%,transparent)}
+.stages li b{font-weight:600;color:var(--ink)}
+.stages li.done{opacity:.5}.stages li.done::before{background:color-mix(in srgb,var(--c) 45%,transparent)}
+.stages li.now b{color:var(--c)}.stages li.now::before{background:var(--c);border-color:var(--c);box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 25%,transparent)}
+.stages li span{white-space:nowrap}
+.evmore{display:block;width:100%;margin-top:6px;background:transparent;border:0;color:var(--muted);font-size:13px;padding:6px}
+.evnote{font-size:11px;color:var(--muted);margin:8px 0 0}
 /* ---------------- alliance roster, Whitebeard and Snow Train cards (cards.js) ---------------- */
 /* The bookmark's panel (extractor.js), as the roster card: dark in both themes, like the game. */
 .rapp{color-scheme:dark;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f3f3f7;background:rgba(22,22,30,.97);border-radius:18px;
@@ -401,21 +436,24 @@ html[data-view=energytower] #tab-et,html[data-view=mammoth] #tab-ma,html[data-vi
     <button type="button" class="themebtn" id="themeHome"></button>
     <div class="bandinner"><h1 class="bandtitle" id="bandTitle">2698 Data Extractor</h1></div>
   </div>
-  <div class="homebody wrap">
+  <div class="homebody">
+   <div class="homegrid">
+    <aside class="events" id="events"><h2>Upcoming events<span class="r" id="evRound"></span></h2><div id="evList"></div></aside>
     <div class="homecards">
-      <div class="hcard" data-card="kartz"><b>Kartz ranking</b>
-        <div class="acts"><a class="go" href="#kartz">Extract</a><a class="open" href="https://docs.google.com/spreadsheets/d/1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE/edit#gid=1243524383" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
-      <div class="hcard cp" data-card="cp"><b>Alliance roster</b>
-        <div class="acts"><a class="go" href="#roster">Open</a><a class="open" href="https://docs.google.com/spreadsheets/d/1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8/edit" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
-      <div class="hcard wb" data-card="wb"><b>Whitebeard ranking</b>
-        <div class="acts"><a class="go" href="#whitebeard">Open</a><a class="open" href="https://docs.google.com/spreadsheets/d/12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc/edit#gid=0" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
-      <div class="hcard st" data-card="st"><b>Snow Train</b>
-        <div class="acts"><a class="go" href="#snowtrain">Open</a><a class="open" href="https://docs.google.com/spreadsheets/d/1d2jgRQlfhYMufn69YaZ-2ZPQ-lGtfvSiOPDTEplUqGs/edit#gid=0" target="_blank" rel="noopener">Open in Sheets ↗</a></div></div>
-      <div class="hcard et" data-card="et"><b>Energy Tower</b>
-        <div class="acts"><a class="go" href="#energytower">Open</a><a class="open" href="" target="_blank" rel="noopener" hidden>Open in Sheets ↗</a></div></div>
-      <div class="hcard ma" data-card="ma"><b>Mammoth Assault</b>
-        <div class="acts"><a class="go" href="#mammoth">Open</a><a class="open" href="" target="_blank" rel="noopener" hidden>Open in Sheets ↗</a></div></div>
+      <div class="hcard" data-card="kartz"><b>Kartz ranking</b><a class="go" href="#kartz">Extract</a>
+        <a class="open" href="https://docs.google.com/spreadsheets/d/1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE/edit#gid=1243524383" target="_blank" rel="noopener" title="Open in Google Sheets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet</a></div>
+      <div class="hcard cp" data-card="cp"><b>Alliance roster</b><a class="go" href="#roster">Open</a>
+        <a class="open" href="https://docs.google.com/spreadsheets/d/1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8/edit" target="_blank" rel="noopener" title="Open in Google Sheets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet</a></div>
+      <div class="hcard wb" data-card="wb"><b>Whitebeard ranking</b><a class="go" href="#whitebeard">Open</a>
+        <a class="open" href="https://docs.google.com/spreadsheets/d/12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc/edit#gid=0" target="_blank" rel="noopener" title="Open in Google Sheets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet</a></div>
+      <div class="hcard st" data-card="st"><b>Snow Train</b><a class="go" href="#snowtrain">Open</a>
+        <a class="open" href="https://docs.google.com/spreadsheets/d/1d2jgRQlfhYMufn69YaZ-2ZPQ-lGtfvSiOPDTEplUqGs/edit#gid=0" target="_blank" rel="noopener" title="Open in Google Sheets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet</a></div>
+      <div class="hcard et" data-card="et"><b>Energy Tower</b><a class="go" href="#energytower">Open</a>
+        <a class="open" href="" target="_blank" rel="noopener" title="Open in Google Sheets" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet</a></div>
+      <div class="hcard ma" data-card="ma"><b>Mammoth Assault</b><a class="go" href="#mammoth">Open</a>
+        <a class="open" href="" target="_blank" rel="noopener" title="Open in Google Sheets" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet</a></div>
     </div>
+   </div>
   </div>
 </div>
 
@@ -445,6 +483,7 @@ html[data-view=energytower] #tab-et,html[data-view=mammoth] #tab-ma,html[data-vi
 })();
 </script>
 
+<script src="events.js?v=1"></script>
 <div class="wrap" id="app">
 <header class="top">
   <div class="brand">

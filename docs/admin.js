@@ -26,7 +26,7 @@ window.Admin = (function () {
     },
     home: { title: '2698 Data Extractor', banner: '2698', cards: [] },
     sheets: {},
-    bookmark: { members: true, wb: true, st: true, et: true, ma: true },
+    bookmark: { members: true, wb: true, st: true, et: true, ma: true, ev: true },
     highlight: {
       missed: { on: true, days: 2, color: 'red', cards: ['wb', 'st', 'et', 'ma'] },
       away: { on: true, days: 3, color: 'amber', cards: ['ro'] },
@@ -42,7 +42,7 @@ window.Admin = (function () {
   const HL_COLORS = ['red', 'amber', 'green', 'blue', 'purple'];
   const SHEET_NAMES = { kartz: 'Kartz ranking (Send on the Kartz page)', cp: 'Base CP (Alliance Rosters, RawData-CP)', ranking: 'Whitebeard ranking (bookmark Send)', snowtrain: 'Snow Train (bookmark Send)', energytower: 'Energy Tower (bookmark Send)', mammoth: 'Mammoth Assault (bookmark Send)' };
   const HOME_NAMES = { kartz: 'Kartz ranking', cp: 'Alliance roster', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault' };
-  const BOOKMARK_NAMES = { members: 'Alliance members', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault' };
+  const BOOKMARK_NAMES = { members: 'Alliance members', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault', ev: 'Events (home page)' };
   const CARD_NAMES = { wb: 'Whitebeard', st: 'Snow Train', ro: 'Alliance roster', et: 'Energy Tower', ma: 'Mammoth Assault' };
 
   const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
