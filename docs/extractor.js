@@ -357,6 +357,73 @@
     return { rounds: rounds, round: cur.round, events: events };
   }
 
+  // The Frost Crystal Contest's battlefields for the site's Frost page: the contest's own map (its tab in
+  // the Event Center, opened as the season screen's Desolate Tundra card opens it), then each server's
+  // Individual CP Ranking (what a server's Individual CP Ranking button on the warzone map opens) one
+  // after another at a person's pace, its top 20 read and closed again.
+  var compNamed = function (name) {
+    var hit = null;
+    (function walk(n) {
+      if (!n || !n.activeInHierarchy) return;
+      (n._components || []).forEach(function (c) { if (c.__classname__ === name) hit = c; });
+      (n.children || []).forEach(walk);
+    })(cc.director.getScene());
+    return hit;
+  };
+  async function readFrostMap(step) {
+    var U = ui(), WM = win('CQ26MainPanel'), WA = win('ActivityPanelNew'), opened = [];
+    var map = function () { var c = compNamed('CQ26WLBMainContent'); return c && c._data && c._data.dLandInfoList ? c : null; };
+    var close = function () { opened.forEach(function (w) { try { U.CloseUI(w); } catch (e) {} }); };
+    try {
+      if (!map()) {
+        if (!U || !WM || !WA) throw new Error('no Seal Stone season in the game right now');
+        step('Opening the contest\'s map…', .02);
+        var A = compNamed('ActivityComponent'), M = compNamed('CQ26MainPanel');
+        if (!A) {
+          if (!M) { U.OpenUI(WM); opened.unshift(WM); }
+          for (var t0 = Date.now(); Date.now() - t0 < 10000 && !(M = compNamed('CQ26MainPanel')); await wait(200));
+          if (!M) throw new Error('the season screen did not open');
+          await wait(between(400, 800));
+          M.onClickWasteLand(); opened.unshift(WA);
+          for (var t1 = Date.now(); Date.now() - t1 < 10000 && !(A = compNamed('ActivityComponent')); await wait(200));
+          if (!A) throw new Error('the Event Center did not open');
+          await wait(between(500, 900));
+        }
+        // the Frost Crystal Contest's tab: the one that shows the contest's map (the tabs are drawn a moment
+        // after the Event Center opens)
+        var tabs = [];
+        for (var t3 = Date.now(); Date.now() - t3 < 6000 && !tabs.length && !map(); await wait(200))
+          (function walk(n) { (n._components || []).forEach(function (c) { if (c.__classname__ === 'ActivityToggleCellComponent') tabs.push(c._activityId); }); (n.children || []).forEach(walk); })(A.node);
+        for (var i = 0; i < tabs.length && !map(); i++) {
+          A.toggleClick(tabs[i]);
+          for (var t2 = Date.now(); Date.now() - t2 < 4000 && !map(); await wait(200));
+        }
+      }
+      var c = map();
+      if (!c) throw new Error('the Frost Crystal Contest map did not load — is the contest on?');
+      return c._data.dLandInfoList.map(function (b) {
+        return (b.mineInfoList || []).map(function (m) { return String(m.serverId); }).filter(function (s) { return /^\d{1,5}$/.test(s) && s !== '0'; });
+      }).filter(function (f) { return f.length; });
+    } finally { close(); }
+  }
+  async function readServerTop(sid) {
+    var U = ui(), W = win('WorldServerPowerRank');
+    if (!U || !W) throw new Error('the game has changed: no warzone CP ranking found');
+    U.OpenUI(W, { serverId: Number(sid) });
+    try {
+      // its list once loaded (players moved from another server keep that server's number, so not by that)
+      for (var t0 = Date.now(); Date.now() - t0 < 12000; await wait(200)) {
+        var R = compNamed('WorldServerPowerRank');
+        if (R && Number(R.m_serverId) === Number(sid) && R._rankList && R._rankList.length)
+          return R._rankList.slice(0, 20).map(function (e) {
+            var p = parse(e.playerInfo);
+            return [String(p.username || p.nickname || '').slice(0, 40), Number(longText(e.val || e.power)) || 0];
+          });
+      }
+      throw new Error('S' + sid + '\'s ranking did not load');
+    } finally { try { U.CloseUI(W); } catch (e) {} }
+  }
+
   // the Energy Tower's Rankings: OpenUI(CQ26ArkRankPop), what the event's Rankings button runs (the
   // game loads the ranking for the event it has open), read, and closed again; one already open is
   // read as it is and left open. Only this warzone's players: the game's own Your Warzone filter.
@@ -411,7 +478,7 @@
   S.members = S.members || {}; S.prev = S.prev || {};
   // only the four alliances: a read of another one saved by an earlier version is dropped
   [S.members, S.prev].forEach(function (o) { Object.keys(o).forEach(function (t) { if (!ALLY[t]) delete o[t]; }); });
-  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null, st: S.st || null, et: S.et || null, etp: S.etp || null, ma: S.ma || null, ev: S.ev || null })); } catch (e) {} }
+  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null, st: S.st || null, et: S.et || null, etp: S.etp || null, ma: S.ma || null, ev: S.ev || null, fr: S.fr || null })); } catch (e) {} }
   var fold = function (s) { return String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, ''); };
   // MM/CE from the roster. Names repeat ("Woody" is 698S's in-game name and 698C's search name; 698S
   // has two Gikeys), so the candidates are tried in order: in-game name in the player's own alliance,
@@ -605,6 +672,8 @@
     '<div class="row2">' + act('mam', 'main', 'Read garrison', '') + act('mams', 'send', 'Send to sheet', "Today's card") + '</div></div>' +
     '<div data-sec="ev"><h3>Events</h3>' +
     '<div class="row2">' + act('evr', 'main', 'Read events', 'For the home page') + '</div></div>' +
+    '<div data-sec="frost"><h3>Frost Crystal Contest</h3>' +
+    '<div class="row2">' + act('frr', 'main', 'Read battlefields', 'For the Frost page') + '</div></div>' +
     '<div class="status idle" id="st"><span class="si"></span><span class="tx">Ready. Tap a button to start.</span></div></div>';
   document.body.appendChild(host);
   var $ = function (s) { return root.querySelector(s); };
@@ -782,6 +851,8 @@
     if (!mas.classList.contains('busy') && !mas.classList.contains('done')) sub(mas, "Today's card");
     var evb = $('#evr');
     if (!evb.classList.contains('busy') && !evb.classList.contains('err')) sub(evb, S.ev ? S.ev.n + ' events · ' + ago(S.ev.at / 1000) : 'For the home page');
+    var frb = $('#frr');
+    if (!frb.classList.contains('busy') && !frb.classList.contains('err')) sub(frb, S.fr ? S.fr.n + ' servers · ' + ago(S.fr.at / 1000) : 'For the Frost page');
     var etp = $('#towerp');
     if (!etp.classList.contains('busy') && !etp.classList.contains('err')) sub(etp, S.etp ? S.etp.n + ' players · ' + ago(S.etp.at / 1000) : '');
   }
@@ -1068,6 +1139,43 @@
     } catch (e) {
       finish(b, false); sub(b, 'tap to try again');
       status('bad', 'Events not saved<small>' + esc(e.message || e) + '</small>');
+    }
+    lock(false); refresh();
+  };
+
+  /* Frost Crystal Contest: the contest's map and every server's top 20 to the site's Frost page
+     (api/frost-read). A server that does not load is tried once more at the end, then left out. */
+  $('#frr').onclick = async function () {
+    if (busy) return; lock(true);
+    var b = $('#frr'); start(b); sub(b, 'reading…');
+    try {
+      var fields = await readFrostMap(function (t, p) { status('work', t, p); setP(b, p); });
+      var all = [].concat.apply([], fields), servers = {}, miss = [];
+      status('work', 'Map read · <b>' + fields.length + '</b> battlefields, <b>' + all.length + '</b> servers', .05);
+      await wait(between(600, 1200));
+      var go = async function (list, again) {
+        for (var i = 0; i < list.length; i++) {
+          var s = list[i], n = Object.keys(servers).length;
+          status('work', 'Reading S' + s + ' <small>' + (n + 1) + ' of ' + all.length + (again ? ' · trying again' : '') + '</small>', .05 + .85 * n / all.length);
+          setP(b, .05 + .85 * n / all.length); sub(b, (n + 1) + ' of ' + all.length);
+          try { servers[s] = await readServerTop(s); } catch (e) { if (!again) miss.push(s); }
+          await wait(between(600, 1200));                // a person's pause before the next server
+        }
+      };
+      await go(all, false);
+      if (miss.length) await go(miss.splice(0), true);
+      var got = Object.keys(servers).length;
+      if (!got) throw new Error('no server\'s ranking loaded');
+      setP(b, .92); sub(b, 'saving…'); status('work', 'Saving <b>' + got + '</b> servers for the Frost page…', .95);
+      await postJson('/frost-read', { fields: fields, servers: servers });
+      S.fr = { at: Date.now(), n: got }; save();
+      var left = all.filter(function (s) { return !servers[s]; });
+      setP(b, 1); finish(b, true); sub(b, got + ' servers · now');
+      status('ok', 'Battlefields read · ' + got + ' of ' + all.length + ' servers<small>' +
+        (left.length ? 'Not loaded: ' + left.map(function (s) { return 'S' + s; }).join(', ') + '. ' : '') + 'On the site\'s Frost page for everyone.</small>');
+    } catch (e) {
+      finish(b, false); sub(b, 'tap to try again');
+      status('bad', 'Battlefields not read<small>' + esc(e.message || e) + '</small>');
     }
     lock(false); refresh();
   };

@@ -5,13 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Frost Crystal Contest</title>
 <link rel="icon" href="icon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&display=swap" rel="stylesheet">
-<!-- Frost Crystal Contest (frost.html): the top 20 players by base CP on each server of the nine
-     battlefields, from the Global CP list (topwarfandom.com, with permission from Nass) through the
-     Worker (api/global-cp), as the Base CP tab gets it. Upload map reads the servers from a screenshot
-     of the event's map with Gemini (through the Worker, api/gemini), and once checked they are kept on
-     the Worker (api/frost-map) for everyone who opens the page. -->
+<!-- Frost Crystal Contest (frost.html): the top 20 players by base CP on each server of the contest's
+     battlefields. The bookmark's Read battlefields reads both in the game (the contest's own map, then
+     each server's Individual CP Ranking) and keeps them on the Worker (api/frost-read) for everyone. -->
 <style>
 :root{--bg:#eef4f9;--card:#fff;--ink:#14212e;--dim:#62748a;--line:#dbe5ee;--head:#f4f8fb;--acc:#1789a8;--us:#e8f6ea;--usink:#1f7a3a;--bad:#b42318;
   --band1:#0b3b57;--band2:#1789a8;--band3:#8fd6e6}
@@ -27,7 +23,6 @@ body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-app
 .homelink{display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;padding:4px 12px 4px 10px;border-radius:999px;font-size:13px;font-weight:600;
   text-decoration:none;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35)}
 .homelink:hover{background:rgba(255,255,255,.26)}
-.nass{font-family:Orbitron,sans-serif;font-weight:600;letter-spacing:.06em}
 .wrap{padding:16px}
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
 .bar .grow{flex:1}
@@ -55,240 +50,81 @@ table{width:100%;border-collapse:collapse;font-size:13px}
 td{padding:4px 8px;border-top:1px solid var(--line);white-space:nowrap}
 tr:first-child td{border-top:0}
 td.n{color:var(--dim);width:1%;text-align:right}
-td.nm{overflow:hidden;text-overflow:ellipsis;max-width:0;width:60%}
-td.al{color:var(--dim);overflow:hidden;text-overflow:ellipsis;max-width:0;width:25%}
+td.nm{overflow:hidden;text-overflow:ellipsis;max-width:0;width:80%}
 td.cp{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
 .empty{padding:14px 11px;color:var(--dim)}
 .skel{height:420px;border-radius:10px;background:linear-gradient(90deg,var(--card),var(--head),var(--card));background-size:200% 100%;animation:sk 1.4s linear infinite;border:1px solid var(--line)}
 @keyframes sk{to{background-position:-200% 0}}
-dialog{border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);padding:18px;width:min(560px,calc(100vw - 32px))}
-dialog::backdrop{background:rgba(5,15,25,.55)}
-dialog h3{margin:0 0 6px;font-size:17px}
-dialog p{margin:0 0 10px;color:var(--dim)}
-dialog img{display:block;max-width:100%;max-height:220px;margin:0 auto 10px;border-radius:8px;border:1px solid var(--line)}
-dialog textarea{width:100%;min-height:210px;font:14px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);resize:vertical}
-dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;align-items:center}
-dialog .row .grow{flex:1;font-size:13px}
-.pick{width:100%;margin-top:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:160px;padding:14px;text-align:center;
-  border:2px dashed var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font-weight:600;cursor:pointer}
-.pick span{font-weight:400;font-size:12px;color:var(--dim)}
-.pick .ic{font-size:26px;line-height:1}
-.pick:hover,.pick:focus,.pick.over{border-color:var(--acc);outline:none}
 </style>
 </head>
 <body>
 <div class="band"><div class="in">
   <a class="homelink" id="homeLink" href="./"><span aria-hidden="true">←</span>Home</a>
   <h1>Frost Crystal Contest</h1>
-  <p>Top 20 players by base CP on each server, battlefield by battlefield. Source: <a href="https://www.topwarfandom.com" target="_blank" rel="noopener">topwarfandom.com</a> with permission from <span class="nass">Nass</span></p>
 </div></div>
 <div class="wrap">
   <div class="bar">
-    <span class="status grow" id="status">Loading the Global CP list…</span>
-    <button type="button" id="upload">Upload map</button>
-    <input type="file" id="file" accept="image/*" hidden>
+    <span class="status grow" id="status">Loading…</span>
     <button type="button" id="csv" disabled>Download CSV</button>
-    <button type="button" class="pri" id="reload" disabled>Reload</button>
   </div>
   <div id="out"></div>
 </div>
-<dialog id="pickDlg">
-  <h3>Upload map</h3>
-  <p>A screenshot of the Frost Crystal Contest map, with every server label showing.</p>
-  <button type="button" class="pick" id="fromFile"><span class="ic">🖼️</span>Upload or paste a screenshot<span id="pasteHint">Click to choose a file, or paste with Ctrl+V</span></button>
-  <div class="row"><span class="status grow" id="pickMsg"></span><button type="button" id="pickCancel">Cancel</button></div>
-</dialog>
-<dialog id="dlg">
-  <h3>Servers read from the map</h3>
-  <p>One battlefield per line. Fix any number that is wrong, then save: everyone who opens this page sees these.</p>
-  <img id="thumb" alt="">
-  <textarea id="lines" spellcheck="false"></textarea>
-  <div class="row"><span class="status grow" id="dlgMsg"></span><button type="button" id="cancel">Cancel</button><button type="button" class="pri" id="save">Save for everyone</button></div>
-</dialog>
 <script>
-// Inside the site (index.html#frost) the site's own header has the way back, and the frame is as tall as
-// this page, so a pop-up opens in the middle of the part of it on screen, not of the whole frame.
-if (window.frameElement) {
-  document.getElementById('homeLink').remove();
-  const place = d => {
-    const r = frameElement.getBoundingClientRect(), y0 = Math.max(0, -r.top), y1 = Math.min(r.height, parent.innerHeight - r.top);
-    d.style.margin = '0 auto'; d.style.bottom = 'auto';
-    d.style.top = Math.round(y0 + Math.max(16, (y1 - y0 - d.offsetHeight) / 2)) + 'px';
-  };
-  for (const d of document.querySelectorAll('dialog')) {
-    const show = d.showModal.bind(d);
-    d.showModal = () => { show(); place(d); };
-    new ResizeObserver(() => { if (d.open) place(d); }).observe(d);
-  }
-}
+// inside the site (index.html#frost) the site's own header has the way back
+if (window.frameElement) document.getElementById('homeLink').remove();
 </script>
 <script>
 (function () {
   const API = location.hostname.endsWith('.workers.dev') ? '/api' : 'https://data-collection.jk06nm04.workers.dev/api';
   const US = '2698', TOP = 20;
-  // the nine battlefields of the first map (the last one has three servers), until a map is uploaded
-  let FIELDS = [
-    ['1365', '341', '4238', '1568'], ['4059', '1677', '1383', '1855'], ['2987', '2735', '249', '950'],
-    ['3384', '1033', '277', '3619'], ['2693', '4151', '2681', '3535'], ['3088', '564', '3752', '3001'],
-    ['3530', '1337', '420', '3005'], ['511', '1219', '1096', '3884'], ['4022', '2698', '2936'],
-  ];
   const $ = id => document.getElementById(id);
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const M = v => (v / 1e6).toFixed(1) + 'M';
-  const tag = p => (String(p['Alliance Name & Tag'] || '').match(/\[([^\]]+)\]\s*$/) || [])[1] || '';
-  let by = null, at = 0, mapAt = 0;
+  let read = null;                                  // {fields, servers: {sid: [[name, cp], …]}, at}
 
-  const top = s => (by.get(s) || []).slice(0, TOP);
-  const total = s => top(s).reduce((a, p) => a + p.cp, 0);
+  const top = s => ((read.servers || {})[s] || []).slice(0, TOP);
+  const total = s => top(s).reduce((a, p) => a + p[1], 0);
 
   async function load() {
-    $('reload').disabled = $('csv').disabled = true;
-    $('status').className = 'status grow'; $('status').textContent = 'Loading the Global CP list…';
-    if (!by) $('out').innerHTML = '<div class="grid">' + '<div class="skel"></div>'.repeat(4) + '</div>';
+    $('out').innerHTML = '<div class="grid">' + '<div class="skel"></div>'.repeat(4) + '</div>';
     try {
-      // the saved map, if one was uploaded, and the list
-      const saved = fetch(API + '/frost-map', { method: 'POST' }).then(r => r.ok ? r.json() : null).catch(() => null);
-      const r = await fetch(API + '/global-cp', { method: 'POST' });
-      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'the list could not be fetched (' + r.status + ')'); }
-      $('status').textContent = 'Reading the list…';
-      const all = await r.json(), map = await saved;
-      if (map && Array.isArray(map.fields) && map.fields.length) { FIELDS = map.fields; mapAt = map.at || 0; }
-      // every server, so a new map needs no second fetch
-      by = new Map();
-      for (const p of all) {
-        const s = String(p.Server);
-        const cp = Number(String(p.Power).replace(/[^\d]/g, '')) || 0;
-        (by.get(s) || by.set(s, []).get(s)).push({ name: String(p.Name || '').trim(), ally: tag(p), cp });
+      const r = await fetch(API + '/frost-read', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      const j = await r.json().catch(() => null);
+      if (!r.ok) throw new Error((j && j.error) || 'the read could not be fetched (' + r.status + ')');
+      if (!j || !Array.isArray(j.fields) || !j.fields.length) {
+        $('status').textContent = 'Nothing read yet.';
+        $('out').innerHTML = '<div class="empty">Open the game and tap <b>Read battlefields</b> in the 2698 Data Extractor bookmark: it reads the contest\'s map and the top 20 of every server on it.</div>';
+        return;
       }
-      for (const l of by.values()) l.sort((a, b) => b.cp - a.cp);
-      at = Date.now();
-      draw();
-      $('csv').disabled = false;
+      read = j; draw(); $('csv').disabled = false;
     } catch (e) {
       $('status').className = 'status grow bad'; $('status').textContent = '✗ ' + (e.message || e);
-      if (!by) $('out').innerHTML = '';
+      $('out').innerHTML = '';
     }
-    $('reload').disabled = false;
   }
 
   function card(s, place) {
-    const t = top(s), sum = t.reduce((a, p) => a + p.cp, 0);
+    const t = top(s), sum = t.reduce((a, p) => a + p[1], 0);
     return `<div class="srv${s === US ? ' us' : ''}"><div class="top"><b><span class="place">#${place}</span>S${esc(s)}</b>
       <span class="sum">Top ${TOP} <strong>${t.length ? M(sum) : '—'}</strong>${t.length ? `<br>avg ${M(sum / t.length)}` : ''}</span></div>
-      ${t.length ? `<table>${t.map((p, i) => `<tr><td class="n">${i + 1}</td><td class="nm" title="${esc(p.name)}">${esc(p.name)}</td><td class="al">${esc(p.ally)}</td><td class="cp">${M(p.cp)}</td></tr>`).join('')}</table>`
-        : '<div class="empty">No players from this server in the list.</div>'}</div>`;
+      ${t.length ? `<table>${t.map((p, i) => `<tr><td class="n">${i + 1}</td><td class="nm" title="${esc(p[0])}">${esc(p[0])}</td><td class="cp">${M(p[1])}</td></tr>`).join('')}</table>`
+        : '<div class="empty">This server was not read.</div>'}</div>`;
   }
 
   function draw() {
-    $('out').innerHTML = FIELDS.map((f, i) => {
+    $('out').innerHTML = read.fields.map((f, i) => {
       const ranked = f.slice().sort((a, b) => total(b) - total(a));
       return `<section class="field"><h2>Battlefield ${i + 1}<small>${f.map(s => 'S' + s).join(' · ')}</small></h2>
         <div class="grid">${ranked.map(s => card(s, ranked.indexOf(s) + 1)).join('')}</div></section>`;
     }).join('');
-    const n = FIELDS.flat().length;
-    const t = d => new Date(d).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-    $('status').textContent = `${n} servers · list loaded ${new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` + (mapAt ? ` · map uploaded ${t(mapAt)}` : '');
+    const t = new Date(read.at).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    $('status').textContent = `${read.fields.flat().length} servers · read from the game ${t}`;
   }
 
-  /* Upload map: the screenshot made smaller (the numbers stay readable), read by Gemini, checked in
-     the dialog, then saved on the Worker for everyone */
-  const shrink = file => new Promise((ok, no) => {
-    const img = new Image();
-    img.onload = () => {
-      const k = Math.min(1, 1600 / Math.max(img.width, img.height)), c = document.createElement('canvas');
-      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
-      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-      URL.revokeObjectURL(img.src); ok(c.toDataURL('image/jpeg', 0.9));
-    };
-    img.onerror = () => no(new Error('that file is not an image the browser can open'));
-    img.src = URL.createObjectURL(file);
-  });
-  async function readMap(dataUrl) {
-    const prompt = 'This is the Frost Crystal Contest map from the game Top War. It shows islands (battlefields); each island has '
-      + '2 to 4 server labels like S2698. List every battlefield and the server numbers on it. Give each battlefield the position '
-      + 'of its centre on the image as x and y from 0 to 1000. Digits only for servers, no S. Read each number carefully.';
-    const body = { contents: [{ parts: [{ inline_data: { mime_type: 'image/jpeg', data: dataUrl.split(',')[1] } }, { text: prompt }] }],
-      generationConfig: { temperature: 0, responseMimeType: 'application/json', responseSchema: { type: 'OBJECT', required: ['battlefields'], properties: {
-        battlefields: { type: 'ARRAY', items: { type: 'OBJECT', required: ['x', 'y', 'servers'], properties: {
-          x: { type: 'INTEGER' }, y: { type: 'INTEGER' }, servers: { type: 'ARRAY', items: { type: 'STRING' } } } } } } } } };
-    const r = await fetch(API + '/gemini/gemini-3.1-flash-lite', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error((j.error && j.error.message) || 'Gemini did not answer (' + r.status + ')');
-    const text = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts.map(x => x.text || '').join('');
-    let list;
-    try { list = JSON.parse(text).battlefields; } catch (e) { throw new Error('Gemini gave no list of servers'); }
-    // in map order: by rows from the top (centres within 60 of each other count as one row), then left to right
-    list = list.map(f => ({ ...f, servers: f.servers.map(v => String(v).replace(/\D/g, '')).filter(Boolean) })).filter(f => f.servers.length)
-      .sort((a, b) => a.y - b.y);
-    const rows = [];
-    for (const f of list) { const row = rows[rows.length - 1]; if (row && f.y - row[0].y <= 60) row.push(f); else rows.push([f]); }
-    return rows.flatMap(row => row.sort((a, b) => a.x - b.x)).map(f => f.servers);
-  }
-  const lines = fields => fields.map(f => f.join(' ')).join('\n');
-  // the popup's one box: click for a file, paste a screenshot (Ctrl/⌘+V while the popup is open) or drop
-  // an image on it
-  const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-  $('pasteHint').textContent = matchMedia('(pointer: coarse)').matches ? 'Tap to choose a screenshot' : `Click to choose a file, or paste with ${mac ? '⌘' : 'Ctrl'}+V`;
-  const pickMsg = t => { $('pickMsg').className = 'status grow bad'; $('pickMsg').textContent = t; };
-  $('upload').onclick = () => { $('pickMsg').textContent = ''; $('pickDlg').showModal(); };
-  $('pickCancel').onclick = () => $('pickDlg').close();
-  $('fromFile').onclick = () => $('file').click();
-  $('file').onchange = () => { const f = $('file').files[0]; $('file').value = ''; if (f) useImage(f); };
-  $('pickDlg').addEventListener('paste', e => {
-    e.preventDefault();
-    const item = [...(e.clipboardData || {}).items || []].find(i => i.type.startsWith('image/'));
-    if (item) useImage(item.getAsFile()); else pickMsg('No image on the clipboard — copy the screenshot first.');
-  });
-  ['dragover', 'dragleave', 'drop'].forEach(t => $('pickDlg').addEventListener(t, e => {
-    e.preventDefault();
-    $('fromFile').classList.toggle('over', t === 'dragover');
-    if (t !== 'drop') return;
-    const f = [...e.dataTransfer.files].find(x => x.type.startsWith('image/'));
-    if (f) useImage(f); else pickMsg('That is not an image.');
-  }));
-  async function useImage(file) {
-    $('pickDlg').close();
-    const b = $('upload'); b.disabled = true; b.textContent = 'Reading the map…';
-    try {
-      const url = await shrink(file);
-      const fields = await readMap(url);
-      if (!fields.length) throw new Error('no servers found in that image');
-      $('thumb').src = url; $('lines').value = lines(fields); $('dlgMsg').textContent = `${fields.length} battlefields, ${fields.flat().length} servers`;
-      $('dlgMsg').className = 'status grow'; $('save').disabled = false;
-      $('dlg').showModal();
-    } catch (e) {
-      $('status').className = 'status grow bad'; $('status').textContent = '✗ Could not read the map: ' + (e.message || e);
-    }
-    b.disabled = false; b.textContent = 'Upload map';
-  }
-  $('lines').oninput = () => {
-    const f = $('lines').value.split('\n').map(l => l.match(/\d{1,5}/g) || []).filter(x => x.length);
-    $('dlgMsg').className = 'status grow'; $('dlgMsg').textContent = `${f.length} battlefields, ${f.flat().length} servers`;
-  };
-  $('cancel').onclick = () => $('dlg').close();
-  $('save').onclick = async () => {
-    const fields = $('lines').value.split('\n').map(l => l.match(/\d{1,5}/g) || []).filter(x => x.length);
-    const msg = t => { $('dlgMsg').className = 'status grow bad'; $('dlgMsg').textContent = t; };
-    const dup = fields.flat().find((v, i, a) => a.indexOf(v) !== i);
-    if (!fields.length) return msg('No servers to save.');
-    if (dup) return msg(`S${dup} is there twice.`);
-    if (fields.some(f => f.length > 6)) return msg('A line has more than 6 servers — one battlefield per line.');
-    $('save').disabled = true; $('dlgMsg').className = 'status grow'; $('dlgMsg').textContent = 'Saving…';
-    try {
-      const r = await fetch(API + '/frost-map', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fields }) });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || 'not saved (' + r.status + ')');
-      FIELDS = j.fields; mapAt = j.at;
-      $('dlg').close();
-      if (by) draw(); else load();
-    } catch (e) { msg('✗ ' + (e.message || e)); $('save').disabled = false; }
-  };
-
-  $('reload').onclick = load;
   $('csv').onclick = () => {
     const q = v => /[",\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : v;
-    const rows = [['Battlefield', 'Server', 'Rank', 'Name', 'Alliance', 'Base CP']];
-    FIELDS.forEach((f, i) => f.forEach(s => top(s).forEach((p, j) => rows.push([i + 1, s, j + 1, p.name, p.ally, p.cp]))));
+    const rows = [['Battlefield', 'Server', 'Rank', 'Name', 'Base CP']];
+    read.fields.forEach((f, i) => f.forEach(s => top(s).forEach((p, j) => rows.push([i + 1, s, j + 1, p[0], p[1]]))));
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob(['﻿' + rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' }));
     a.download = 'frost-crystal-top20-' + new Date().toISOString().slice(0, 10) + '.csv';

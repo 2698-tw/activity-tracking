@@ -464,7 +464,7 @@ export default {
     // the game page may reach the ranking route, the roster's MM/CE list and the settings (which of
     // the bookmark's sections to show), and nothing else
     const rankingCall = origin === RANKING_ORIGIN
-      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points', 'api/et-send', 'api/st-send', 'api/ma-update', 'api/ma-send', 'api/events', 'api/schedule']
+      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points', 'api/et-send', 'api/st-send', 'api/ma-update', 'api/ma-send', 'api/events', 'api/schedule', 'api/frost-read']
         .includes(url.pathname.replace(/^\/+/, ''));
     const allowed = knownOrigin || hasPass || rankingCall;
 
@@ -689,47 +689,30 @@ export default {
       }
     }
 
-    // The Frost Crystal Contest page (frost.html): the battlefields read from an uploaded map, kept for
-    // everyone who opens the page. An empty body reads them (null until a map is saved); {fields} saves.
-    if (url.pathname.replace(/^\/+/, '') === 'api/frost-map') {
+    // The Frost Crystal Contest page (frost.html): the contest's battlefields and the top 20 by base CP of
+    // every server on them, read in the game by the bookmark (Read battlefields). An empty body reads the
+    // last read (null until one); only the bookmark, or the admin password, saves {fields, servers}.
+    if (url.pathname.replace(/^\/+/, '') === 'api/frost-read') {
       if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
       const body = await request.text();
-      if (body.length > 16 * 1024) return reply({ error: 'Request too large.' }, 413);
+      if (body.length > 256 * 1024) return reply({ error: 'Request too large.' }, 413);
       let b;
       try { b = body ? JSON.parse(body) : {}; } catch { return reply({ error: 'Not JSON.' }, 400); }
       if (b.fields === undefined) return rosterCall(env, '/frost-get', null, reply);
-      const f = b.fields;
+      if (origin !== RANKING_ORIGIN && !hasPass) return reply({ error: 'Battlefields are read in the game, with the bookmark.' }, 403);
+      const f = b.fields, sv = b.servers;
       if (!Array.isArray(f) || !f.length || f.length > 16
           || !f.every(x => Array.isArray(x) && x.length >= 1 && x.length <= 6 && x.every(v => /^\d{1,5}$/.test(v)))
           || new Set(f.flat()).size !== f.flat().length)
         return reply({ error: 'fields must be 1 to 16 battlefields of 1 to 6 different server numbers' }, 400);
-      return rosterCall(env, '/frost-set', { fields: f.map(x => x.map(String)) }, reply);
-    }
-
-    // The home page's upcoming events: each section's stage times for the season, read in the game by the
-    // bookmark (Read events). An empty body reads them (null until a read); only the bookmark, or the
-    // admin password, saves {rounds, round, events}. Called api/schedule, since ad blockers stop any
-    // address ending in /events; the first name still answers, for bookmarks loaded before the rename.
-    if (['api/schedule', 'api/events'].includes(url.pathname.replace(/^\/+/, ''))) {
-      if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
-      const body = await request.text();
-      if (body.length > 64 * 1024) return reply({ error: 'Request too large.' }, 413);
-      let b;
-      try { b = body ? JSON.parse(body) : {}; } catch { return reply({ error: 'Not JSON.' }, 400); }
-      if (b.events === undefined) return rosterCall(env, '/ev-get', null, reply);
-      if (origin !== RANKING_ORIGIN && !hasPass) return reply({ error: 'Events are saved from the game, with the bookmark.' }, 403);
-      const t = v => Number.isInteger(v) && v > 1.7e9 && v < 2.2e9;
-      const name = v => typeof v === 'string' && v.length >= 1 && v.length <= 40;
-      const ok = Array.isArray(b.rounds) && b.rounds.length >= 1 && b.rounds.length <= 12
-        && b.rounds.every(r => Number.isInteger(r.round) && t(r.st) && t(r.et) && r.et > r.st)
-        && Number.isInteger(b.round) && Array.isArray(b.events) && b.events.length >= 1 && b.events.length <= 200
-        && b.events.every(e => /^[a-z]{1,12}$/.test(e.id) && Number.isInteger(e.round) && e.round >= 0 && e.round <= 12
-          && Array.isArray(e.stages) && e.stages.length >= 1 && e.stages.length <= 8
-          && e.stages.every(x => Array.isArray(x) && x.length === 3 && name(x[0]) && t(x[1]) && t(x[2]) && x[2] >= x[1]));
-      if (!ok) return reply({ error: 'events must be {rounds, round, events: [{id, round, stages: [[name, start, end]]}]}' }, 400);
-      return rosterCall(env, '/ev-set', {
-        rounds: b.rounds.map(r => ({ round: r.round, st: r.st, et: r.et })), round: b.round,
-        events: b.events.map(e => ({ id: e.id, round: e.round, stages: e.stages.map(x => [x[0], x[1], x[2]]) })),
+      if (!sv || typeof sv !== 'object' || !Object.keys(sv).every(k => f.flat().includes(k))
+          || !Object.values(sv).every(l => Array.isArray(l) && l.length <= 100
+            && l.every(p => Array.isArray(p) && p.length === 2 && typeof p[0] === 'string' && p[0].length <= 40
+              && Number.isInteger(p[1]) && p[1] >= 0 && p[1] < 1e12)))
+        return reply({ error: 'servers must be {server: [[name, base CP], …]} for servers on the battlefields' }, 400);
+      return rosterCall(env, '/frost-set', {
+        fields: f.map(x => x.map(String)),
+        servers: Object.fromEntries(Object.entries(sv).map(([k, l]) => [k, l.slice(0, 20).map(p => [p[0], p[1]])])),
       }, reply);
     }
 
@@ -1062,7 +1045,7 @@ const DEFAULT_SETTINGS = {
     { id: 'frost', title: 'Frost Crystal Contest', show: true, link: '' }] },
   sheets: Object.fromEntries(Object.entries(SHEET_BASE).map(([k, t]) => [k, { id: t.id, gid: t.gid }])),
   // which sections the bookmark's panel in the game shows
-  bookmark: { members: true, wb: true, st: true, et: true, ma: true, ev: true },
+  bookmark: { members: true, wb: true, st: true, et: true, ma: true, ev: true, frost: true },
   // highlights on the cards: players missing from the latest days, roster players away a while, and
   // players new to a card; each with its number of days, colour and cards
   highlight: {
@@ -1149,7 +1132,7 @@ async function rosterCall(env, path, body, reply) {
 }
 
 // What a backup holds and a restore may write: the cards' data and the settings, not History
-const DATA_KEY = /^(rows|reads|moves|settings|frost:map|events|(wb|st|et|ma):who|(wb|st|et|ma):day:\d{4}-\d{2}-\d{2}|et:pts:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et|ma))$/;
+const DATA_KEY = /^(rows|reads|moves|settings|frost:map|frost:read|events|(wb|st|et|ma):who|(wb|st|et|ma):day:\d{4}-\d{2}-\d{2}|et:pts:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et|ma))$/;
 const LOG_MAX = 100;
 const MOVES_MAX = 3000;                       // alliance changes kept on the roster card's Log
 const MOVE_JOIN = 30 * 60 * 1000;             // leaving and joining within this is one change                          // changes kept in History, each with what it replaced
@@ -1472,11 +1455,11 @@ export class RosterStore {
       if (path === '/ma-list') return Response.json(await this.wbList('ma'));
       if (path === '/ma-day') return Response.json(await this.maDay());
       if (path === '/settings') return Response.json(await this.getSettings());
-      if (path === '/frost-get') return Response.json((await this.state.storage.get('frost:map')) || null);
+      if (path === '/frost-get') return Response.json((await this.state.storage.get('frost:read')) || null);
       if (path === '/frost-set') {
-        const map = { fields: (await request.json()).fields, at: Date.now() };
-        await this.state.storage.put('frost:map', map);
-        return Response.json(map);
+        const read = { ...(await request.json()), at: Date.now() };
+        await this.state.storage.put('frost:read', read);
+        return Response.json({ at: read.at, servers: Object.keys(read.servers).length });
       }
       if (path === '/ev-get') return Response.json((await this.state.storage.get('events')) || null);
       if (path === '/ev-set') {
