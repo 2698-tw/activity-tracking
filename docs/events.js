@@ -18,7 +18,7 @@
   const QUIET = /^(Settlement|Reward|Preview)$/;          // stages that don't make an event "on"
   const list = document.getElementById('evList'), rnd = document.getElementById('evRound'), box = document.getElementById('events');
   if (!list) return;
-  const open = new Set();
+  const shut = new Set();                                // events whose stages were folded away
   let data = null, EV = [], all = false;
 
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -65,7 +65,7 @@
       const cs = e.stages.find(s => s.st <= now && now < s.et), next = e.stages.find(s => s.st > now);
       const on = now >= e.st && now < e.et && cs && !QUIET.test(cs.s);
       const s = on ? `${esc(cs.s)} · ends in ${left(cs.et - now)}` : next ? `${e.stages.length > 1 ? esc(next.s) + ' · ' : ''}in ${left(next.st - now)}` : '';
-      const multi = e.stages.length > 1, x = open.has(e.key) || (on && !open.has('-' + e.key));
+      const multi = e.stages.length > 1, x = !shut.has(e.key);
       let h = `<div class="ev${on ? ' live' : ''}${multi ? ' tog' : ''}" data-k="${esc(e.key)}" style="--c:${COL[e.c]}"><i></i>` +
         `<span class="n">${esc(e.n)}${e.href ? ` <a class="go2" href="${e.href}" title="Open">↗</a>` : ''}` +
         `<small>${when(e.st, e.et)}${e.est ? ' · expected' : ''}</small></span><span class="s">${s}</span></div>`;
@@ -85,7 +85,7 @@
     if (!live.length && !soon.length) h += `<p class="evnote">Nothing coming up${now > last.et ? ': the season is over' : ''}.</p>`;
     const more = later.length - later.filter(e => e.st < now + 4 * 86400).length;
     if (more || all) h += `<button type="button" class="evmore" id="evMore">${all ? 'Show less' : `Show ${more} more`}</button>`;
-    h += `<p class="evnote">Times are in your time zone${TZ ? ` (${esc(TZ)})` : ''}. Tap an event for its stages.</p>`;
+    h += `<p class="evnote">Times are in your time zone${TZ ? ` (${esc(TZ)})` : ''}. Tap an event to fold its stages away.</p>`;
     list.innerHTML = h;
   }
 
@@ -98,7 +98,7 @@
     if (ev.target.id === 'evMore') { all = !all; return draw(); }
     const r = ev.target.closest('.ev.tog'); if (!r) return;
     const k = r.dataset.k, x = !!r.nextElementSibling && r.nextElementSibling.matches('ol.stages');
-    open.delete(k); open.delete('-' + k); open.add(x ? '-' + k : k);
+    if (x) shut.add(k); else shut.delete(k);
     draw();
   });
 

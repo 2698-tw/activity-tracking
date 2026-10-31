@@ -492,6 +492,25 @@
     '.stack{display:grid;gap:8px;margin-top:8px}.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}' +
     'select{width:100%;background:rgba(255,255,255,.08);color:inherit;border:0;border-radius:12px;padding:9px 12px;font:inherit}' +
     'select option{color:#111}' +
+    // the sections picker: which of the panel's sections this device shows
+    '.pick{margin:4px 0 2px}' +
+    '.pickbtn{display:flex;align-items:center;gap:10px;width:100%;border:0;border-radius:12px;padding:8px 12px;background:rgba(255,255,255,.08);color:inherit;font:inherit;cursor:pointer;text-align:left}' +
+    '.pickbtn:hover{background:rgba(255,255,255,.11)}' +
+    '.pickbtn .pl{flex:1;min-width:0}.pickbtn .pl small{display:block;font-size:10.5px;color:rgba(235,235,245,.6)}' +
+    '.pickbtn .pl b{display:block;font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+    '.pickbtn svg{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;opacity:.7;transition:transform .2s}' +
+    '.pick.open .pickbtn svg{transform:rotate(180deg)}' +
+    '.pickmenu{margin-top:6px;padding:6px;border-radius:14px;background:#2b2b38;' +
+      'box-shadow:0 16px 40px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.08);display:none;transform-origin:top center}' +
+    '.pick.open .pickmenu{display:block;animation:menuin .16s ease-out}@keyframes menuin{from{opacity:0;transform:translateY(-4px) scale(.98)}}' +
+    '.opt{display:flex;align-items:center;gap:11px;width:100%;border:0;border-radius:10px;padding:9px 10px;background:transparent;color:inherit;font:inherit;font-size:14px;cursor:pointer;text-align:left}' +
+    '.opt:hover{background:rgba(255,255,255,.07)}' +
+    '.opt .bx{width:19px;height:19px;flex:none;border-radius:6px;box-shadow:inset 0 0 0 2px rgba(255,255,255,.28);display:grid;place-items:center;transition:background .15s,box-shadow .15s}' +
+    '.opt .bx svg{width:13px;height:13px;fill:none;stroke:#fff;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;opacity:0;transform:scale(.6);transition:opacity .15s,transform .15s}' +
+    '.opt.on .bx{background:linear-gradient(135deg,#c31441,#e0457b);box-shadow:none}.opt.on .bx svg{opacity:1;transform:none}' +
+    '.opt.some .bx{background:linear-gradient(135deg,#c31441,#e0457b);box-shadow:none}.opt.some .bx svg{display:none}.opt.some .bx::after{content:"";width:9px;height:2.5px;border-radius:2px;background:#fff}' +
+    '.opt.all{font-weight:700}.sep{height:1px;margin:4px 6px;background:rgba(255,255,255,.08)}' +
+    '.pickempty{margin:12px 2px 0;color:rgba(235,235,245,.6);font-size:13px}' +
     '.act{position:relative;overflow:hidden;isolation:isolate;border:0;border-radius:14px;padding:10px 11px;min-height:58px;text-align:left;' +
       'background:rgba(255,255,255,.07);color:inherit;font:inherit;cursor:pointer;transition:transform .15s,background .3s,opacity .3s}' +
     '.act:active{transform:scale(.97)}' +
@@ -567,6 +586,9 @@
     '.tx-in{animation:txin .35s ease}@keyframes txin{from{opacity:0;transform:translateY(5px)}}' +
     '</style>' +
     '<div class="app' + (/Mac/.test(navigator.platform || navigator.userAgent) ? ' mac' : '') + '"><div class="top" title="Drag to move"><img class="logo" alt="" src="https://2698-tw.github.io/activity-tracking/icon.png"><b>2698 Data Extractor</b><button class="x" id="close" title="Close">×</button></div>' +
+    '<div class="pick" id="pick"><button type="button" class="pickbtn" id="pickBtn" aria-haspopup="true" aria-expanded="false"><span class="pl"><small>Show</small><b id="pickLbl">Everything</b></span>' +
+      '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button><div class="pickmenu" id="pickMenu" role="menu"></div></div>' +
+    '<p class="pickempty" id="pickEmpty" hidden>Nothing shown. Pick what to read above.</p>' +
     '<div data-sec="members"><h3>Alliance members</h3><div class="grid">' +
       Object.keys(ALLY).map(function (t) { return act('a' + t, '', t, 'not read', t); }).join('') + '</div>' +
     '<div class="row2">' + act('all', 'main', 'Read all four', 'Updates the roster card') +
@@ -591,13 +613,51 @@
 
   // the sections set in the site's admin view (Home page → Bookmark): the last ones known right away,
   // then the site's own
-  var SECS = 'x2698.sections';
+  // Within those, the Show picker at the top picks which this device shows, kept on this device.
+  var SECS = 'x2698.sections', PICK = 'x2698.pick', allowed = {};
+  var picked = (function () { try { return JSON.parse(localStorage.getItem(PICK)) || {}; } catch (e) { return {}; } })();
+  var CHECK = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
   function sections(b) {
-    if (!b) return;
-    root.querySelectorAll('[data-sec]').forEach(function (d) { d.hidden = b[d.dataset.sec] === false; });
-    fit();
+    if (b) allowed = b;
+    var secs = [].slice.call(root.querySelectorAll('[data-sec]')), shown = [], can = [];
+    secs.forEach(function (d) {
+      var ok = allowed[d.dataset.sec] !== false, on = ok && picked[d.dataset.sec] !== false;
+      d.hidden = !on;
+      if (ok) can.push(d);
+      if (on) shown.push(d.querySelector('h3').textContent);
+    });
+    $('#pickLbl').textContent = shown.length === can.length ? 'Everything' : shown.length ? shown.join(', ') : 'Nothing';
+    $('#pickEmpty').hidden = shown.length > 0;
+    var n = shown.length, menu = $('#pickMenu');
+    menu.innerHTML = '<button type="button" class="opt all' + (n === can.length ? ' on' : n ? ' some' : '') + '" data-k="*"><span class="bx">' + CHECK + '</span>Everything</button><div class="sep"></div>' +
+      can.map(function (d) {
+        var k = d.dataset.sec;
+        return '<button type="button" class="opt' + (picked[k] !== false ? ' on' : '') + '" data-k="' + k + '"><span class="bx">' + CHECK + '</span>' + d.querySelector('h3').textContent + '</button>';
+      }).join('');
+    if (!$('#pick').classList.contains('open')) refit();   // not while picking: the menu would move under the pointer
   }
+  $('#pickBtn').onclick = function (e) {
+    e.stopPropagation();
+    var o = $('#pick').classList.toggle('open');
+    this.setAttribute('aria-expanded', o);
+    if (!o) refit();
+  };
+  $('#pickMenu').onclick = function (e) {
+    e.stopPropagation();
+    var b = e.target.closest('.opt'); if (!b) return;
+    var k = b.dataset.k, keys = [].map.call(root.querySelectorAll('[data-sec]'), function (d) { return d.dataset.sec; })
+      .filter(function (s) { return allowed[s] !== false; });
+    if (k === '*') { var all = keys.every(function (s) { return picked[s] !== false; }); keys.forEach(function (s) { picked[s] = !all; }); }
+    else picked[k] = picked[k] === false;
+    try { localStorage.setItem(PICK, JSON.stringify(picked)); } catch (e2) {}
+    sections();
+  };
+  app.addEventListener('click', function () {
+    if (!$('#pick').classList.contains('open')) return;
+    $('#pick').classList.remove('open'); $('#pickBtn').setAttribute('aria-expanded', 'false'); refit();
+  });
   try { sections(JSON.parse(localStorage.getItem(SECS))); } catch (e) {}
+  if (!$('#pickMenu').firstChild) sections();
   fetch(API + '/settings', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (s) { if (s && s.bookmark) { sections(s.bookmark); try { localStorage.setItem(SECS, JSON.stringify(s.bookmark)); } catch (e) {} } })
@@ -621,6 +681,12 @@
     host.style.zoom = Z;
   }
   fit();
+  // sized again where it is, kept on screen: after the window changes, or sections are shown or hidden
+  function refit() {
+    var r = app.getBoundingClientRect(), moved = app.style.transform === 'none';
+    app.style.maxHeight = ''; fit();
+    if (moved) place(r.left, r.top);
+  }
   var POS = 'x2698.pos';
   function place(x, y) {                                          // x, y: on screen
     var w = app.offsetWidth, h = app.offsetHeight, W = innerWidth / Z, H = innerHeight / Z;
@@ -646,11 +712,7 @@
     }
     top.addEventListener('pointerup', drop); top.addEventListener('pointercancel', drop);
     // sized again, and kept on screen, when the window or the browser's zoom changes
-    addEventListener('resize', function () {
-      var r = app.getBoundingClientRect(), moved = app.style.transform === 'none';
-      app.style.maxHeight = ''; fit();
-      if (moved) place(r.left, r.top);
-    });
+    addEventListener('resize', refit);
   })();
   window.__x2698 = { toggle: function () { host.style.display = host.style.display === 'none' ? '' : 'none'; }, busy: function () { return busy; } };
   $('#who').onchange = function () { V.wbFilter = $('#who').value; refresh(); };
