@@ -358,9 +358,8 @@
   }
 
   // The Frost Crystal Contest's battlefields for the site's Frost page: the contest's own map (its tab in
-  // the Event Center, opened as the season screen's Desolate Tundra card opens it), then each server's
-  // Individual CP Ranking (what a server's Individual CP Ranking button on the warzone map opens) one
-  // after another at a person's pace, its top 20 read and closed again.
+  // the Event Center, opened as the season screen's Desolate Tundra card opens it), then each server
+  // looked up on the warzone map (readServerTop), one after another at a person's pace.
   var compNamed = function (name) {
     var hit = null;
     (function walk(n) {
@@ -406,23 +405,57 @@
       }).filter(function (f) { return f.length; });
     } finally { close(); }
   }
-  async function readServerTop(sid) {
-    var U = ui(), W = win('WorldServerPowerRank');
-    if (!U || !W) throw new Error('the game has changed: no warzone CP ranking found');
-    U.OpenUI(W, { serverId: Number(sid) });
+  // One server the way a person looks it up: tapped on the warzone map (the game asks for its briefing
+  // and opens its warzone card), a moment to look, then the card's Individual CP Ranking button. Its
+  // top 20 read, then the ranking and the card closed again. map: the open warzone map.
+  async function readServerTop(map, sid) {
+    var U = ui(), WC = win('WorldServerTheaterPanel'), WR = win('WorldServerPowerRank');
+    if (!U || !WC || !WR || !map.m_data || !map.m_data[sid]) throw new Error('S' + sid + ' is not on the warzone map');
     try {
-      // its list once loaded (players moved from another server keep that server's number, so not by that)
+      map.clickCity(Number(sid));
+      var card = null;
       for (var t0 = Date.now(); Date.now() - t0 < 12000; await wait(200)) {
+        card = compNamed('WorldServerTheaterPanel');
+        if (card && card.m_data && Number(card.m_data.serverId) === Number(sid)) break;
+        card = null;
+      }
+      if (!card) throw new Error('S' + sid + '\'s warzone card did not open');
+      await wait(between(600, 1400));
+      card.onClickPlayerRank();
+      // its list once loaded (players moved from another server keep that server's number, so not by that)
+      for (var t1 = Date.now(); Date.now() - t1 < 12000; await wait(200)) {
         var R = compNamed('WorldServerPowerRank');
-        if (R && Number(R.m_serverId) === Number(sid) && R._rankList && R._rankList.length)
-          return R._rankList.slice(0, 20).map(function (e) {
+        if (R && Number(R.m_serverId) === Number(sid) && R._rankList && R._rankList.length) {
+          var top = R._rankList.slice(0, 20).map(function (e) {
             var p = parse(e.playerInfo);
             return [String(p.username || p.nickname || '').slice(0, 40), Number(longText(e.val || e.power)) || 0];
           });
+          await wait(between(400, 900));
+          return top;
+        }
       }
       throw new Error('S' + sid + '\'s ranking did not load');
-    } finally { try { U.CloseUI(W); } catch (e) {} }
+    } finally {
+      try { U.CloseUI(WR); } catch (e) {}
+      await wait(between(200, 400));
+      try { U.CloseUI(WC); } catch (e) {}
+    }
   }
+  // the warzone map, opened if it is not (then closed again by the caller)
+  async function warzoneMap() {
+    var map = compNamed('WorldServerListPanel'), W = win('WorldServerListPanel'), opened = false;
+    var ready = function () { return map && map.m_data && Object.keys(map.m_data).length; };
+    if (!ready()) {
+      if (!W) throw new Error('the game has changed: no warzone map found');
+      if (!map) { ui().OpenUI(W); opened = true; }
+      for (var t0 = Date.now(); Date.now() - t0 < 12000 && !ready(); await wait(200)) map = compNamed('WorldServerListPanel');
+      if (!ready()) { if (opened) try { ui().CloseUI(W); } catch (e) {} throw new Error('the warzone map did not open'); }
+      await wait(between(800, 1500));
+    }
+    return { map: map, close: function () { if (opened) try { ui().CloseUI(W); } catch (e) {} } };
+  }
+  // a person's pause between servers: 2 to 5 seconds, now and then longer
+  var restBetween = function () { return wait(Math.random() < .12 ? between(6000, 10000) : between(2000, 5000)); };
 
   // the Energy Tower's Rankings: OpenUI(CQ26ArkRankPop), what the event's Rankings button runs (the
   // game loads the ranking for the event it has open), read, and closed again; one already open is
@@ -1144,26 +1177,30 @@
   };
 
   /* Frost Crystal Contest: the contest's map and every server's top 20 to the site's Frost page
-     (api/frost-read). A server that does not load is tried once more at the end, then left out. */
+     (api/frost-read), each server looked up on the warzone map as a person would, a few seconds apart
+     (two to three minutes for 35). A server that does not load is tried once more at the end, then left out. */
   $('#frr').onclick = async function () {
     if (busy) return; lock(true);
     var b = $('#frr'); start(b); sub(b, 'reading…');
     try {
       var fields = await readFrostMap(function (t, p) { status('work', t, p); setP(b, p); });
       var all = [].concat.apply([], fields), servers = {}, miss = [];
-      status('work', 'Map read · <b>' + fields.length + '</b> battlefields, <b>' + all.length + '</b> servers', .05);
-      await wait(between(600, 1200));
+      status('work', 'Map read · <b>' + fields.length + '</b> battlefields, <b>' + all.length + '</b> servers · opening the warzone map…', .05);
+      await wait(between(800, 1500));
+      var wz = await warzoneMap();
       var go = async function (list, again) {
         for (var i = 0; i < list.length; i++) {
           var s = list[i], n = Object.keys(servers).length;
           status('work', 'Reading S' + s + ' <small>' + (n + 1) + ' of ' + all.length + (again ? ' · trying again' : '') + '</small>', .05 + .85 * n / all.length);
           setP(b, .05 + .85 * n / all.length); sub(b, (n + 1) + ' of ' + all.length);
-          try { servers[s] = await readServerTop(s); } catch (e) { if (!again) miss.push(s); }
-          await wait(between(600, 1200));                // a person's pause before the next server
+          try { servers[s] = await readServerTop(wz.map, s); } catch (e) { if (!again) miss.push(s); }
+          if (i < list.length - 1 || (!again && miss.length)) await restBetween();
         }
       };
-      await go(all, false);
-      if (miss.length) await go(miss.splice(0), true);
+      try {
+        await go(all, false);
+        if (miss.length) await go(miss.splice(0), true);
+      } finally { wz.close(); }
       var got = Object.keys(servers).length;
       if (!got) throw new Error('no server\'s ranking loaded');
       setP(b, .92); sub(b, 'saving…'); status('work', 'Saving <b>' + got + '</b> servers for the Frost page…', .95);
