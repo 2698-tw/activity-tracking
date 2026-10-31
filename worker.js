@@ -689,6 +689,23 @@ export default {
       }
     }
 
+    // The Frost Crystal Contest page (frost.html): the battlefields read from an uploaded map, kept for
+    // everyone who opens the page. An empty body reads them (null until a map is saved); {fields} saves.
+    if (url.pathname.replace(/^\/+/, '') === 'api/frost-map') {
+      if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
+      const body = await request.text();
+      if (body.length > 16 * 1024) return reply({ error: 'Request too large.' }, 413);
+      let b;
+      try { b = body ? JSON.parse(body) : {}; } catch { return reply({ error: 'Not JSON.' }, 400); }
+      if (b.fields === undefined) return rosterCall(env, '/frost-get', null, reply);
+      const f = b.fields;
+      if (!Array.isArray(f) || !f.length || f.length > 16
+          || !f.every(x => Array.isArray(x) && x.length >= 1 && x.length <= 6 && x.every(v => /^\d{1,5}$/.test(v)))
+          || new Set(f.flat()).size !== f.flat().length)
+        return reply({ error: 'fields must be 1 to 16 battlefields of 1 to 6 different server numbers' }, 400);
+      return rosterCall(env, '/frost-set', { fields: f.map(x => x.map(String)) }, reply);
+    }
+
     if (url.pathname.replace(/^\/+/, '') === 'api/global-cp') {
       let up;
       try {
@@ -1104,7 +1121,7 @@ async function rosterCall(env, path, body, reply) {
 }
 
 // What a backup holds and a restore may write: the cards' data and the settings, not History
-const DATA_KEY = /^(rows|reads|moves|settings|(wb|st|et|ma):who|(wb|st|et|ma):day:\d{4}-\d{2}-\d{2}|et:pts:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et|ma))$/;
+const DATA_KEY = /^(rows|reads|moves|settings|frost:map|(wb|st|et|ma):who|(wb|st|et|ma):day:\d{4}-\d{2}-\d{2}|et:pts:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et|ma))$/;
 const LOG_MAX = 100;
 const MOVES_MAX = 3000;                       // alliance changes kept on the roster card's Log
 const MOVE_JOIN = 30 * 60 * 1000;             // leaving and joining within this is one change                          // changes kept in History, each with what it replaced
@@ -1427,6 +1444,12 @@ export class RosterStore {
       if (path === '/ma-list') return Response.json(await this.wbList('ma'));
       if (path === '/ma-day') return Response.json(await this.maDay());
       if (path === '/settings') return Response.json(await this.getSettings());
+      if (path === '/frost-get') return Response.json((await this.state.storage.get('frost:map')) || null);
+      if (path === '/frost-set') {
+        const map = { fields: (await request.json()).fields, at: Date.now() };
+        await this.state.storage.put('frost:map', map);
+        return Response.json(map);
+      }
       if (path === '/admin') return Response.json(await this.admin(await request.json()));
       return Response.json({ error: 'unknown roster call' }, { status: 404 });
     } catch (e) {
