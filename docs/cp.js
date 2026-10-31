@@ -14,7 +14,7 @@ let cpSource = '';
 
 /* views */
 // Views on one page: the home page (the address with no #), Kartz (#kartz), the Alliance roster
-// (#roster), the Whitebeard ranking (#whitebeard), the Snow Train (#snowtrain), the Energy Tower (#energytower), the Mammoth Assault (#mammoth), the admin page (#admin) and Base CP (#cp, no longer on the home page but still there by its address).
+// (#roster), the Whitebeard ranking (#whitebeard), the Snow Train (#snowtrain), the Energy Tower (#energytower), the Mammoth Assault (#mammoth), the Frost Crystal Contest (#frost), the admin page (#admin) and Base CP (#cp, no longer on the home page but still there by its address).
 // The address carries the view, so a link, a reload or the phone's back button lands on the right one.
 function showTab(name) {
   $('home').classList.toggle('hide', name !== 'home');
@@ -26,12 +26,22 @@ function showTab(name) {
   $('tab-st').classList.toggle('hide', name !== 'snowtrain');
   $('tab-et').classList.toggle('hide', name !== 'energytower');
   $('tab-ma').classList.toggle('hide', name !== 'mammoth');
+  $('tab-frost').classList.toggle('hide', name !== 'frost');
+  if (name === 'frost') frostFrame();
   $('tab-admin').classList.toggle('hide', name !== 'admin');
   document.documentElement.classList.remove('athome');
   delete document.documentElement.dataset.view;      // index.html's first-paint view, now shown by the classes
   closeMenu();
 }
-const viewFromAddress = () => ({ '#cp': 'cp', '#kartz': 'kartz', '#roster': 'roster', '#whitebeard': 'whitebeard', '#snowtrain': 'snowtrain', '#energytower': 'energytower', '#mammoth': 'mammoth', '#admin': 'admin' })[location.hash] || 'home';
+const viewFromAddress = () => ({ '#cp': 'cp', '#kartz': 'kartz', '#roster': 'roster', '#whitebeard': 'whitebeard', '#snowtrain': 'snowtrain', '#energytower': 'energytower', '#mammoth': 'mammoth', '#frost': 'frost', '#admin': 'admin' })[location.hash] || 'home';
+// the Frost Crystal Contest is its own page (frost.html), shown here in a frame: loaded the first time,
+// as tall as the window below it so the page's own pop-ups stay in view
+function frostFrame() {
+  const f = $('frostFrame');
+  if (!f.src) f.src = 'frost.html';
+  requestAnimationFrame(() => { f.style.height = Math.max(420, innerHeight - f.getBoundingClientRect().top - scrollY - 16) + 'px'; });
+}
+addEventListener('resize', () => { if (viewFromAddress() === 'frost') frostFrame(); });
 function goTo(name) {
   if (name === viewFromAddress()) return;
   if (name === 'home') history.pushState(null, '', location.pathname + location.search);

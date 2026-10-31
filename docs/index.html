@@ -15,7 +15,7 @@
 try { const t = JSON.parse(localStorage.getItem('kartz.theme'));
       if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
 // No #kartz or #cp in the address: the home page, shown from the first paint (cp.js takes over).
-if (!/^#(kartz|cp|roster|whitebeard|snowtrain|energytower|mammoth|admin)$/.test(location.hash)) document.documentElement.classList.add('athome');
+if (!/^#(kartz|cp|roster|whitebeard|snowtrain|energytower|mammoth|frost|admin)$/.test(location.hash)) document.documentElement.classList.add('athome');
 // Another view in the address (#roster…): that one from the first paint too, not Kartz, the page's
 // own first view, while cp.js loads.
 else if (location.hash !== '#kartz') document.documentElement.dataset.view = location.hash.slice(1);
@@ -176,7 +176,10 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .athome #app{display:none}
 html[data-view] #tab-kartz{display:none}
 html[data-view=cp] #tab-cp,html[data-view=roster] #tab-roster,html[data-view=whitebeard] #tab-wb,html[data-view=snowtrain] #tab-st,
-html[data-view=energytower] #tab-et,html[data-view=mammoth] #tab-ma,html[data-view=admin] #tab-admin{display:block}
+html[data-view=energytower] #tab-et,html[data-view=mammoth] #tab-ma,html[data-view=frost] #tab-frost,html[data-view=admin] #tab-admin{display:block}
+/* the Frost Crystal Contest (#frost): frost.html in a frame the height of the window, the page wider for its tables */
+html[data-view=frost] #app,body:has(#tab-frost:not(.hide)) #app{max-width:1320px}
+.frostframe{display:block;width:100%;height:calc(100vh - 150px);min-height:420px;border:0;border-radius:12px;background:var(--panel)}
 .homeband{position:relative;overflow:hidden;height:140px;display:flex;align-items:center;
   background:linear-gradient(180deg,#3a1d2c,#6e2c3a 55%,#b9524a)}
 .homeband .themebtn{position:absolute;top:14px;right:max(16px, env(safe-area-inset-right));z-index:2;color:#fff;border-color:rgba(255,255,255,.35)}
@@ -204,7 +207,7 @@ html[data-view=energytower] #tab-et,html[data-view=mammoth] #tab-ma,html[data-vi
 .homegrid .events{order:0}.homegrid .homecards{order:1}
 @media (max-width:760px){.homegrid{grid-template-columns:1fr}.homegrid .events{order:2}}
 .homecards{display:flex;flex-direction:column;gap:10px}
-.hcard{position:relative;overflow:hidden;border-radius:14px;padding:14px 100px 14px 16px;color:#fff;min-height:58px;
+.hcard{position:relative;overflow:hidden;border-radius:14px;padding:14px 16px;color:#fff;min-height:58px;
   display:flex;align-items:center;gap:14px;background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b)}
 .hcard.cp{background:linear-gradient(135deg,#c31441,#f26b3a 55%,#f5b04c)}
 .hcard::after{content:"";position:absolute;right:-40px;top:-40px;width:140px;height:140px;border-radius:50%;
@@ -225,12 +228,6 @@ html[data-view=energytower] #tab-et,html[data-view=mammoth] #tab-ma,html[data-vi
 .hcard.ma .go{color:#4a2c17}
 .hcard.frost{background:linear-gradient(135deg,#1c2541,#3a5a8c 55%,#9cc3e6)}
 .hcard.frost .go{color:#1c2541}
-/* the sheet: a small chip in the card's top right */
-.hcard .open[hidden]{display:none}
-.hcard .open{position:absolute;top:8px;right:10px;z-index:1;display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;
-  font-size:12px;font-weight:600;text-decoration:none;color:#fff;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.4)}
-.hcard .open:hover{background:rgba(0,0,0,.3)}
-.hcard .open svg{width:13px;height:13px}
 /* ---- upcoming events (the game's Seal Stone calendar) ---- */
 .events{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 14px 10px}
 .events h2{display:flex;align-items:baseline;gap:8px;margin:0 0 10px}
@@ -279,6 +276,15 @@ a.ev:hover{background:var(--line)}
 .rclear:hover{background:rgba(255,255,255,.28)}
 .rclear[hidden]{display:none}
 .rgo{width:auto;flex:none;border:0;border-radius:999px;padding:7px 14px;font:inherit;font-weight:700;color:#fff;cursor:pointer;background:rgba(255,255,255,.12)}
+/* the section's Google Sheet (Admin → Home page sets each link), at the right of its header */
+.rsheet{flex:none;display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:7px 13px;font-weight:700;font-size:13.5px;text-decoration:none;color:#fff;
+  background:rgba(255,255,255,.12)}
+.rsheet:hover{background:rgba(255,255,255,.2)}
+.rsheet[hidden]{display:none}
+.rsheet svg{width:15px;height:15px}
+.viewtools{display:flex;justify-content:flex-end;margin:0 0 10px}
+.viewtools .rsheet{color:var(--ink);background:var(--panel);border:1px solid var(--line)}
+.viewtools .rsheet:hover{background:var(--line)}
 .rreads{display:flex;gap:6px 14px;flex-wrap:wrap;padding:0 14px 8px;font-size:12.5px;color:rgba(235,235,245,.65)}
 .rbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 14px 10px}
 .rchip{width:auto;border:0;background:rgba(255,255,255,.08);color:#f3f3f7;border-radius:999px;padding:5px 12px;font:inherit;font-size:12.5px;font-weight:400;cursor:pointer}
@@ -442,20 +448,13 @@ a.ev:hover{background:var(--line)}
    <div class="homegrid">
     <aside class="events" id="events"><h2>Upcoming events<span class="r" id="evRound"></span></h2><div id="evList"></div></aside>
     <div class="homecards">
-      <div class="hcard" data-card="kartz"><b>Kartz ranking</b><a class="go" href="#kartz">Extract</a>
-        <a class="open" href="https://docs.google.com/spreadsheets/d/1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE/edit#gid=1243524383" target="_blank" rel="noopener" title="Open in Google Sheets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet</a></div>
-      <div class="hcard cp" data-card="cp"><b>Alliance roster</b><a class="go" href="#roster">Open</a>
-        <a class="open" href="https://docs.google.com/spreadsheets/d/1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8/edit" target="_blank" rel="noopener" title="Open in Google Sheets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet</a></div>
-      <div class="hcard wb" data-card="wb"><b>Whitebeard ranking</b><a class="go" href="#whitebeard">Open</a>
-        <a class="open" href="https://docs.google.com/spreadsheets/d/12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc/edit#gid=0" target="_blank" rel="noopener" title="Open in Google Sheets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet</a></div>
-      <div class="hcard st" data-card="st"><b>Snow Train</b><a class="go" href="#snowtrain">Open</a>
-        <a class="open" href="https://docs.google.com/spreadsheets/d/1d2jgRQlfhYMufn69YaZ-2ZPQ-lGtfvSiOPDTEplUqGs/edit#gid=0" target="_blank" rel="noopener" title="Open in Google Sheets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet</a></div>
-      <div class="hcard et" data-card="et"><b>Energy Tower</b><a class="go" href="#energytower">Open</a>
-        <a class="open" href="" target="_blank" rel="noopener" title="Open in Google Sheets" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet</a></div>
-      <div class="hcard ma" data-card="ma"><b>Mammoth Assault</b><a class="go" href="#mammoth">Open</a>
-        <a class="open" href="" target="_blank" rel="noopener" title="Open in Google Sheets" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet</a></div>
-      <div class="hcard frost" data-card="frost"><b>Frost Crystal Contest</b><a class="go" href="frost.html">Open</a>
-        <a class="open" href="" target="_blank" rel="noopener" title="Open in Google Sheets" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet</a></div>
+      <div class="hcard" data-card="kartz"><b>Kartz ranking</b><a class="go" href="#kartz">Extract</a></div>
+      <div class="hcard cp" data-card="cp"><b>Alliance roster</b><a class="go" href="#roster">Open</a></div>
+      <div class="hcard wb" data-card="wb"><b>Whitebeard ranking</b><a class="go" href="#whitebeard">Open</a></div>
+      <div class="hcard st" data-card="st"><b>Snow Train</b><a class="go" href="#snowtrain">Open</a></div>
+      <div class="hcard et" data-card="et"><b>Energy Tower</b><a class="go" href="#energytower">Open</a></div>
+      <div class="hcard ma" data-card="ma"><b>Mammoth Assault</b><a class="go" href="#mammoth">Open</a></div>
+      <div class="hcard frost" data-card="frost"><b>Frost Crystal Contest</b><a class="go" href="#frost">Open</a></div>
     </div>
    </div>
   </div>
@@ -467,7 +466,7 @@ a.ev:hover{background:var(--line)}
 (function () {
   const home = document.getElementById('home'), title = document.getElementById('bandTitle');
   try { const t = JSON.parse(localStorage.getItem('site.settings')).home.title; if (t) title.textContent = t; } catch {}
-  const atHome = () => !/^#(kartz|cp|roster|whitebeard|snowtrain|energytower|mammoth|admin)$/.test(location.hash);
+  const atHome = () => !/^#(kartz|cp|roster|whitebeard|snowtrain|energytower|mammoth|frost|admin)$/.test(location.hash);
   function write() {
     home.classList.remove('writing');
     title.parentNode.style.setProperty('--w', title.offsetWidth + 'px');
@@ -487,7 +486,7 @@ a.ev:hover{background:var(--line)}
 })();
 </script>
 
-<script src="events.js?v=2"></script>
+<script src="events.js?v=3"></script>
 <div class="wrap" id="app">
 <header class="top">
   <div class="brand">
@@ -500,6 +499,7 @@ a.ev:hover{background:var(--line)}
 <a class="homelink" id="homeLink" href="./"><span aria-hidden="true">←</span>Home</a>
 
 <div id="tab-kartz">
+<div class="viewtools"><a class="rsheet" data-sheet="kartz" href="https://docs.google.com/spreadsheets/d/1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE/edit#gid=1243524383" target="_blank" rel="noopener" title="Open in Google Sheets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet <span aria-hidden="true">↗</span></a></div>
 <section>
   <h2>1 &middot; Recording</h2>
   <div class="drop" id="drop">
@@ -640,6 +640,7 @@ a.ev:hover{background:var(--line)}
   <div class="rhead"><b>Alliance roster</b>
     <label class="rsearch"><span aria-hidden="true">🔍</span><input id="rosterQ" type="text" placeholder="Search a name" autocomplete="off"></label>
     <button type="button" class="rgo" id="rosterReload">Reload</button>
+    <a class="rsheet" data-sheet="cp" href="https://docs.google.com/spreadsheets/d/1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8/edit" target="_blank" rel="noopener" title="Open in Google Sheets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet <span aria-hidden="true">↗</span></a>
   </div>
   <div class="rreads" id="rosterReads"></div>
   <div class="rbar" id="rosterChips"></div>
@@ -653,6 +654,7 @@ a.ev:hover{background:var(--line)}
   <div class="rhead"><b>Whitebeard ranking</b>
     <label class="rsearch"><span aria-hidden="true">🔍</span><input id="wbQ" type="text" placeholder="Search a name" autocomplete="off"></label>
     <button type="button" class="rgo" id="wbReload">Reload</button>
+    <a class="rsheet" data-sheet="wb" href="https://docs.google.com/spreadsheets/d/12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc/edit#gid=0" target="_blank" rel="noopener" title="Open in Google Sheets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet <span aria-hidden="true">↗</span></a>
   </div>
   <div class="rreads" id="wbReads"></div>
   <div class="rbar" id="wbChips"></div>
@@ -666,6 +668,7 @@ a.ev:hover{background:var(--line)}
   <div class="rhead"><b>Snow Train</b>
     <label class="rsearch"><span aria-hidden="true">🔍</span><input id="stQ" type="text" placeholder="Search a name" autocomplete="off"></label>
     <button type="button" class="rgo" id="stReload">Reload</button>
+    <a class="rsheet" data-sheet="st" href="https://docs.google.com/spreadsheets/d/1d2jgRQlfhYMufn69YaZ-2ZPQ-lGtfvSiOPDTEplUqGs/edit#gid=0" target="_blank" rel="noopener" title="Open in Google Sheets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet <span aria-hidden="true">↗</span></a>
   </div>
   <div class="rreads" id="stReads"></div>
   <div class="rbar" id="stChips"></div>
@@ -679,6 +682,7 @@ a.ev:hover{background:var(--line)}
   <div class="rhead"><b>Energy Tower</b>
     <label class="rsearch"><span aria-hidden="true">🔍</span><input id="etQ" type="text" placeholder="Search a name" autocomplete="off"></label>
     <button type="button" class="rgo" id="etReload">Reload</button>
+    <a class="rsheet" data-sheet="et" href="" target="_blank" rel="noopener" title="Open in Google Sheets" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet <span aria-hidden="true">↗</span></a>
   </div>
   <div class="rreads" id="etReads"></div>
   <div class="rbar" id="etChips"></div>
@@ -692,12 +696,16 @@ a.ev:hover{background:var(--line)}
   <div class="rhead"><b>Mammoth Assault</b>
     <label class="rsearch"><span aria-hidden="true">🔍</span><input id="maQ" type="text" placeholder="Search a name" autocomplete="off"></label>
     <button type="button" class="rgo" id="maReload">Reload</button>
+    <a class="rsheet" data-sheet="ma" href="" target="_blank" rel="noopener" title="Open in Google Sheets" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet <span aria-hidden="true">↗</span></a>
   </div>
   <div class="rreads" id="maReads"></div>
   <div class="rbar" id="maChips"></div>
   <div class="rbody" id="maView"></div>
 </div>
 </div>
+
+<!-- Frost Crystal Contest: frost.html, loaded the first time the view is opened (cp.js) -->
+<div id="tab-frost" class="hide"><iframe id="frostFrame" class="frostframe" title="Frost Crystal Contest"></iframe></div>
 
 <!-- Admin (admin.js): settings, Sheets, backup and History, once unlocked with the pill -->
 <div id="tab-admin" class="hide">
@@ -2963,9 +2971,9 @@ $('toBottom').onclick = () => scrollTo({ top: document.documentElement.scrollHei
 
 loadSetup();
 </script>
-<script src="cp.js?v=7"></script>
+<script src="cp.js?v=8"></script>
 <!-- the admin pill and page, then the Alliance roster, Whitebeard and Snow Train cards -->
-<script src="admin.js?v=6"></script>
+<script src="admin.js?v=7"></script>
 <script src="cards.js?v=15"></script>
 <!-- Kartz: decoding the recording, then packing and reading it -->
 <script src="decode.js?v=4"></script>

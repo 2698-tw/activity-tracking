@@ -9,7 +9,7 @@
   const INFO = {
     wb: ['Disruptive Whitebeard', 'g', '#whitebeard'], st: ['Snow Train', 'g', '#snowtrain'],
     et: ['Defend Energy', 'g', '#energytower'], ma: ['Mammoth Assault', 'g', '#mammoth'],
-    tundra: ['Desolate Tundra', 'b', ''], frost: ['Frost Crystal Contest', 'b', 'frost.html'],
+    tundra: ['Desolate Tundra', 'b', ''], frost: ['Frost Crystal Contest', 'b', '#frost'],
     feast: ['Monster Feast', 'b', ''], nc: ['Neutral City', 'o', ''], realm: ['Realm', 'p', ''],
     storm: ['Storm Duel', 'r', ''], blizzard: ['Blizzard', 'r', ''],
   };

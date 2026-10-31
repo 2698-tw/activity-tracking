@@ -78,7 +78,7 @@ dialog .row .grow{flex:1;font-size:13px}
 </head>
 <body>
 <div class="band"><div class="in">
-  <a class="homelink" href="./"><span aria-hidden="true">←</span>Home</a>
+  <a class="homelink" id="homeLink" href="./"><span aria-hidden="true">←</span>Home</a>
   <h1>Frost Crystal Contest</h1>
   <p>Top 20 players by base CP on each server, battlefield by battlefield. Source: <a href="https://www.topwarfandom.com" target="_blank" rel="noopener">topwarfandom.com</a> with permission from <span class="nass">Nass</span></p>
 </div></div>
@@ -105,6 +105,10 @@ dialog .row .grow{flex:1;font-size:13px}
   <textarea id="lines" spellcheck="false"></textarea>
   <div class="row"><span class="status grow" id="dlgMsg"></span><button type="button" id="cancel">Cancel</button><button type="button" class="pri" id="save">Save for everyone</button></div>
 </dialog>
+<script>
+// inside the site (index.html#frost) the site's own header has the way back
+if (window.top !== window) document.getElementById('homeLink').remove();
+</script>
 <script>
 (function () {
   const API = location.hostname.endsWith('.workers.dev') ? '/api' : 'https://data-collection.jk06nm04.workers.dev/api';

@@ -225,8 +225,10 @@ window.Admin = (function () {
       prev = el;
       if (el.hidden !== !c.show) el.hidden = !c.show;
       const b = el.querySelector('b'); if (b.textContent !== c.title) b.textContent = c.title;
-      const o = el.querySelector('.open');
-      if (o) { if (o.getAttribute('href') !== c.link) o.href = c.link; if (o.hidden !== !c.link) o.hidden = !c.link; }
+      // its sheet: the Sheet pill at the right of the section's own header
+      for (const o of document.querySelectorAll(`.rsheet[data-sheet="${c.id}"]`)) {
+        if (o.getAttribute('href') !== c.link) o.href = c.link; if (o.hidden !== !c.link) o.hidden = !c.link;
+      }
     }
   }
   applyHome();
@@ -354,7 +356,7 @@ window.Admin = (function () {
     const H = A.settings.home;
     view.innerHTML = `<div class="apanel"><h2>Home page</h2><div class="alist">
         <div class="ali"><span class="alab">Site title</span><!-- the name in the banner and the header --><input type="text" data-h="title" value="${esc(H.title)}" maxlength="60"></div></div></div>
-      <div class="apanel"><h2>Cards</h2><p class="ahint">Show or hide, the title, the Open in Sheets link, and the order.</p><div class="alist">
+      <div class="apanel"><h2>Cards</h2><p class="ahint">Show or hide, the title, the sheet link (the Sheet pill at the top right of the section), and the order.</p><div class="alist">
       ${H.cards.map((x, i) => `<div class="ali wrapline"><input type="checkbox" data-hs="${i}" ${x.show ? 'checked' : ''} aria-label="Show on the home page">
         <input type="text" data-ht="${i}" value="${esc(x.title)}" maxlength="40" class="short">
         <input type="url" data-hl="${i}" value="${esc(x.link)}" class="long">${arrows('h', i, H.cards.length)}</div>`).join('')}</div>
