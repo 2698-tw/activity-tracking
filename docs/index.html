@@ -179,7 +179,7 @@ html[data-view=cp] #tab-cp,html[data-view=roster] #tab-roster,html[data-view=whi
 html[data-view=energytower] #tab-et,html[data-view=mammoth] #tab-ma,html[data-view=frost] #tab-frost,html[data-view=admin] #tab-admin{display:block}
 /* the Frost Crystal Contest (#frost): frost.html in a frame the height of the window, the page wider for its tables */
 html[data-view=frost] #app,body:has(#tab-frost:not(.hide)) #app{max-width:1320px}
-.frostframe{display:block;width:100%;height:calc(100vh - 150px);min-height:420px;border:0;border-radius:12px;background:var(--panel)}
+.frostframe{display:block;width:100%;height:80vh;border:0;border-radius:12px;background:var(--panel)}
 .homeband{position:relative;overflow:hidden;height:140px;display:flex;align-items:center;
   background:linear-gradient(180deg,#3a1d2c,#6e2c3a 55%,#b9524a)}
 .homeband .themebtn{position:absolute;top:14px;right:max(16px, env(safe-area-inset-right));z-index:2;color:#fff;border-color:rgba(255,255,255,.35)}
@@ -705,7 +705,7 @@ a.ev:hover{background:var(--line)}
 </div>
 
 <!-- Frost Crystal Contest: frost.html, loaded the first time the view is opened (cp.js) -->
-<div id="tab-frost" class="hide"><iframe id="frostFrame" class="frostframe" title="Frost Crystal Contest"></iframe></div>
+<div id="tab-frost" class="hide"><iframe id="frostFrame" class="frostframe" title="Frost Crystal Contest" scrolling="no"></iframe></div>
 
 <!-- Admin (admin.js): settings, Sheets, backup and History, once unlocked with the pill -->
 <div id="tab-admin" class="hide">
@@ -2971,7 +2971,7 @@ $('toBottom').onclick = () => scrollTo({ top: document.documentElement.scrollHei
 
 loadSetup();
 </script>
-<script src="cp.js?v=8"></script>
+<script src="cp.js?v=9"></script>
 <!-- the admin pill and page, then the Alliance roster, Whitebeard and Snow Train cards -->
 <script src="admin.js?v=7"></script>
 <script src="cards.js?v=15"></script>

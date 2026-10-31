@@ -106,8 +106,21 @@ dialog .row .grow{flex:1;font-size:13px}
   <div class="row"><span class="status grow" id="dlgMsg"></span><button type="button" id="cancel">Cancel</button><button type="button" class="pri" id="save">Save for everyone</button></div>
 </dialog>
 <script>
-// inside the site (index.html#frost) the site's own header has the way back
-if (window.top !== window) document.getElementById('homeLink').remove();
+// Inside the site (index.html#frost) the site's own header has the way back, and the frame is as tall as
+// this page, so a pop-up opens in the middle of the part of it on screen, not of the whole frame.
+if (window.frameElement) {
+  document.getElementById('homeLink').remove();
+  const place = d => {
+    const r = frameElement.getBoundingClientRect(), y0 = Math.max(0, -r.top), y1 = Math.min(r.height, parent.innerHeight - r.top);
+    d.style.margin = '0 auto'; d.style.bottom = 'auto';
+    d.style.top = Math.round(y0 + Math.max(16, (y1 - y0 - d.offsetHeight) / 2)) + 'px';
+  };
+  for (const d of document.querySelectorAll('dialog')) {
+    const show = d.showModal.bind(d);
+    d.showModal = () => { show(); place(d); };
+    new ResizeObserver(() => { if (d.open) place(d); }).observe(d);
+  }
+}
 </script>
 <script>
 (function () {

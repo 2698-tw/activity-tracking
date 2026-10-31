@@ -35,13 +35,18 @@ function showTab(name) {
 }
 const viewFromAddress = () => ({ '#cp': 'cp', '#kartz': 'kartz', '#roster': 'roster', '#whitebeard': 'whitebeard', '#snowtrain': 'snowtrain', '#energytower': 'energytower', '#mammoth': 'mammoth', '#frost': 'frost', '#admin': 'admin' })[location.hash] || 'home';
 // the Frost Crystal Contest is its own page (frost.html), shown here in a frame: loaded the first time,
-// as tall as the window below it so the page's own pop-ups stay in view
+// and as tall as the page in it, so the browser's own scroll bar scrolls it (frost.html keeps its pop-ups
+// where they can be seen)
 function frostFrame() {
   const f = $('frostFrame');
-  if (!f.src) f.src = 'frost.html';
-  requestAnimationFrame(() => { f.style.height = Math.max(420, innerHeight - f.getBoundingClientRect().top - scrollY - 16) + 'px'; });
+  if (f.src) return;
+  f.onload = () => {
+    const body = f.contentDocument.body, cs = getComputedStyle(body);
+    const fit = () => { f.style.height = Math.ceil(body.offsetHeight + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom)) + 'px'; };
+    new f.contentWindow.ResizeObserver(fit).observe(body); fit();   // the frame's own observer: it sees the frame's changes
+  };
+  f.src = 'frost.html';
 }
-addEventListener('resize', () => { if (viewFromAddress() === 'frost') frostFrame(); });
 function goTo(name) {
   if (name === viewFromAddress()) return;
   if (name === 'home') history.pushState(null, '', location.pathname + location.search);
