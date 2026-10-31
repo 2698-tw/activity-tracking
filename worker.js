@@ -464,7 +464,7 @@ export default {
     // the game page may reach the ranking route, the roster's MM/CE list and the settings (which of
     // the bookmark's sections to show), and nothing else
     const rankingCall = origin === RANKING_ORIGIN
-      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points', 'api/et-send', 'api/st-send', 'api/ma-update', 'api/ma-send', 'api/events']
+      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points', 'api/et-send', 'api/st-send', 'api/ma-update', 'api/ma-send', 'api/events', 'api/schedule']
         .includes(url.pathname.replace(/^\/+/, ''));
     const allowed = knownOrigin || hasPass || rankingCall;
 
@@ -708,8 +708,9 @@ export default {
 
     // The home page's upcoming events: each section's stage times for the season, read in the game by the
     // bookmark (Read events). An empty body reads them (null until a read); only the bookmark, or the
-    // admin password, saves {rounds, round, events}.
-    if (url.pathname.replace(/^\/+/, '') === 'api/events') {
+    // admin password, saves {rounds, round, events}. Called api/schedule, since ad blockers stop any
+    // address ending in /events; the first name still answers, for bookmarks loaded before the rename.
+    if (['api/schedule', 'api/events'].includes(url.pathname.replace(/^\/+/, ''))) {
       if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
       const body = await request.text();
       if (body.length > 64 * 1024) return reply({ error: 'Request too large.' }, 413);

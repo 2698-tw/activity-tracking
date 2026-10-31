@@ -992,14 +992,14 @@
       ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
   };
 
-  /* Events: every section's stage times to the site's home page (api/events) */
+  /* Events: every section's stage times to the site's home page (api/schedule) */
   $('#evr').onclick = async function () {
     if (busy) return; lock(true);
     var b = $('#evr'); start(b); sub(b, 'reading…');
     try {
       var ev = await readEvents(function (t, p) { status('work', t, p); setP(b, p); });
       setP(b, .85); sub(b, 'saving…'); status('work', 'Saving <b>' + ev.events.length + '</b> events for the home page…', .9);
-      await postJson('/events', ev);
+      await postJson('/schedule', ev);
       S.ev = { at: Date.now(), n: ev.events.length }; save();
       setP(b, 1); finish(b, true); sub(b, ev.events.length + ' events · now');
       status('ok', 'Events saved · round ' + ev.round + '<small>' + ev.events.length + ' events and their stages, on the site\'s home page for everyone.</small>');

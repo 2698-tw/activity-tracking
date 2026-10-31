@@ -1,5 +1,5 @@
 // Upcoming events on the home page: each section's stage times for the Seal Stone season, read in the
-// game by the bookmark (Read events) and kept by the Worker (api/events). The game knows the Energy
+// game by the bookmark (Read events) and kept by the Worker (api/schedule). The game knows the Energy
 // Building events' stages for the current round only, so later rounds get them shifted by the rounds'
 // own start times, marked "expected" until a read in that round replaces them. Times are shown in the
 // viewer's own time zone.
@@ -105,7 +105,7 @@
   // the last copy at once, then the Worker's
   try { use(JSON.parse(localStorage.getItem(CACHE))); } catch {}
   if (!data) list.innerHTML = '<p class="evnote">Loading…</p>';
-  fetch(API + '/events', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+  fetch(API + '/schedule', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
     .then(r => r.ok ? r.json() : null)
     .then(d => {
       if (use(d)) { try { localStorage.setItem(CACHE, JSON.stringify(d)); } catch {} }
