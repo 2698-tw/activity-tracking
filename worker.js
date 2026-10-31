@@ -716,6 +716,33 @@ export default {
       }, reply);
     }
 
+    // The home page's upcoming events: each section's stage times for the season, read in the game by the
+    // bookmark (Read events). An empty body reads them (null until a read); only the bookmark, or the
+    // admin password, saves {rounds, round, events}. Called api/schedule, since ad blockers stop any
+    // address ending in /events; the first name still answers, for bookmarks loaded before the rename.
+    if (['api/schedule', 'api/events'].includes(url.pathname.replace(/^\/+/, ''))) {
+      if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
+      const body = await request.text();
+      if (body.length > 64 * 1024) return reply({ error: 'Request too large.' }, 413);
+      let b;
+      try { b = body ? JSON.parse(body) : {}; } catch { return reply({ error: 'Not JSON.' }, 400); }
+      if (b.events === undefined) return rosterCall(env, '/ev-get', null, reply);
+      if (origin !== RANKING_ORIGIN && !hasPass) return reply({ error: 'Events are saved from the game, with the bookmark.' }, 403);
+      const t = v => Number.isInteger(v) && v > 1.7e9 && v < 2.2e9;
+      const name = v => typeof v === 'string' && v.length >= 1 && v.length <= 40;
+      const ok = Array.isArray(b.rounds) && b.rounds.length >= 1 && b.rounds.length <= 12
+        && b.rounds.every(r => Number.isInteger(r.round) && t(r.st) && t(r.et) && r.et > r.st)
+        && Number.isInteger(b.round) && Array.isArray(b.events) && b.events.length >= 1 && b.events.length <= 200
+        && b.events.every(e => /^[a-z]{1,12}$/.test(e.id) && Number.isInteger(e.round) && e.round >= 0 && e.round <= 12
+          && Array.isArray(e.stages) && e.stages.length >= 1 && e.stages.length <= 8
+          && e.stages.every(x => Array.isArray(x) && x.length === 3 && name(x[0]) && t(x[1]) && t(x[2]) && x[2] >= x[1]));
+      if (!ok) return reply({ error: 'events must be {rounds, round, events: [{id, round, stages: [[name, start, end]]}]}' }, 400);
+      return rosterCall(env, '/ev-set', {
+        rounds: b.rounds.map(r => ({ round: r.round, st: r.st, et: r.et })), round: b.round,
+        events: b.events.map(e => ({ id: e.id, round: e.round, stages: e.stages.map(x => [x[0], x[1], x[2]]) })),
+      }, reply);
+    }
+
     if (url.pathname.replace(/^\/+/, '') === 'api/global-cp') {
       let up;
       try {
