@@ -22,7 +22,10 @@
   let data = null, EV = [], all = false;
 
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const TZ = (() => { try { return new Intl.DateTimeFormat([], { timeZoneName: 'short' }).formatToParts(new Date()).find(x => x.type === 'timeZoneName').value; } catch { return ''; } })();
+  // the zone's general name (ET, not EDT or EST), right on both sides of a clock change; each time itself
+  // is shown with the rules for its own date
+  const TZ = (() => { const n = o => { try { return new Intl.DateTimeFormat([], o).formatToParts(new Date()).find(x => x.type === 'timeZoneName').value; } catch { return ''; } };
+    return n({ timeZoneName: 'shortGeneric' }) || n({ timeZoneName: 'short' }); })();
   const tm = t => new Date(t * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const dayKey = t => new Date(t * 1000).toDateString();
   const dayName = t => new Date(t * 1000).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
