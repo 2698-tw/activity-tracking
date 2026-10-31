@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frost Crystal Contest</title>
+<link rel="icon" href="icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&display=swap" rel="stylesheet">
+<!-- Frost Crystal Contest (frost.html): the top 20 players by base CP on each server of the nine
+     battlefields, from the Global CP list (topwarfandom.com, with permission from Nass) through the
+     Worker (api/global-cp), as the Base CP tab gets it. Nothing is stored or sent anywhere. -->
+<style>
+:root{--bg:#eef4f9;--card:#fff;--ink:#14212e;--dim:#62748a;--line:#dbe5ee;--head:#f4f8fb;--acc:#1789a8;--us:#e8f6ea;--usink:#1f7a3a;--bad:#b42318;
+  --band1:#0b3b57;--band2:#1789a8;--band3:#8fd6e6}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0d151d;--card:#15212c;--ink:#e6eef5;--dim:#8ea2b5;--line:#243444;--head:#1a2835;--acc:#5cc6d6;--us:#173322;--usink:#7fd99a;--bad:#ff8a80}}
+:root[data-theme="dark"]{--bg:#0d151d;--card:#15212c;--ink:#e6eef5;--dim:#8ea2b5;--line:#243444;--head:#1a2835;--acc:#5cc6d6;--us:#173322;--usink:#7fd99a;--bad:#ff8a80}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+.band{background:linear-gradient(135deg,var(--band1),var(--band2) 60%,var(--band3));color:#fff;padding:22px 16px 18px}
+.band .in,.wrap{max-width:1280px;margin:0 auto}
+.band h1{margin:0;font-size:24px;letter-spacing:.01em}
+.band p{margin:4px 0 0;opacity:.85}
+.band a{color:#fff}
+.nass{font-family:Orbitron,sans-serif;font-weight:600;letter-spacing:.06em}
+.wrap{padding:16px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.bar .grow{flex:1}
+button,.btn{font:inherit;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
+button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+button:disabled{opacity:.55;cursor:default}
+.status{color:var(--dim)}
+.status.bad{color:var(--bad)}
+.field{margin:0 0 22px}
+.field h2{margin:0 0 8px;font-size:16px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline}
+.field h2 small{font-weight:500;color:var(--dim);font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width:1100px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.grid{grid-template-columns:minmax(0,1fr)}}
+.srv{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.srv.us{border-color:var(--usink)}
+.srv .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:9px 11px;background:var(--head);border-bottom:1px solid var(--line)}
+.srv .top b{font-size:15px}
+.srv.us .top{background:var(--us)}
+.srv.us .top b{color:var(--usink)}
+.srv .place{font-size:12px;font-weight:700;color:var(--dim);margin-right:6px}
+.srv .sum{font-size:12px;color:var(--dim);text-align:right}
+.srv .sum strong{color:var(--ink);font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td{padding:4px 8px;border-top:1px solid var(--line);white-space:nowrap}
+tr:first-child td{border-top:0}
+td.n{color:var(--dim);width:1%;text-align:right}
+td.nm{overflow:hidden;text-overflow:ellipsis;max-width:0;width:60%}
+td.al{color:var(--dim);overflow:hidden;text-overflow:ellipsis;max-width:0;width:25%}
+td.cp{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.empty{padding:14px 11px;color:var(--dim)}
+.add{padding:12px 11px;display:flex;gap:6px}
+.add input{flex:1;min-width:0;font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+.x{border:0;background:none;color:var(--dim);padding:0 2px;font-size:15px;line-height:1}
+.skel{height:420px;border-radius:10px;background:linear-gradient(90deg,var(--card),var(--head),var(--card));background-size:200% 100%;animation:sk 1.4s linear infinite;border:1px solid var(--line)}
+@keyframes sk{to{background-position:-200% 0}}
+</style>
+</head>
+<body>
+<div class="band"><div class="in">
+  <h1>Frost Crystal Contest</h1>
+  <p>Top 20 players by base CP on each server, battlefield by battlefield. Source: <a href="https://www.topwarfandom.com" target="_blank" rel="noopener">topwarfandom.com</a> with permission from <span class="nass">Nass</span></p>
+</div></div>
+<div class="wrap">
+  <div class="bar">
+    <span class="status grow" id="status">Loading the Global CP list…</span>
+    <button type="button" id="csv" disabled>Download CSV</button>
+    <button type="button" class="pri" id="reload" disabled>Reload</button>
+  </div>
+  <div id="out"></div>
+</div>
+<script>
+(function () {
+  const API = location.hostname.endsWith('.workers.dev') ? '/api' : 'https://data-collection.jk06nm04.workers.dev/api';
+  const US = '2698', TOP = 20;
+  // the nine battlefields as the event's map shows them; the bottom-right one's fourth server is
+  // hidden on the map, so it can be added here (kept on this device)
+  const FIELDS = [
+    ['1365', '341', '4238', '1568'], ['4059', '1677', '1383', '1855'], ['2987', '2735', '249', '950'],
+    ['3384', '1033', '277', '3619'], ['2693', '4151', '2681', '3535'], ['3088', '564', '3752', '3001'],
+    ['3530', '1337', '420', '3005'], ['511', '1219', '1096', '3884'], ['4022', '2698', '2936'],
+  ];
+  const KEY = 'frost.extra';
+  const store = { get() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } },
+                  set(v) { try { localStorage.setItem(KEY, JSON.stringify(v)); } catch (e) {} } };
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const M = v => (v / 1e6).toFixed(1) + 'M';
+  const tag = p => (String(p['Alliance Name & Tag'] || '').match(/\[([^\]]+)\]\s*$/) || [])[1] || '';
+  let by = null, at = 0;
+
+  const fields = () => {
+    const extra = store.get();
+    return FIELDS.map((f, i) => extra[i] && !f.includes(extra[i]) ? f.concat(extra[i]) : f.slice());
+  };
+  const top = s => (by.get(s) || []).slice(0, TOP);
+  const total = s => top(s).reduce((a, p) => a + p.cp, 0);
+
+  async function load() {
+    $('reload').disabled = $('csv').disabled = true;
+    $('status').className = 'status grow'; $('status').textContent = 'Loading the Global CP list…';
+    if (!by) $('out').innerHTML = '<div class="grid">' + '<div class="skel"></div>'.repeat(4) + '</div>';
+    try {
+      const r = await fetch(API + '/global-cp', { method: 'POST' });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.error || 'the list could not be fetched (' + r.status + ')'); }
+      $('status').textContent = 'Reading the list…';
+      const all = await r.json(), want = new Set(FIELDS.flat().concat(Object.values(store.get())));
+      by = new Map();
+      for (const p of all) {
+        const s = String(p.Server);
+        if (!want.has(s)) continue;
+        const cp = Number(String(p.Power).replace(/[^\d]/g, '')) || 0;
+        (by.get(s) || by.set(s, []).get(s)).push({ name: String(p.Name || '').trim(), ally: tag(p), cp });
+      }
+      for (const l of by.values()) l.sort((a, b) => b.cp - a.cp);
+      window.__all = all;                                   // kept for a server added later
+      at = Date.now();
+      draw();
+      $('csv').disabled = false;
+    } catch (e) {
+      $('status').className = 'status grow bad'; $('status').textContent = '✗ ' + (e.message || e);
+      if (!by) $('out').innerHTML = '';
+    }
+    $('reload').disabled = false;
+  }
+
+  function card(s, place) {
+    const t = top(s), sum = t.reduce((a, p) => a + p.cp, 0);
+    return `<div class="srv${s === US ? ' us' : ''}"><div class="top"><b><span class="place">#${place}</span>S${esc(s)}</b>
+      <span class="sum">Top ${TOP} <strong>${t.length ? M(sum) : '—'}</strong>${t.length ? `<br>avg ${M(sum / t.length)}` : ''}</span></div>
+      ${t.length ? `<table>${t.map((p, i) => `<tr><td class="n">${i + 1}</td><td class="nm" title="${esc(p.name)}">${esc(p.name)}</td><td class="al">${esc(p.ally)}</td><td class="cp">${M(p.cp)}</td></tr>`).join('')}</table>`
+        : '<div class="empty">No players from this server in the list.</div>'}</div>`;
+  }
+
+  function draw() {
+    const extra = store.get();
+    $('out').innerHTML = fields().map((f, i) => {
+      const ranked = f.slice().sort((a, b) => total(b) - total(a));
+      const added = extra[i] && f.includes(extra[i]) && !FIELDS[i].includes(extra[i]);
+      return `<section class="field"><h2>Battlefield ${i + 1}<small>${f.map(s => 'S' + s).join(' · ')}</small>
+          ${added ? `<small>S${esc(extra[i])} added here <button type="button" class="x" data-del="${i}" title="Remove it">✕</button></small>` : ''}</h2>
+        <div class="grid">${ranked.map(s => card(s, ranked.indexOf(s) + 1)).join('')}
+          ${f.length < 4 ? `<div class="srv"><div class="top"><b>4th server</b></div><div class="empty">Hidden on the map — add it to see its top ${TOP}.</div>
+            <form class="add" data-add="${i}"><input inputmode="numeric" placeholder="Server, e.g. 1234" aria-label="Server number"><button type="submit">Add</button></form></div>` : ''}</div></section>`;
+    }).join('');
+    const n = fields().flat().length;
+    $('status').textContent = `${n} servers · list loaded ${new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  }
+
+  $('out').addEventListener('submit', e => {
+    e.preventDefault();
+    const f = e.target, i = +f.dataset.add, s = f.querySelector('input').value.replace(/\D/g, '');
+    if (!s) return;
+    if (FIELDS.flat().includes(s)) { f.querySelector('input').value = ''; f.querySelector('input').placeholder = 'S' + s + ' is already on the map'; return; }
+    const extra = store.get(); extra[i] = s; store.set(extra);
+    if (!by.has(s)) {
+      const list = (window.__all || []).filter(p => String(p.Server) === s)
+        .map(p => ({ name: String(p.Name || '').trim(), ally: tag(p), cp: Number(String(p.Power).replace(/[^\d]/g, '')) || 0 }))
+        .sort((a, b) => b.cp - a.cp);
+      by.set(s, list);
+    }
+    draw();
+  });
+  $('out').addEventListener('click', e => {
+    const b = e.target.closest('[data-del]'); if (!b) return;
+    const extra = store.get(); delete extra[b.dataset.del]; store.set(extra); draw();
+  });
+  $('reload').onclick = load;
+  $('csv').onclick = () => {
+    const q = v => /[",\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : v;
+    const rows = [['Battlefield', 'Server', 'Rank', 'Name', 'Alliance', 'Base CP']];
+    fields().forEach((f, i) => f.forEach(s => top(s).forEach((p, j) => rows.push([i + 1, s, j + 1, p.name, p.ally, p.cp]))));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['﻿' + rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' }));
+    a.download = 'frost-crystal-top20-' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  load();
+})();
+</script>
+</body>
+</html>
