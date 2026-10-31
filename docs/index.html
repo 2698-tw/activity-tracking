@@ -193,7 +193,7 @@ html[data-view=energytower] #tab-et,html[data-view=mammoth] #tab-ma,html[data-vi
 @keyframes nib{0%{opacity:0;transform:translateX(0)}8%{opacity:1}92%{opacity:1}100%{opacity:0;transform:translateX(var(--w,340px))}}
 /* the cards come in straight away, not waiting for the name's font */
 .cardsin .hcard{animation:cardIn .4s cubic-bezier(.2,.8,.2,1) both}
-.cardsin .hcard:nth-child(2){animation-delay:.04s}.cardsin .hcard:nth-child(3){animation-delay:.08s}.cardsin .hcard:nth-child(4){animation-delay:.12s}.cardsin .hcard:nth-child(5){animation-delay:.16s}.cardsin .hcard:nth-child(6){animation-delay:.2s}
+.cardsin .hcard:nth-child(2){animation-delay:.04s}.cardsin .hcard:nth-child(3){animation-delay:.08s}.cardsin .hcard:nth-child(4){animation-delay:.12s}.cardsin .hcard:nth-child(5){animation-delay:.16s}.cardsin .hcard:nth-child(6){animation-delay:.2s}.cardsin .hcard:nth-child(7){animation-delay:.24s}
 @keyframes cardIn{from{opacity:0;transform:translateY(14px) scale(.98)}}
 @media (prefers-reduced-motion:reduce){.writing .bandtitle{clip-path:none}.writing .bandtitle,.writing .bandinner::after,.cardsin .hcard{animation:none}}
 /* on a phone the name sits below the Admin pill and theme button, so they never overlap */
@@ -223,6 +223,8 @@ html[data-view=energytower] #tab-et,html[data-view=mammoth] #tab-ma,html[data-vi
 .hcard.et .go{color:#1f5130}
 .hcard.ma{background:linear-gradient(135deg,#4a2c17,#8a5a2b 55%,#d1a05a)}
 .hcard.ma .go{color:#4a2c17}
+.hcard.frost{background:linear-gradient(135deg,#1c2541,#3a5a8c 55%,#9cc3e6)}
+.hcard.frost .go{color:#1c2541}
 /* the sheet: a small chip in the card's top right */
 .hcard .open[hidden]{display:none}
 .hcard .open{position:absolute;top:8px;right:10px;z-index:1;display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;
@@ -451,6 +453,8 @@ a.ev:hover{background:var(--line)}
       <div class="hcard et" data-card="et"><b>Energy Tower</b><a class="go" href="#energytower">Open</a>
         <a class="open" href="" target="_blank" rel="noopener" title="Open in Google Sheets" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet</a></div>
       <div class="hcard ma" data-card="ma"><b>Mammoth Assault</b><a class="go" href="#mammoth">Open</a>
+        <a class="open" href="" target="_blank" rel="noopener" title="Open in Google Sheets" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet</a></div>
+      <div class="hcard frost" data-card="frost"><b>Frost Crystal Contest</b><a class="go" href="frost.html">Open</a>
         <a class="open" href="" target="_blank" rel="noopener" title="Open in Google Sheets" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet</a></div>
     </div>
    </div>

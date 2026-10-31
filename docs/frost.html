@@ -24,6 +24,9 @@ body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-app
 .band h1{margin:0;font-size:24px;letter-spacing:.01em}
 .band p{margin:4px 0 0;opacity:.85}
 .band a{color:#fff}
+.homelink{display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;padding:4px 12px 4px 10px;border-radius:999px;font-size:13px;font-weight:600;
+  text-decoration:none;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35)}
+.homelink:hover{background:rgba(255,255,255,.26)}
 .nass{font-family:Orbitron,sans-serif;font-weight:600;letter-spacing:.06em}
 .wrap{padding:16px}
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
@@ -75,6 +78,7 @@ dialog .row .grow{flex:1;font-size:13px}
 </head>
 <body>
 <div class="band"><div class="in">
+  <a class="homelink" href="./"><span aria-hidden="true">←</span>Home</a>
   <h1>Frost Crystal Contest</h1>
   <p>Top 20 players by base CP on each server, battlefield by battlefield. Source: <a href="https://www.topwarfandom.com" target="_blank" rel="noopener">topwarfandom.com</a> with permission from <span class="nass">Nass</span></p>
 </div></div>

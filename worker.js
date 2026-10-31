@@ -1058,7 +1058,8 @@ const DEFAULT_SETTINGS = {
     { id: 'wb', title: 'Whitebeard ranking', show: true, link: 'https://docs.google.com/spreadsheets/d/12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc/edit#gid=0' },
     { id: 'st', title: 'Snow Train', show: true, link: 'https://docs.google.com/spreadsheets/d/1d2jgRQlfhYMufn69YaZ-2ZPQ-lGtfvSiOPDTEplUqGs/edit#gid=0' },
     { id: 'et', title: 'Energy Tower', show: true, link: '' },
-    { id: 'ma', title: 'Mammoth Assault', show: true, link: '' }] },
+    { id: 'ma', title: 'Mammoth Assault', show: true, link: '' },
+    { id: 'frost', title: 'Frost Crystal Contest', show: true, link: '' }] },
   sheets: Object.fromEntries(Object.entries(SHEET_BASE).map(([k, t]) => [k, { id: t.id, gid: t.gid }])),
   // which sections the bookmark's panel in the game shows
   bookmark: { members: true, wb: true, st: true, et: true, ma: true, ev: true },
