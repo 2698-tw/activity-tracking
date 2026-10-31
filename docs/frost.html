@@ -66,14 +66,11 @@ dialog img{display:block;max-width:100%;max-height:220px;margin:0 auto 10px;bord
 dialog textarea{width:100%;min-height:210px;font:14px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);resize:vertical}
 dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;align-items:center}
 dialog .row .grow{flex:1;font-size:13px}
-.picks{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px}
-@media (max-width:460px){.picks{grid-template-columns:1fr}}
-.pick{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:130px;padding:14px;text-align:center;
+.pick{width:100%;margin-top:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:160px;padding:14px;text-align:center;
   border:2px dashed var(--line);border-radius:10px;background:var(--bg);color:var(--ink);font-weight:600;cursor:pointer}
 .pick span{font-weight:400;font-size:12px;color:var(--dim)}
 .pick .ic{font-size:26px;line-height:1}
 .pick:hover,.pick:focus,.pick.over{border-color:var(--acc);outline:none}
-#paste{caret-color:transparent}
 </style>
 </head>
 <body>
@@ -94,10 +91,7 @@ dialog .row .grow{flex:1;font-size:13px}
 <dialog id="pickDlg">
   <h3>Upload map</h3>
   <p>A screenshot of the Frost Crystal Contest map, with every server label showing.</p>
-  <div class="picks">
-    <button type="button" class="pick" id="fromFile"><span class="ic">📁</span>Upload from files<span>or drop an image here</span></button>
-    <div class="pick" id="paste" contenteditable="true" role="button" tabindex="0" aria-label="Paste a screenshot"><span class="ic">📋</span>Paste a screenshot<span id="pasteHint">Click here, then press Ctrl+V</span></div>
-  </div>
+  <button type="button" class="pick" id="fromFile"><span class="ic">🖼️</span>Upload or paste a screenshot<span id="pasteHint">Click to choose a file, or paste with Ctrl+V</span></button>
   <div class="row"><span class="status grow" id="pickMsg"></span><button type="button" id="pickCancel">Cancel</button></div>
 </dialog>
 <dialog id="dlg">
@@ -210,10 +204,10 @@ dialog .row .grow{flex:1;font-size:13px}
     return rows.flatMap(row => row.sort((a, b) => a.x - b.x)).map(f => f.servers);
   }
   const lines = fields => fields.map(f => f.join(' ')).join('\n');
-  // the popup: a file, a pasted screenshot (Ctrl/⌘+V anywhere in it, or the browser's Paste on the box)
-  // or an image dropped on it
+  // the popup's one box: click for a file, paste a screenshot (Ctrl/⌘+V while the popup is open) or drop
+  // an image on it
   const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-  $('pasteHint').textContent = matchMedia('(pointer: coarse)').matches ? 'Tap and hold here, then Paste' : `Click here, then press ${mac ? '⌘' : 'Ctrl'}+V`;
+  $('pasteHint').textContent = matchMedia('(pointer: coarse)').matches ? 'Tap to choose a screenshot' : `Click to choose a file, or paste with ${mac ? '⌘' : 'Ctrl'}+V`;
   const pickMsg = t => { $('pickMsg').className = 'status grow bad'; $('pickMsg').textContent = t; };
   $('upload').onclick = () => { $('pickMsg').textContent = ''; $('pickDlg').showModal(); };
   $('pickCancel').onclick = () => $('pickDlg').close();
@@ -224,11 +218,9 @@ dialog .row .grow{flex:1;font-size:13px}
     const item = [...(e.clipboardData || {}).items || []].find(i => i.type.startsWith('image/'));
     if (item) useImage(item.getAsFile()); else pickMsg('No image on the clipboard — copy the screenshot first.');
   });
-  $('paste').addEventListener('beforeinput', e => { if (e.inputType !== 'insertFromPaste') e.preventDefault(); });
-  $('paste').addEventListener('drop', e => e.preventDefault());
   ['dragover', 'dragleave', 'drop'].forEach(t => $('pickDlg').addEventListener(t, e => {
     e.preventDefault();
-    document.querySelectorAll('.pick').forEach(p => p.classList.toggle('over', t === 'dragover'));
+    $('fromFile').classList.toggle('over', t === 'dragover');
     if (t !== 'drop') return;
     const f = [...e.dataTransfer.files].find(x => x.type.startsWith('image/'));
     if (f) useImage(f); else pickMsg('That is not an image.');
