@@ -243,6 +243,12 @@ window.Admin = (function () {
         if (o.getAttribute('href') !== c.link) o.href = c.link; if (o.hidden !== !c.link) o.hidden = !c.link;
       }
     }
+    // a first visit's cards, hidden until now (index.html, .homewait): shown as set, sliding in
+    const root = document.documentElement, home = document.getElementById('home');
+    if (root.classList.contains('homewait')) {
+      root.classList.remove('homewait');
+      if (home) { home.classList.remove('cardsin'); void home.offsetWidth; home.classList.add('cardsin'); }
+    }
   }
   applyHome();
 

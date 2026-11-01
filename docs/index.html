@@ -14,6 +14,10 @@
 // The saved theme, applied before the first paint so the page never flashes the other one.
 try { const t = JSON.parse(localStorage.getItem('kartz.theme'));
       if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch {}
+// A first visit (no settings saved on this device yet): the home cards stay hidden until the site's settings
+// come (admin.js, applyHome), so a hidden or renamed card never flashes up; at most 4 seconds.
+try { const s = JSON.parse(localStorage.getItem('site.settings')); if (!(s && s.cards && s.cards.ma && s.home && s.home.cards && s.home.cards.length)) throw 0; }
+catch { document.documentElement.classList.add('homewait'); setTimeout(() => document.documentElement.classList.remove('homewait'), 4000); }
 // #events: the home page with only the upcoming events, a link for people outside the alliances
 document.documentElement.classList.toggle('evonly', location.hash === '#events');
 // No #kartz or #cp in the address: the home page, shown from the first paint (cp.js takes over).
@@ -347,6 +351,7 @@ a.ev:hover{background:var(--line)}
 .apill.on button,.homeband .apill.on button{color:#fff}
 .apill .x{border-left:1px solid rgba(255,255,255,.4);font-weight:500;opacity:.9}
 .hcard[hidden]{display:none}
+.homewait .homecards{visibility:hidden}
 /* toast, dialogs, menus */
 .atoast{position:fixed;left:50%;bottom:max(20px, env(safe-area-inset-bottom));z-index:95;transform:translate(-50%,20px);opacity:0;pointer-events:none;max-width:calc(100vw - 32px);
   background:#20212c;color:#fff;border-radius:999px;padding:8px 8px 8px 16px;font-size:13.5px;display:flex;gap:10px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.3);transition:.25s}
@@ -3000,7 +3005,7 @@ loadSetup();
 </script>
 <script src="cp.js?v=10"></script>
 <!-- the admin pill and page, then the Alliance roster, Whitebeard and Snow Train cards -->
-<script src="admin.js?v=8"></script>
+<script src="admin.js?v=9"></script>
 <script src="cards.js?v=16"></script>
 <!-- Kartz: decoding the recording, then packing and reading it -->
 <script src="decode.js?v=4"></script>
