@@ -718,9 +718,9 @@ export default {
       }, reply);
     }
 
-    // The Frost page's Battle tab: snapshots of the contest's battle, read in the game by the bookmark (Read
-    // battle) as many times as wanted during its hour, kept per contest date. An empty body gives every
-    // date's snapshots, {days: {date: [snapshot, …]}}; only the bookmark, or the admin password, adds one.
+    // The Frost page's Battle and Ranking tabs: the contest's battle, read in the game by the bookmark (Read
+    // battle) at its end, one read per contest date (a later one replaces it). An empty body gives every
+    // date's read, {days: {date: read}}; only the bookmark, or the admin password, saves one.
     if (url.pathname.replace(/^\/+/, '') === 'api/frost-battle') {
       if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
       const body = await request.text();
@@ -1133,7 +1133,7 @@ function checkBattle(b) {
       mines: (Array.isArray(f.mines) ? f.mines : []).slice(0, 6).map(m => ({ spot: int(m.spot, 0, 99999), server: int(m.server, 0, 99999), players: int(m.players, 0, 1e6), masked: !!m.masked, name: nm(m.name), power: int(m.power, 0, B), uid: uid(m.uid) })),
     })),
     servers: b.servers.map(x => ({ rank: int(x.rank, 0, 1e4), server: int(x.server, 0, 99999), crystals: int(x.crystals, 0, B) })),
-    players: b.players.map(x => ({ rank: int(x.rank, 0, 1e5), server: int(x.server, 0, 99999), masked: !!x.masked, name: nm(x.name), score: int(x.score, 0, B), merit: int(x.merit, 0, B), uid: uid(x.uid) })),
+    players: b.players.map(x => ({ rank: int(x.rank, 0, 1e5), server: int(x.server, 0, 99999), masked: !!x.masked, name: nm(x.name), score: int(x.score, 0, B), uid: uid(x.uid) })),
   };
 }
 
@@ -1539,18 +1539,18 @@ const ADMIN_OPS = {
 // brings back anyone who returns. Rows are never deleted by a read; the admin view can.
 export class RosterStore {
   constructor(state, env) { this.state = state; this.env = env; }
-  // Every contest date's battle snapshots, oldest first, {days: {date: [snapshot]}}: each one under a key
-  // of its own (frost:battle:<date>:<time>), a full Individual Ranking being too big to share one
+  // Every contest date's battle read, {days: {date: read}}: one per contest, the last one taken (read at
+  // the battle's end). Kept under frost:battle:<date>; reads kept before there was only one (a list, or
+  // frost:battle:<date>:<time>) count by their latest.
   async battleDays() {
     const days = {};
     for (const [k, v] of await this.state.storage.list({ prefix: 'frost:battle:' })) {
       const day = k.slice(13, 23);
-      (days[day] = days[day] || []).push(...(Array.isArray(v) ? v : [v]));   // a date's list, as first kept, or one snapshot
+      for (const x of Array.isArray(v) ? v : [v]) if (x && (!days[day] || x.at > days[day].at)) days[day] = x;
     }
-    for (const l of Object.values(days)) l.sort((a, b) => a.at - b.at);
     return { days };
   }
-  // A battle read added to its date (at most 60 a contest). Masked players come with no name in the
+  // A battle read for its date, replacing the one there was. Masked players come with no name in the
   // Individual Ranking: ours are named from the roster by UID. No UID is kept.
   async battleAdd(b) {
     const roster = await this.load(), named = uid => (uid && roster[uid] && roster[uid].name) || '';
@@ -1560,11 +1560,11 @@ export class RosterStore {
       servers: b.servers,
       players: b.players.map(({ uid, ...p }) => ({ ...p, name: p.name || named(uid) })),
     };
-    const st = this.state.storage, pre = 'frost:battle:' + b.day + ':';
-    await st.put(pre + snap.at, snap);
-    const keys = [...(await st.list({ prefix: pre })).keys()];
-    if (keys.length > 60) await st.delete(keys.slice(0, keys.length - 60));
-    return { day: b.day, n: Math.min(keys.length, 60), at: snap.at };
+    const st = this.state.storage, key = 'frost:battle:' + b.day;
+    const old = [...(await st.list({ prefix: key })).keys()].filter(k => k !== key);
+    if (old.length) await st.delete(old);
+    await st.put(key, snap);
+    return { day: b.day, at: snap.at };
   }
   // Every contest date's Frost read, {days: {date: {fields, servers, at}}}. The one read saved before
   // reads were kept by date (S2698's first contest, whose battle was on 1 Nov 2026) moves to that date.

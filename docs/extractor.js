@@ -468,7 +468,7 @@
         }
         out.players = (P0 ? P0.rankList : []).map(function (r) {
           return { rank: r.rank || 0, server: Number(r.serverId) || 0, masked: !!r.ghostEnable, name: r.playerInfo ? uname(r.playerInfo) : '',
-            score: num(r.score), merit: num(r.merit), uid: longText(r.uid) };
+            score: num(r.score), uid: longText(r.uid) };
         });
         await wait(between(800, 1500));
       } finally { try { U.CloseUI(WR); } catch (e) {} }
@@ -783,7 +783,7 @@
     '<div data-sec="ev"><h3>Events</h3>' +
     '<div class="row2">' + act('evr', 'main', 'Read events', 'For the home page') + '</div></div>' +
     '<div data-sec="frost"><h3>Frost Crystal Contest</h3>' +
-    '<div class="row2">' + act('frr', 'main', 'Read battlefields', 'For the Frost page') + act('frb', 'main', 'Read battle', 'During the battle') + '</div></div>' +
+    '<div class="row2">' + act('frr', 'main', 'Read battlefields', 'For the Frost page') + act('frb', 'main', 'Read battle', 'At the battle\'s end') + '</div></div>' +
     '<div class="status idle" id="st"><span class="si"></span><span class="tx">Ready. Tap a button to start.</span></div></div>';
   document.body.appendChild(host);
   var $ = function (s) { return root.querySelector(s); };
@@ -1253,8 +1253,9 @@
     lock(false); refresh();
   };
 
-  /* Read battle: the battle as it stands, saved under the contest's date as one more snapshot of the hour
-     (api/frost-battle); the Worker names masked players of ours from the roster and keeps no UIDs. */
+  /* Read battle: the battle as it stands (tapped at its end, for the final result), saved under the
+     contest's date in place of any read before (api/frost-battle); the Worker names masked players of ours
+     from the roster and keeps no UIDs. */
   $('#frb').onclick = async function () {
     if (busy) return; lock(true);
     var b = $('#frb'); start(b); sub(b, 'reading…');
@@ -1264,7 +1265,7 @@
       var j = await postJson('/frost-battle', { day: contestDay(), status: bt.status, servers: bt.servers, players: bt.players });
       var us = bt.servers.filter(function (x) { return x.server === 2698; })[0];
       S.fb = { at: Date.now() }; save();
-      setP(b, 1); finish(b, true); sub(b, 'snapshot ' + (j.n || 1) + ' · now');
+      setP(b, 1); finish(b, true); sub(b, 'read · now');
       status('ok', 'Battle read' + (us ? ' · S2698 #' + us.rank + ', ' + us.crystals.toLocaleString() + ' crystals' : '') +
         '<small>' + bt.status.length + ' battlefields, ' + bt.servers.length + ' servers, ' + bt.players.length + ' players · on the Frost page\'s Battle tab.</small>');
     } catch (e) {
