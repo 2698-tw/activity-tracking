@@ -123,7 +123,9 @@ h2.sec:first-child{margin-top:0}
 .rtable td.up{color:#8ff0b5;font-size:12.5px}
 .rtable .rdim{color:rgba(235,235,245,.45)}
 .tabs[hidden]{display:none}
-mark{background:#ffe066;color:#14212e;border-radius:3px;padding:0 1px}
+.rclear{flex:none;width:22px;height:22px;display:grid;place-items:center;border:0;border-radius:50%;padding:0;background:rgba(255,255,255,.16);color:#fff;font-size:12px;line-height:1;cursor:pointer}
+.rclear:hover{background:rgba(255,255,255,.28)}
+.rclear[hidden]{display:none}
 .tabs{display:inline-flex;gap:2px;padding:3px;border-radius:10px;background:var(--line)}
 .tabs button{border:0;border-radius:8px;padding:6px 14px;background:transparent;color:var(--dim)}
 .tabs button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
@@ -183,9 +185,24 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   let days = {}, day = '', read = null;            // every contest date's read; the date shown and its read {fields, servers, at}
   let bdays = {}, rkWhat = 'servers', rkQ = '';    // every contest date's battle read; the Ranking tab's list and search
   const ALL = 'all';                               // the All tab: our players' points on every date
-  // the name search of All and Ranking: the name with the match marked
-  const mark = n => { n = String(n || ''); const i = rkQ ? n.toLowerCase().indexOf(rkQ.toLowerCase()) : -1;
-    return i < 0 ? esc(n) : esc(n.slice(0, i)) + '<mark>' + esc(n.slice(i, i + rkQ.length)) + '</mark>' + esc(n.slice(i + rkQ.length)); };
+  // each player's search name, as the site's other cards have it (docs/cards.js): from the roster
+  // workbook's Alliance Rosters tab first, then the Base CP sends; the exact name first, then one written
+  // without the fancy letters. The contest has no alliance, so by name alone.
+  const fold = s => String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, '');
+  let snames = [new Map(), new Map()];
+  function nameMap(list) {
+    const m = new Map(), weakKeys = new Set();
+    for (const [name, , search, weak] of list || []) for (const k of [name, '~' + fold(name)]) {
+      if (weak && m.has(k) && !weakKeys.has(k)) continue;
+      m.set(k, search); weak ? weakKeys.add(k) : weakKeys.delete(k);
+    }
+    return m;
+  }
+  const searchOf = name => { for (const m of snames) { const s = m.get(name) || (fold(name) !== '' && m.get('~' + fold(name))); if (s) return s; } return ''; };
+  // a name as the other cards show it: the in-game name, then the search name where it differs
+  const nameCell = name => { const s = searchOf(name); return esc(name) + (s && s !== name ? ` <span class="rdim">(${esc(s)})</span>` : ''); };
+  // the search matches the in-game name or the search name, fancy letters or not
+  const nameHit = (name, q) => !q || fold(name).includes(q) || fold(searchOf(name)).includes(q);
 
   const top = (s, n = TOP) => ((read.servers || {})[s] || []).slice(0, n);
   const total = (s, n = TOP) => top(s, n).reduce((a, p) => a + p[1], 0);
@@ -197,7 +214,9 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     $('out').innerHTML = '<div class="map">' + '<div class="skel bf"></div>'.repeat(3) + '</div>';
     try {
       const post = path => fetch(API + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
-      const [r, rb] = await Promise.all([post('/frost-read'), post('/frost-battle').catch(() => null)]);
+      const [r, rb, rn] = await Promise.all([post('/frost-read'), post('/frost-battle').catch(() => null), post('/search-names').catch(() => null)]);
+      const jn = rn && rn.ok ? await rn.json().catch(() => null) : null;
+      if (jn) snames = [nameMap(jn.roster), nameMap(jn.raw)];
       const j = await r.json().catch(() => null);
       if (!r.ok) throw new Error((j && j.error) || 'the read could not be fetched (' + r.status + ')');
       days = (j && j.days) || {};
@@ -333,17 +352,23 @@ if (window.frameElement) document.getElementById('homeLink').remove();
       head = `<th class="n">#</th><th>Server</th><th class="n">Crystals</th>`;
       rows = l.map(x => `<tr class="${String(x.server) === US ? 'us' : ''}"><td class="n">${x.rank}</td><td>S${esc(x.server)}</td><td class="n">${N(x.crystals)}</td></tr>`);
     } else {
-      const l = sn.players.filter(p => !q || String(p.name).toLowerCase().includes(q));
+      const l = sn.players.filter(p => nameHit(p.name, fold(rkQ)));
       n = l.length; total = sn.players.length;
       head = `<th class="n">#</th><th>Name</th><th class="n">Score</th>`;
-      rows = l.map(p => `<tr><td class="n">${p.rank}</td><td>${p.name ? mark(p.name) : 'Master Thief'}${p.masked ? maskIcon : ''}</td><td class="n">${N(p.score)}</td></tr>`);
+      rows = l.map(p => `<tr><td class="n">${p.rank}</td><td>${p.name ? nameCell(p.name) : 'Master Thief'}${p.masked ? maskIcon : ''}</td><td class="n">${N(p.score)}</td></tr>`);
     }
     $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>Frost Crystal ranking</b>
-        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="rkQ" type="text" placeholder="${rkWhat === 'servers' ? 'Search a server or name' : 'Search a name'}" autocomplete="off" value="${esc(rkQ)}"></label></div>
+        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="rkQ" type="text" placeholder="${rkWhat === 'servers' ? 'Search a server or name' : 'Search a name'}" autocomplete="off" value="${esc(rkQ)}"><button type="button" class="rclear" id="rkX" title="Clear the search" aria-label="Clear the search"${rkQ ? '' : ' hidden'}>✕</button></label></div>
       <div class="rbar"><button type="button" class="rchip ${rkWhat === 'servers' ? 'on' : ''}" data-rk="servers">Servers</button><button type="button" class="rchip ${rkWhat === 'players' ? 'on' : ''}" data-rk="players">S${US} players</button>
         <span class="rcount">${n === total ? N(total) : N(n) + ' of ' + N(total)} ${rkWhat === 'servers' ? 'servers' : 'players'}</span></div>
       <div class="rbody"><table class="rtable"><thead><tr>${head}</tr></thead><tbody>${rows.join('') || `<tr><td colspan="3" class="rdim">No ${rkWhat === 'servers' ? 'server' : 'player'} matches.</td></tr>`}</tbody></table></div></div>`;
-    const inp = $('rkQ'); inp.oninput = () => { rkQ = inp.value; const at = inp.selectionStart; drawRanking(); const k = $('rkQ'); k.focus(); k.setSelectionRange(at, at); };
+    searchBox(drawRanking);
+  }
+  // the search box of All and Ranking, as the other cards have it: a ✕ to empty it, shown once something is typed
+  function searchBox(redraw) {
+    const inp = $('rkQ');
+    inp.oninput = () => { rkQ = inp.value; const at = inp.selectionStart; redraw(); const k = $('rkQ'); k.focus(); k.setSelectionRange(at, at); };
+    $('rkX').onclick = e => { e.preventDefault(); rkQ = ''; redraw(); $('rkQ').focus(); };
   }
   // All dates: every S2698 player of the battles' Individual Rankings, their rank and score on each date
   function allRows() {
@@ -356,17 +381,17 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     return { ds, rows: [...by.values()].sort((a, b) => b.total - a.total) };
   }
   function drawAll() {
-    const { ds, rows } = allRows(), q = rkQ.toLowerCase();
-    const l = rows.filter(r => !q || r.name.toLowerCase().includes(q));
+    const { ds, rows } = allRows(), q = fold(rkQ);
+    const l = rows.filter(r => nameHit(r.name, q));
     $('status').textContent = `S${US} players across ${ds.length} ${ds.length === 1 ? 'contest' : 'contests'}`;
     const head = `<th>Name</th>${ds.map(d => `<th class="n">${esc(dayName(d))}</th>`).join('')}`;
-    const body = l.map(r => `<tr><td>${mark(r.name)}${r.masked ? maskIcon : ''}</td>${ds.map(d => r.on[d]
+    const body = l.map(r => `<tr><td>${nameCell(r.name)}${r.masked ? maskIcon : ''}</td>${ds.map(d => r.on[d]
       ? `<td class="n">${N(r.on[d].score)}</td>` : '<td class="n rdim">—</td>').join('')}</tr>`).join('');
     $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>S${US} points, all dates</b>
-        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="rkQ" type="text" placeholder="Search a name" autocomplete="off" value="${esc(rkQ)}"></label></div>
+        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="rkQ" type="text" placeholder="Search a name" autocomplete="off" value="${esc(rkQ)}"><button type="button" class="rclear" id="rkX" title="Clear the search" aria-label="Clear the search"${rkQ ? '' : ' hidden'}>✕</button></label></div>
       <div class="rbar"><span class="rcount">${l.length === rows.length ? N(rows.length) : N(l.length) + ' of ' + N(rows.length)} players</span></div>
       <div class="rbody"><table class="rtable"><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${ds.length + 1}" class="rdim">No player matches.</td></tr>`}</tbody></table></div></div>`;
-    const inp = $('rkQ'); inp.oninput = () => { rkQ = inp.value; const at = inp.selectionStart; drawAll(); const k = $('rkQ'); k.focus(); k.setSelectionRange(at, at); };
+    searchBox(drawAll);
   }
   $('out').addEventListener('click', e => { const r = e.target.closest('[data-rk]'); if (r) { rkWhat = r.dataset.rk; rkQ = ''; drawRanking(); } });
   const pick = v => { view = v; try { localStorage.setItem('frost.view', v); } catch {} draw(); };
@@ -381,8 +406,8 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     const q = v => /[",\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : v;
     if (day === ALL) {
       const { ds, rows: l } = allRows();
-      const rows = [['Name', 'Masked', ...ds]]
-        .concat(l.map(r => [r.name, r.masked ? 'yes' : '', ...ds.map(d => r.on[d] ? r.on[d].score : '')]));
+      const rows = [['Name', 'Search name', 'Masked', ...ds]]
+        .concat(l.map(r => [r.name, searchOf(r.name), r.masked ? 'yes' : '', ...ds.map(d => r.on[d] ? r.on[d].score : '')]));
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob(['\ufeff' + rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' }));
       a.download = `frost-s${US}-all-dates.csv`;
@@ -392,8 +417,8 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     if (view === 'bt' || view === 'rk') {
       const sn = battle();
       if (!sn) return;
-      const rows = [['Kind', 'Rank', 'Server', 'Name', 'Crystals / score', 'Masked']]
-        .concat(sn.servers.map(x => ['Server', x.rank, x.server, '', x.crystals, '']), sn.players.map(p => ['Player', p.rank, p.server, p.name, p.score, p.masked ? 'yes' : '']));
+      const rows = [['Kind', 'Rank', 'Server', 'Name', 'Search name', 'Crystals / score', 'Masked']]
+        .concat(sn.servers.map(x => ['Server', x.rank, x.server, '', '', x.crystals, '']), sn.players.map(p => ['Player', p.rank, p.server, p.name, searchOf(p.name), p.score, p.masked ? 'yes' : '']));
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob(['\ufeff' + rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' }));
       a.download = `frost-battle-${day}.csv`;
