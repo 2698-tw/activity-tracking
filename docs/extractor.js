@@ -408,7 +408,7 @@
   }
   // The battle, during the contest's hour, as its screens show it: from the contest open, its Status (every
   // battlefield and who holds each mine, masked holders' real names included, as the game sends them), then
-  // its Ranking (servers by crystals) and that Ranking's Individual tab (our warzone's players by score).
+  // its Ranking (servers by crystals) and that Ranking's Individual tab (our warzone's players by score, every page).
   // Each opened with the game's own button, read and closed again.
   async function readBattle(step) {
     var U = ui(), WF = win('CQ26WLBFightPanel'), WR = win('CQ26WLBRankPanel');
@@ -457,6 +457,15 @@
         step('Reading the Individual Ranking…', .8);
         var P = compNamed('CQ26WLBRankPanel'); P.onTabClick(null, '1');
         var P0 = await got('playerComp');
+        // every page of it, 30 at a time, the way scrolling to the end of the list loads the next
+        for (var pg = 0; P0 && pg < 40; pg++) {
+          var had = P0.rankList.length;
+          step('Reading the Individual Ranking… ' + had + ' players', .8);
+          await wait(between(500, 1100));
+          P0.scrollToBottomEvent();
+          for (var t2 = Date.now(); Date.now() - t2 < 6000 && (P0._isRequesting || P0.rankList.length === had); await wait(200));
+          if (P0.rankList.length === had) break;
+        }
         out.players = (P0 ? P0.rankList : []).map(function (r) {
           return { rank: r.rank || 0, server: Number(r.serverId) || 0, masked: !!r.ghostEnable, name: r.playerInfo ? uname(r.playerInfo) : '',
             score: num(r.score), merit: num(r.merit), uid: longText(r.uid) };

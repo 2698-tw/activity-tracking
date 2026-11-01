@@ -1121,7 +1121,7 @@ function checkBattle(b) {
   const int = (v, lo, hi) => Number.isFinite(v) && v >= lo && v <= hi ? Math.round(v) : 0;
   const nm = v => String(v == null ? '' : v).slice(0, 40), uid = v => /^\d{5,20}$/.test(String(v)) ? String(v) : '';
   if (!/^20\d\d-\d\d-\d\d$/.test(b.day || '')) throw new Error('day must be the contest date, YYYY-MM-DD');
-  if (!Array.isArray(b.status) || b.status.length > 16 || !Array.isArray(b.servers) || b.servers.length > 100 || !Array.isArray(b.players) || b.players.length > 500)
+  if (!Array.isArray(b.status) || b.status.length > 16 || !Array.isArray(b.servers) || b.servers.length > 100 || !Array.isArray(b.players) || b.players.length > 2000)
     throw new Error('a battle read is {day, status, servers, players}');
   const B = 1e12;
   return {
@@ -1234,7 +1234,7 @@ async function rosterCall(env, path, body, reply) {
 }
 
 // What a backup holds and a restore may write: the cards' data and the settings, not History
-const DATA_KEY = /^(rows|reads|moves|settings|frost:map|frost:read|frost:day:\d{4}-\d{2}-\d{2}|frost:battle:\d{4}-\d{2}-\d{2}|events|(wb|st|et|ma):who|(wb|st|et|ma):day:\d{4}-\d{2}-\d{2}|et:pts:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et|ma))$/;
+const DATA_KEY = /^(rows|reads|moves|settings|frost:map|frost:read|frost:day:\d{4}-\d{2}-\d{2}|frost:battle:\d{4}-\d{2}-\d{2}(:\d+)?|events|(wb|st|et|ma):who|(wb|st|et|ma):day:\d{4}-\d{2}-\d{2}|et:pts:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et|ma))$/;
 const LOG_MAX = 100;
 const MOVES_MAX = 3000;                       // alliance changes kept on the roster card's Log
 const MOVE_JOIN = 30 * 60 * 1000;             // leaving and joining within this is one change                          // changes kept in History, each with what it replaced
@@ -1539,10 +1539,15 @@ const ADMIN_OPS = {
 // brings back anyone who returns. Rows are never deleted by a read; the admin view can.
 export class RosterStore {
   constructor(state, env) { this.state = state; this.env = env; }
-  // Every contest date's battle snapshots, oldest first, {days: {date: [snapshot]}}.
+  // Every contest date's battle snapshots, oldest first, {days: {date: [snapshot]}}: each one under a key
+  // of its own (frost:battle:<date>:<time>), a full Individual Ranking being too big to share one
   async battleDays() {
     const days = {};
-    for (const [k, v] of await this.state.storage.list({ prefix: 'frost:battle:' })) days[k.slice(13)] = v;
+    for (const [k, v] of await this.state.storage.list({ prefix: 'frost:battle:' })) {
+      const day = k.slice(13, 23);
+      (days[day] = days[day] || []).push(...(Array.isArray(v) ? v : [v]));   // a date's list, as first kept, or one snapshot
+    }
+    for (const l of Object.values(days)) l.sort((a, b) => a.at - b.at);
     return { days };
   }
   // A battle read added to its date (at most 60 a contest). Masked players come with no name in the
@@ -1555,10 +1560,11 @@ export class RosterStore {
       servers: b.servers,
       players: b.players.map(({ uid, ...p }) => ({ ...p, name: p.name || named(uid) })),
     };
-    const key = 'frost:battle:' + b.day, list = (await this.state.storage.get(key)) || [];
-    list.push(snap);
-    await this.state.storage.put(key, list.slice(-60));
-    return { day: b.day, n: list.length, at: snap.at };
+    const st = this.state.storage, pre = 'frost:battle:' + b.day + ':';
+    await st.put(pre + snap.at, snap);
+    const keys = [...(await st.list({ prefix: pre })).keys()];
+    if (keys.length > 60) await st.delete(keys.slice(0, keys.length - 60));
+    return { day: b.day, n: Math.min(keys.length, 60), at: snap.at };
   }
   // Every contest date's Frost read, {days: {date: {fields, servers, at}}}. The one read saved before
   // reads were kept by date (S2698's first contest, whose battle was on 1 Nov 2026) moves to that date.

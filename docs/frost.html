@@ -73,6 +73,7 @@ td.up{color:var(--usink);font-size:12px;text-align:right;white-space:nowrap}
 .bf .stats b{color:var(--ink)}
 .bf li .who{color:var(--dim)}
 .bf li.empty{color:var(--dim)}
+.box .more{display:block;width:100%;border:0;border-top:1px solid var(--line);border-radius:0;background:var(--head);color:var(--acc);padding:8px}
 .tabs{display:inline-flex;gap:2px;padding:3px;border-radius:10px;background:var(--line)}
 .tabs button{border:0;border-radius:8px;padding:6px 14px;background:transparent;color:var(--dim)}
 .tabs button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
@@ -128,7 +129,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const M = v => Math.round(v / 1e6) + 'M';
   let days = {}, day = '', read = null;            // every contest date's read; the date shown and its read {fields, servers, at}
-  let bdays = {}, snapAt = null;                    // every contest date's battle snapshots; the one picked (its time), else the latest
+  let bdays = {}, snapAt = null, allPlayers = false;                    // every contest date's battle snapshots; the one picked (its time), else the latest
 
   const top = (s, n = TOP) => ((read.servers || {})[s] || []).slice(0, n);
   const total = (s, n = TOP) => top(s, n).reduce((a, p) => a + p[1], 0);
@@ -228,8 +229,11 @@ if (window.frameElement) document.getElementById('homeLink').remove();
       return `<tr class="${String(x.server) === US ? 'us' : ''}"><td class="n">${x.rank}</td><td class="nm">S${esc(x.server)}</td><td class="cp">${N(x.crystals)}</td>
         <td class="up">${d ? '+' + N(d) : ''}</td><td>${line}</td></tr>`;
     }).join('')}</table></div>`;
-    const players = `<div class="box"><h3>S${US} players by score<small>top ${sn.players.length}</small></h3><table>${sn.players.map(p =>
-      `<tr><td class="n">${p.rank}</td><td class="nm" title="${esc(p.name)}">${esc(p.name || 'Master Thief')}${p.masked ? maskIcon : ''}</td><td class="cp">${N(p.score)}</td></tr>`).join('')}</table></div>`;
+    // the top 50, all of them on request (a full ranking runs to a few hundred)
+    const shown = allPlayers ? sn.players : sn.players.slice(0, 50);
+    const players = `<div class="box"><h3>S${US} players by score<small>${N(sn.players.length)} players</small></h3><table>${shown.map(p =>
+      `<tr><td class="n">${p.rank}</td><td class="nm" title="${esc(p.name)}">${esc(p.name || 'Master Thief')}${p.masked ? maskIcon : ''}</td><td class="cp">${N(p.score)}</td></tr>`).join('')}</table>
+      ${sn.players.length > 50 ? `<button type="button" class="more" data-all="1">${allPlayers ? 'Show the top 50' : `Show all ${N(sn.players.length)}`}</button>` : ''}</div>`;
     const fields = '<div class="map">' + sn.status.map((f, k) => {
       const us = f.us || {};
       return `<section class="bf${['', ' l', ' r'][k % 3]}"><h2>Battlefield ${k + 1}</h2>
@@ -243,7 +247,10 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     $('out').innerHTML = `<div class="snaps">Read at ${list.map(x => `<button type="button" data-snap="${x.at}" class="${x === sn ? 'on' : ''}">${hm(x.at)}</button>`).join('')}</div>
       <div class="btgrid">${servers}${players}</div>${fields}`;
   }
-  $('out').addEventListener('click', e => { const b = e.target.closest('[data-snap]'); if (b) { snapAt = +b.dataset.snap; drawBattle(); } });
+  $('out').addEventListener('click', e => {
+    const b = e.target.closest('[data-snap]'); if (b) { snapAt = +b.dataset.snap; drawBattle(); }
+    if (e.target.closest('[data-all]')) { allPlayers = !allPlayers; drawBattle(); }
+  });
   const pick = v => { view = v; try { localStorage.setItem('frost.view', v); } catch {} draw(); };
   $('days').onclick = e => { const b = e.target.closest('[data-day]'); if (b && (days[b.dataset.day] || bdays[b.dataset.day])) { day = b.dataset.day; read = days[day] || null; snapAt = null; draw(); } };
   $('tabBt').onclick = () => pick('bt');
