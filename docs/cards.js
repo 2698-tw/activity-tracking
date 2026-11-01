@@ -82,7 +82,9 @@
 
     // Each column: its value for sorting (and CSV), its cell, and how admin mode edits it
     const DEF = {
-      name: { text: 1, val: r => r.name, cell: r => esc(r.name) + (r.search && r.search !== r.name ? ` <span class="rdim">(${esc(r.search)})</span>` : ''), edit: 'text' },
+      name: { text: 1, val: r => r.name, edit: 'text',
+              cell: r => esc(r.name) + (r.search && r.search !== r.name ? ` <span class="rdim">(${esc(r.search)})</span>` : '') +
+                ((r.names || []).length ? ` <span class="rwas" title="Formerly ${esc(r.names.slice().reverse().join(', '))}">↺</span>` : '') },
       // from the roster card for a player on it (Left once they have left), else the card's own read
       ally: { text: 1, val: r => r.ally, cell: r => allyTag(r.ally), edit: 'ally' },
       alliance: { text: 1, val: r => r.alliance, cell: r => allyTag(r.alliance), edit: 'ally' },
@@ -210,8 +212,8 @@
       el('Reads').innerHTML = o.id === 'ro'
         ? AL.map(a => `<span><span class="rtag t${esc(a)}">${esc(a)}</span> ${W.reads[a] ? 'read ' + ago(W.reads[a]) : '<span class="rdim">not read yet</span>'}${admin ? ` <button type="button" class="rgo mini" data-reset="${esc(a)}">Reset</button><button type="button" class="rgo mini" data-wipe="${esc(a)}">Wipe</button>` : ''}</span>`).join('')
         : W.rows ? `${W.rows.length} players · ${W.dates.length} ${W.dates.length === 1 ? 'day' : 'days'}` + (W.dates.length ? ` · last read ${head(W.dates[W.dates.length - 1])}` : '') : '';
-      if (o.id === 'ro' && W.view === 'moves') return drawMoves(box, q);
-      const rows = (W.rows || []).filter(r => (!q || fold(r.name).includes(q) || (r.search && fold(r.search).includes(q))) &&
+      if (o.id === 'ro' && W.view !== 'list') return drawMoves(box, q);
+      const rows = (W.rows || []).filter(r => (!q || fold(r.name).includes(q) || (r.search && fold(r.search).includes(q)) || (r.names || []).some(n => fold(n).includes(q))) &&
         (!W.ally || (W.ally === 'OTHER' ? !AL.includes(r[allyKey]) : r[allyKey] === W.ally)) &&
         (!W.type || bests(r).some(b => b[0] === W.type)) && (!W.cls || r.cls === W.cls) && (!chipRule || matches(chipRule, r)));
       el('Chips').innerHTML =
@@ -243,25 +245,39 @@
     }
 
     /* ---- the roster's Log: each alliance change the reads found, newest first ---- */
-    const views = () => `<span class="rseg">${[['list', 'Players'], ['moves', 'Log']].map(([v, l]) => `<button type="button" class="rchip ${W.view === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</span>`;
+    const views = () => `<span class="rseg">${[['list', 'Players'], ['moves', 'Alliance History'], ['names', 'Name log']].map(([v, l]) => `<button type="button" class="rchip ${W.view === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</span>`;
+    // The roster's two logs, newest first: Alliance History (who joined, moved or left) and the Name log (a
+    // known player read under a new name, on any card, players outside the alliances too)
     function drawMoves(box, q) {
-      const AL = Admin.settings.alliances, admin = Admin.on;
+      const AL = Admin.settings.alliances, admin = Admin.on, names = W.view === 'names';
       const searchOf = name => (W.rows.find(r => r.name === name) || {}).search;
       const tag = a => a === null ? '<span class="rtag tNew">New</span>' : a === '' ? '<span class="rtag tLeft">No alliance</span>' : allyTag(a);
-      const list = W.moves.filter(x => (!W.ally || x.from === W.ally || x.to === W.ally) &&
-        (!q || fold(x.name).includes(q) || fold(searchOf(x.name) || '').includes(q)));
-      el('Chips').innerHTML = views() + ['', ...AL].map(a => `<button type="button" class="rchip ${W.ally === a ? 'on' : ''}" data-a="${esc(a)}">${esc(a) || 'All alliances'}</button>`).join('') +
-        (W.rows ? `<span class="rcount">${list.length} ${list.length === 1 ? 'change' : 'changes'}</span>` : '');
+      const inAlly = x => !W.ally || (names ? (W.ally === 'OTHER' ? !AL.includes(x.ally) : x.ally === W.ally) : x.from === W.ally || x.to === W.ally);
+      const mine = W.moves.filter(x => (x.kind === 'name') === names);
+      const list = mine.filter(x => inAlly(x) &&
+        (!q || [x.name, searchOf(x.name), ...(names ? [x.from, x.to] : [])].some(n => n && fold(n).includes(q))));
+      const n = list.length, what = names ? (n === 1 ? 'rename' : 'renames') : (n === 1 ? 'change' : 'changes');
+      el('Chips').innerHTML = views() + ['', ...AL, ...(names ? ['OTHER'] : [])].map(a => `<button type="button" class="rchip ${W.ally === a ? 'on' : ''}" data-a="${esc(a)}">${a === 'OTHER' ? 'Other' : esc(a) || 'All alliances'}</button>`).join('') +
+        (W.rows ? `<span class="rcount">${n} ${what}</span>` : '');
       if (bulk) { bulk.classList.remove('on'); bulk.innerHTML = ''; }
       if (W.err) { box.innerHTML = `<p class="rnote">${esc(W.err)}</p>`; return; }
       if (!W.rows) { box.innerHTML = '<p class="rnote">Loading…</p>'; return; }
-      if (!W.moves.length) { box.innerHTML = '<p class="rnote">No alliance changes yet. Each read of an alliance adds who joined, moved or left since the last one.</p>'; return; }
+      if (!mine.length) {
+        box.innerHTML = names ? '<p class="rnote">No name changes yet. Any read, of an alliance or an event, notes a player it knows under a new name here.</p>'
+          : '<p class="rnote">No alliance changes yet. Each read of an alliance adds who joined, moved or left since the last one.</p>';
+        return;
+      }
       const when = at => { const d = new Date(at); return `${d.getDate()} ${d.toLocaleString('en-GB', { month: 'short' })} <span class="rdim">· ${ago(at)}</span>`; };
-      box.innerHTML = `<table class="rtable mvtable"><thead><tr><th>When</th><th class="nm">Name</th><th>Change</th>${admin ? '<th></th>' : ''}</tr></thead><tbody>${list.map(x => {
-        const s = searchOf(x.name);
-        return `<tr><td>${when(x.at)}</td><td class="nm">${esc(x.name)}${s && s !== x.name ? ` <span class="rdim">(${esc(s)})</span>` : ''}</td>
-          <td>${tag(x.from)} <span class="rdim">→</span> ${tag(x.to)}</td>${admin ? `<td><button type="button" class="rgo mini" data-mv="${esc(x.m)}" title="Take this off the Log">✕</button></td>` : ''}</tr>`;
-      }).join('') || '<tr><td colspan="4" class="rdim">No changes match.</td></tr>'}</tbody></table>`;
+      const x0 = admin ? '<th></th>' : '', del = x => admin ? `<td><button type="button" class="rgo mini" data-mv="${esc(x.m)}" title="Take this off the log">✕</button></td>` : '';
+      box.innerHTML = names
+        ? `<table class="rtable mvtable"><thead><tr><th>When</th><th class="nm">Old name</th><th class="nm">New name</th><th>Alliance</th>${x0}</tr></thead><tbody>${list.map(x =>
+            `<tr><td>${when(x.at)}</td><td class="nm">${esc(x.from)}</td><td class="nm"><span class="rdim">→</span> ${esc(x.to)}${x.name !== x.to ? ` <span class="rdim">(now ${esc(x.name)})</span>` : ''}</td>
+             <td>${x.ally ? allyTag(x.ally) : '<span class="rdim">—</span>'}</td>${del(x)}</tr>`).join('') || `<tr><td colspan="5" class="rdim">No renames match.</td></tr>`}</tbody></table>`
+        : `<table class="rtable mvtable"><thead><tr><th>When</th><th class="nm">Name</th><th>Change</th>${x0}</tr></thead><tbody>${list.map(x => {
+            const s = searchOf(x.name);
+            return `<tr><td>${when(x.at)}</td><td class="nm">${esc(x.name)}${s && s !== x.name ? ` <span class="rdim">(${esc(s)})</span>` : ''}</td>
+              <td>${tag(x.from)} <span class="rdim">→</span> ${tag(x.to)}</td>${del(x)}</tr>`;
+          }).join('') || '<tr><td colspan="4" class="rdim">No changes match.</td></tr>'}</tbody></table>`;
     }
 
     // a change added by hand: one from before the Log was kept, or one a read missed
@@ -300,7 +316,7 @@
         note = document.createElement('div'); note.className = 'rfoot radmnote';
         rapp.appendChild(note);                      // at the bottom of the card
       }
-      bar.innerHTML = Admin.on && W.view === 'moves' ? '<button type="button" class="rgo pink" data-act="addmove">+ Change</button>' : Admin.on ? `<button type="button" class="rgo pink" data-act="add">+ Player</button>${dated ? '<button type="button" class="rgo pink" data-act="adddate">+ Date</button>' : ''}${o.id === 'ro' ? '<button type="button" class="rgo" data-act="sendro">Send to sheet</button>' : ''}<button type="button" class="rgo" data-act="csv">Export CSV</button>` : '';
+      bar.innerHTML = Admin.on && W.view === 'names' ? '' : Admin.on && W.view === 'moves' ? '<button type="button" class="rgo pink" data-act="addmove">+ Change</button>' : Admin.on ? `<button type="button" class="rgo pink" data-act="add">+ Player</button>${dated ? '<button type="button" class="rgo pink" data-act="adddate">+ Date</button>' : ''}${o.id === 'ro' ? '<button type="button" class="rgo" data-act="sendro">Send to sheet</button>' : ''}<button type="button" class="rgo" data-act="csv">Export CSV</button>` : '';
       note.hidden = !Admin.on;
       note.innerHTML = 'Admin: click a cell to change it · ⋯ for a player · ✎ on a date for its column (and to send that day to the sheet again) · tick players to change several at once. Every change is in History and can be undone.' +
         (o.id === 'ro' ? ' ⚠ columns come from the game: its next read of that alliance replaces an edit (MM/CE edits stay).' : ' Names come from the game: its next read replaces an edit. Alliances of players on the Alliance roster card come from there: changing one here changes it on the roster, and every card follows.');
@@ -684,7 +700,7 @@
     rapp.addEventListener('click', async e => {
       const t = e.target, b = t.closest('button'), d = b ? b.dataset : {};
       if (b && b.classList.contains('rchip')) {
-        if ('v' in d) { W.view = d.v; W.ally = W.view === 'moves' ? '' : null; defaults(); }
+        if ('v' in d) { W.view = d.v; W.ally = W.view !== 'list' ? '' : null; defaults(); }
         else if ('a' in d) W.ally = d.a; else if ('t' in d) W.type = W.type === d.t ? '' : d.t;
         else if ('c' in d) W.cls = W.cls === d.c ? '' : d.c; else if ('rule' in d) W.rule = W.rule === d.rule ? '' : d.rule;
         return draw();

@@ -1100,6 +1100,21 @@ function rulesFromHighlight(h) {
   }
   return out;
 }
+// A player read under a name other than the one they had: a rename in the roster card's Log
+// ({kind: 'name', from: old name, to: new name, ally}), unless that one is already the latest there.
+function renameNoted(moves, k, from, to, ally, now) {
+  if (!from || !to || from === to) return false;
+  for (let i = moves.length - 1; i >= 0; i--) if (moves[i].k === k && moves[i].kind === 'name') { if (moves[i].to === to) return false; break; }
+  moves.push({ m: crypto.randomUUID().slice(0, 8), k, kind: 'name', name: to, from, to, ally, at: now });
+  return true;
+}
+// a roster player's former names, most recent last (the ten latest), once the read's name is new
+function formerNames(was, name) {
+  const list = (was.names || []).filter(n => n !== name);
+  if (was.name && was.name !== name && !list.includes(was.name)) list.push(was.name);
+  return list.slice(-10);
+}
+
 // settings as sent, made safe: unknown fields dropped, each value checked, the defaults filling the gaps
 function cleanSettings(s) {
   const out = structuredClone(DEFAULT_SETTINGS);
@@ -1575,7 +1590,7 @@ export class RosterStore {
       }
       moves.push({ m: crypto.randomUUID().slice(0, 8), k, name, from, to, at: now });
     };
-    let added = 0, updated = 0, rejoined = 0, left = 0;
+    let added = 0, updated = 0, rejoined = 0, left = 0, renamed = 0;
     for (const m of read.members) {
       seen.add(m.uid);
       const was = rows[m.uid];
@@ -1584,9 +1599,11 @@ export class RosterStore {
         updated++;
         if (was.status === 'Left') { rejoined++; move(m.uid, m.name, '', read.alliance); }
         else if (was.alliance !== read.alliance) move(m.uid, m.name, was.alliance, read.alliance);
+        if (renameNoted(moves, m.uid, was.name, m.name, read.alliance, now)) renamed++;
       }
       // what the admin view set to stay (MM/CE) wins over the read
-      rows[m.uid] = { ...was, ...m, ...(was && was.pin), alliance: read.alliance, status: 'Active', leftAt: 0, seenAt: now, firstAt: (was && was.firstAt) || now };
+      rows[m.uid] = { ...was, ...m, ...(was && was.pin), alliance: read.alliance, status: 'Active', leftAt: 0, seenAt: now, firstAt: (was && was.firstAt) || now,
+                      ...(was ? { names: formerNames(was, m.name) } : {}) };
     }
     for (const uid of Object.keys(rows)) {
       const r = rows[uid];
@@ -1594,7 +1611,7 @@ export class RosterStore {
     }
     reads[read.alliance] = now;
     await this.state.storage.put({ rows, reads, moves: moves.slice(-MOVES_MAX) });
-    return { alliance: read.alliance, added, updated, rejoined, left, total: Object.keys(rows).length };
+    return { alliance: read.alliance, added, updated, rejoined, left, renamed, total: Object.keys(rows).length };
   }
   // the card's view: every row with its site id instead of its UID, when each alliance was last read,
   // and the alliance changes, newest first, under each player's name now (from: null for a new player,
@@ -1603,7 +1620,8 @@ export class RosterStore {
     const rows = await this.load(), reads = (await this.state.storage.get('reads')) || {}, moves = (await this.state.storage.get('moves')) || [];
     const ok = new Set([...ROSTER_ALLIANCES, ...await this.alliances()]), ids = await this.ids('ro', Object.keys(rows));
     return { reads, rows: Object.entries(rows).filter(([, r]) => ok.has(r.alliance)).map(([k, { uid, pin, ...r }]) => ({ id: ids[k], ...r })),
-             moves: moves.slice().reverse().map(x => ({ m: x.m, name: (rows[x.k] && rows[x.k].name) || x.name, from: x.from, to: x.to, at: x.at })) };
+             moves: moves.slice().reverse().map(x => ({ m: x.m, name: (rows[x.k] && rows[x.k].name) || x.name, from: x.from, to: x.to, at: x.at,
+               ...(x.kind === 'name' ? { kind: 'name', ally: x.ally || (rows[x.k] && rows[x.k].alliance) || '' } : {}) })) };
   }
 
   // Whitebeard (ns 'wb') and the Snow Train (ns 'st'): each UTC day's points under a key of its own
@@ -1625,6 +1643,10 @@ export class RosterStore {
     const who = (await this.state.storage.get(ns + ':who')) || {};
     const alias = (await this.state.storage.get('adm:alias:' + ns)) || {};
     const garrison = ns === 'et' || ns === 'ma', roster = garrison ? await this.load() : null, allies = [];
+    // a known player under a new name: noted in the roster card's Log (once, whichever read sees it first)
+    const moves = (await this.state.storage.get('moves')) || [], n0 = moves.length, now = Date.now();
+    for (const r of read.rows) { const w = who[alias[r.key] || r.key]; if (w && r.key && !alias[r.key]) renameNoted(moves, r.key, w.name, r.name, r.ally || w.ally || '', now); }
+    if (moves.length !== n0) await this.state.storage.put('moves', moves.slice(-MOVES_MAX));
     for (const r of read.rows) {
       const key = alias[r.key] || r.key, was = who[key] || {};
       if (garrison) {
