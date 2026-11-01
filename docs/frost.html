@@ -59,21 +59,31 @@ button:disabled{opacity:.55;cursor:default}
 .snaps{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 14px;font-size:13px;color:var(--dim)}
 .snaps button{padding:4px 11px;border-radius:999px;font-weight:600;font-size:12.5px}
 .snaps button.on{background:var(--acc);border-color:var(--acc);color:#fff}
-.btgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;margin:0 0 18px}
-@media (max-width:820px){.btgrid{grid-template-columns:minmax(0,1fr)}}
-.box{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-.box h3{margin:0;padding:9px 12px;font-size:14px;background:var(--head);border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:baseline}
-.box h3 small{margin-left:auto;font-weight:500;color:var(--dim);font-size:12px}
-.box table td{padding:5px 10px}
-.box tr.us td{background:var(--us);color:var(--usink);font-weight:700}
-td.up{color:var(--usink);font-size:12px;text-align:right;white-space:nowrap}
-.spark{display:block}
 .mask{font-size:12px;margin-left:4px;cursor:help}
 .bf .stats{padding:0 12px 8px;font-size:12.5px;color:var(--dim)}
 .bf .stats b{color:var(--ink)}
 .bf li .who{color:var(--dim)}
 .bf li.empty{color:var(--dim)}
-.box .more{display:block;width:100%;border:0;border-top:1px solid var(--line);border-radius:0;background:var(--head);color:var(--acc);padding:8px}
+/* Ranking: the battle's servers and players, as the site's cards look */
+.rapp{color-scheme:dark;color:#f3f3f7;background:rgba(22,22,30,.97);border-radius:18px;box-shadow:0 12px 40px rgba(0,0,0,.25),inset 0 0 0 2px rgba(224,69,123,.55);overflow:hidden}
+.rhead{display:flex;align-items:center;gap:10px;padding:12px 14px 8px;flex-wrap:wrap}
+.rhead b{font-size:15.5px}
+.rsearch{flex:1;min-width:160px;display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.08);border-radius:999px;padding:6px 14px;margin:0}
+.rsearch:focus-within{box-shadow:inset 0 0 0 2px rgba(224,69,123,.85)}
+.rsearch input{flex:1;min-width:0;border:0;outline:0;background:none;color:#fff;font:inherit;font-size:15px;padding:0;caret-color:#fff}
+.rreads{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 14px 8px;font-size:12.5px;color:rgba(235,235,245,.65)}
+.rbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 14px 10px}
+.rchip{border:0;background:rgba(255,255,255,.08);color:#f3f3f7;border-radius:999px;padding:5px 12px;font:inherit;font-size:12.5px;font-weight:400;cursor:pointer}
+.rchip.on{background:rgba(195,20,65,.35);box-shadow:inset 0 0 0 1px #e0457b}
+.rcount{margin-left:auto;font-size:12.5px;color:rgba(235,235,245,.5)}
+.rbody{overflow:auto;padding:0 14px 14px}
+.rtable{width:100%;border-collapse:collapse;font-size:13.5px}
+.rtable th{position:sticky;top:0;background:#20212c;text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:rgba(235,235,245,.6);padding:8px 10px;font-weight:600;white-space:nowrap}
+.rtable th.n,.rtable td.n{text-align:right;font-variant-numeric:tabular-nums}
+.rtable td{padding:7px 10px;border-top:1px solid rgba(255,255,255,.08);white-space:nowrap;color:#f3f3f7}
+.rtable tr.us td{background:rgba(126,226,168,.12);color:#8ff0b5;font-weight:700}
+.rtable td.up{color:#8ff0b5;font-size:12.5px}
+.rtable .rdim{color:rgba(235,235,245,.45)}
 .tabs{display:inline-flex;gap:2px;padding:3px;border-radius:10px;background:var(--line)}
 .tabs button{border:0;border-radius:8px;padding:6px 14px;background:transparent;color:var(--dim)}
 .tabs button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
@@ -111,7 +121,7 @@ td.cp{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
 <div class="wrap">
   <div class="days" id="days" role="tablist" hidden></div>
   <div class="bar">
-    <div class="tabs" role="tablist"><button type="button" id="tabSum" role="tab">Summary</button><button type="button" id="tabPl" role="tab">Players</button><button type="button" id="tabBt" role="tab">Battle</button></div>
+    <div class="tabs" role="tablist"><button type="button" id="tabSum" role="tab">Summary</button><button type="button" id="tabPl" role="tab">Players</button><button type="button" id="tabBt" role="tab">Battle</button><button type="button" id="tabRk" role="tab">Ranking</button></div>
     <span class="status grow" id="status">Loading…</span>
     <button type="button" id="csv" disabled>Download CSV</button>
   </div>
@@ -129,14 +139,14 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const M = v => Math.round(v / 1e6) + 'M';
   let days = {}, day = '', read = null;            // every contest date's read; the date shown and its read {fields, servers, at}
-  let bdays = {}, snapAt = null, allPlayers = false;                    // every contest date's battle snapshots; the one picked (its time), else the latest
+  let bdays = {}, snapAt = null, rkWhat = 'servers', rkQ = '';                    // every contest date's battle snapshots; the one picked (its time), else the latest
 
   const top = (s, n = TOP) => ((read.servers || {})[s] || []).slice(0, n);
   const total = (s, n = TOP) => top(s, n).reduce((a, p) => a + p[1], 0);
   const M1 = v => (v / 1e6).toFixed(1) + 'M';
   // the view last picked, on this device
   let view = 'sum';
-  try { const v = localStorage.getItem('frost.view'); if (v === 'pl' || v === 'bt') view = v; } catch {}
+  try { const v = localStorage.getItem('frost.view'); if (v === 'pl' || v === 'bt' || v === 'rk') view = v; } catch {}
   async function load() {
     $('out').innerHTML = '<div class="map">' + '<div class="skel bf"></div>'.repeat(3) + '</div>';
     try {
@@ -173,8 +183,9 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   function draw() {
     $('days').innerHTML = [...new Set([...Object.keys(days), ...Object.keys(bdays)])].sort().map(d =>
       `<button type="button" role="tab" data-day="${esc(d)}" class="${d === day ? 'on' : ''}" aria-selected="${d === day}">${esc(dayName(d))}</button>`).join('');
-    for (const [id, v] of [['tabSum', 'sum'], ['tabPl', 'pl'], ['tabBt', 'bt']]) { $(id).classList.toggle('on', view === v); $(id).setAttribute('aria-selected', view === v); }
+    for (const [id, v] of [['tabSum', 'sum'], ['tabPl', 'pl'], ['tabBt', 'bt'], ['tabRk', 'rk']]) { $(id).classList.toggle('on', view === v); $(id).setAttribute('aria-selected', view === v); }
     if (view === 'bt') return drawBattle();
+    if (view === 'rk') return drawRanking();
     if (!read) { $('status').textContent = 'No battlefields read for this date.'; $('out').innerHTML = '<div class="empty">Tap <b>Read battlefields</b> in the bookmark for this contest\'s top 20s.</div>'; return; }
     const t = new Date(read.at).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     $('status').textContent = `${read.fields.flat().length} servers · top ${view === 'sum' ? TOP : LONG} by base CP · read from the game ${t}`;
@@ -206,12 +217,6 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   const N = v => Number(v || 0).toLocaleString('en-US');
   const hm = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const maskIcon = '<span class="mask" title="Master Thief: masked in the game">🎭</span>';
-  function spark(vals) {
-    if (vals.length < 2) return '';
-    const w = 90, h = 22, max = Math.max(...vals, 1);
-    const pts = vals.map((v, i) => `${(i / (vals.length - 1) * w).toFixed(1)},${(h - 2 - v / max * (h - 4)).toFixed(1)}`).join(' ');
-    return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>`;
-  }
   function drawBattle() {
     const list = bdays[day] || [];
     if (!list.length) {
@@ -220,20 +225,8 @@ if (window.frameElement) document.getElementById('homeLink').remove();
       return;
     }
     let i = list.findIndex(x => x.at === snapAt); if (i < 0) i = list.length - 1;
-    const sn = list[i], prev = list[i - 1], upTo = list.slice(0, i + 1);
+    const sn = list[i];
     $('status').textContent = `Battle · ${list.length} ${list.length === 1 ? 'snapshot' : 'snapshots'} · this one read ${hm(sn.at)}`;
-    const was = {}; if (prev) for (const x of prev.servers) was[x.server] = x.crystals;
-    const servers = `<div class="box"><h3>Servers by crystals<small>${sn.servers.length} servers</small></h3><table>${sn.servers.map(x => {
-      const d = prev && was[x.server] != null ? x.crystals - was[x.server] : null;
-      const line = spark(upTo.map(s => (s.servers.find(y => y.server === x.server) || {}).crystals || 0));
-      return `<tr class="${String(x.server) === US ? 'us' : ''}"><td class="n">${x.rank}</td><td class="nm">S${esc(x.server)}</td><td class="cp">${N(x.crystals)}</td>
-        <td class="up">${d ? '+' + N(d) : ''}</td><td>${line}</td></tr>`;
-    }).join('')}</table></div>`;
-    // the top 50, all of them on request (a full ranking runs to a few hundred)
-    const shown = allPlayers ? sn.players : sn.players.slice(0, 50);
-    const players = `<div class="box"><h3>S${US} players by score<small>${N(sn.players.length)} players</small></h3><table>${shown.map(p =>
-      `<tr><td class="n">${p.rank}</td><td class="nm" title="${esc(p.name)}">${esc(p.name || 'Master Thief')}${p.masked ? maskIcon : ''}</td><td class="cp">${N(p.score)}</td></tr>`).join('')}</table>
-      ${sn.players.length > 50 ? `<button type="button" class="more" data-all="1">${allPlayers ? 'Show the top 50' : `Show all ${N(sn.players.length)}`}</button>` : ''}</div>`;
     const fields = '<div class="map">' + sn.status.map((f, k) => {
       const us = f.us || {};
       return `<section class="bf${['', ' l', ' r'][k % 3]}"><h2>Battlefield ${k + 1}</h2>
@@ -244,23 +237,53 @@ if (window.frameElement) document.getElementById('homeLink').remove();
           return `<li${String(m.server) === US ? ' class="us"' : ''}><b>${spot}:</b><span>S${esc(m.server)} · ${N(m.players)} ${m.players === 1 ? 'player' : 'players'}${m.name ? ` <span class="who">· ${esc(m.name)}${m.masked ? maskIcon : ''}${m.power ? ' ' + M(m.power) : ''}</span>` : m.masked ? ' ' + maskIcon : ''}</span></li>`;
         }).join('')}</ul></section>`;
     }).join('') + '</div>';
-    $('out').innerHTML = `<div class="snaps">Read at ${list.map(x => `<button type="button" data-snap="${x.at}" class="${x === sn ? 'on' : ''}">${hm(x.at)}</button>`).join('')}</div>
-      <div class="btgrid">${servers}${players}</div>${fields}`;
+    $('out').innerHTML = `<div class="snaps">Read at ${list.map(x => `<button type="button" data-snap="${x.at}" class="${x === sn ? 'on' : ''}">${hm(x.at)}</button>`).join('')}</div>${fields}`;
+  }
+  // Ranking: the battle's Warzone Ranking (servers by crystals, the change since the read before) and its
+  // Individual Ranking (our players by score), one read at a time, as the site's cards look
+  function drawRanking() {
+    const list = bdays[day] || [];
+    if (!list.length) { drawBattle(); return; }
+    let i = list.findIndex(x => x.at === snapAt); if (i < 0) i = list.length - 1;
+    const sn = list[i], prev = list[i - 1], q = rkQ.toLowerCase();
+    $('status').textContent = `Ranking · ${list.length} ${list.length === 1 ? 'read' : 'reads'} · this one ${hm(sn.at)}`;
+    const was = {}; if (prev) for (const x of prev.servers) was[x.server] = x.crystals;
+    let rows, head, n, total;
+    if (rkWhat === 'servers') {
+      const l = sn.servers.filter(x => !q || ('s' + x.server).includes(q.replace(/^s?/, 's')));
+      n = l.length; total = sn.servers.length;
+      head = `<th class="n">#</th><th>Server</th><th class="n">Crystals</th><th class="n">${prev ? 'Since ' + hm(prev.at) : ''}</th>`;
+      rows = l.map(x => { const d = prev && was[x.server] != null ? x.crystals - was[x.server] : 0;
+        return `<tr class="${String(x.server) === US ? 'us' : ''}"><td class="n">${x.rank}</td><td>S${esc(x.server)}</td><td class="n">${N(x.crystals)}</td><td class="n up">${d ? '+' + N(d) : ''}</td></tr>`; });
+    } else {
+      const l = sn.players.filter(p => !q || String(p.name).toLowerCase().includes(q));
+      n = l.length; total = sn.players.length;
+      head = `<th class="n">#</th><th>Name</th><th class="n">Score</th><th class="n">Merit</th>`;
+      rows = l.map(p => `<tr><td class="n">${p.rank}</td><td>${esc(p.name || 'Master Thief')}${p.masked ? maskIcon : ''}</td><td class="n">${N(p.score)}</td><td class="n">${N(p.merit)}</td></tr>`);
+    }
+    $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>Frost Crystal ranking</b>
+        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="rkQ" type="text" placeholder="${rkWhat === 'servers' ? 'Search a server' : 'Search a name'}" autocomplete="off" value="${esc(rkQ)}"></label></div>
+      <div class="rreads">Read at ${list.map(x => `<button type="button" class="rchip ${x === sn ? 'on' : ''}" data-snap="${x.at}">${hm(x.at)}</button>`).join('')}</div>
+      <div class="rbar"><button type="button" class="rchip ${rkWhat === 'servers' ? 'on' : ''}" data-rk="servers">Servers</button><button type="button" class="rchip ${rkWhat === 'players' ? 'on' : ''}" data-rk="players">S${US} players</button>
+        <span class="rcount">${n === total ? N(total) : N(n) + ' of ' + N(total)} ${rkWhat === 'servers' ? 'servers' : 'players'}</span></div>
+      <div class="rbody"><table class="rtable"><thead><tr>${head}</tr></thead><tbody>${rows.join('') || `<tr><td colspan="4" class="rdim">No ${rkWhat === 'servers' ? 'server' : 'player'} matches.</td></tr>`}</tbody></table></div></div>`;
+    const inp = $('rkQ'); inp.oninput = () => { rkQ = inp.value; const at = inp.selectionStart; drawRanking(); const k = $('rkQ'); k.focus(); k.setSelectionRange(at, at); };
   }
   $('out').addEventListener('click', e => {
-    const b = e.target.closest('[data-snap]'); if (b) { snapAt = +b.dataset.snap; drawBattle(); }
-    if (e.target.closest('[data-all]')) { allPlayers = !allPlayers; drawBattle(); }
+    const b = e.target.closest('[data-snap]'); if (b) { snapAt = +b.dataset.snap; view === 'rk' ? drawRanking() : drawBattle(); }
+    const r = e.target.closest('[data-rk]'); if (r) { rkWhat = r.dataset.rk; rkQ = ''; drawRanking(); }
   });
   const pick = v => { view = v; try { localStorage.setItem('frost.view', v); } catch {} draw(); };
   $('days').onclick = e => { const b = e.target.closest('[data-day]'); if (b && (days[b.dataset.day] || bdays[b.dataset.day])) { day = b.dataset.day; read = days[day] || null; snapAt = null; draw(); } };
   $('tabBt').onclick = () => pick('bt');
+  $('tabRk').onclick = () => pick('rk');
   $('tabSum').onclick = () => pick('sum');
   $('tabPl').onclick = () => pick('pl');
   draw();
 
   $('csv').onclick = () => {
     const q = v => /[",\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : v;
-    if (view === 'bt') {
+    if (view === 'bt' || view === 'rk') {
       const list = bdays[day] || [], sn = list.find(x => x.at === snapAt) || list[list.length - 1];
       if (!sn) return;
       const rows = [['Kind', 'Rank', 'Server', 'Name', 'Crystals / score', 'Masked']]
