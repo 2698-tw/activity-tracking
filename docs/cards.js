@@ -63,7 +63,7 @@
   }
 
   function makeCard(o) {
-    const W = { rows: null, dates: [], reads: {}, moves: [], view: 'list', ally: null, type: '', cls: '', away: false, sort: null, asc: false, loading: false, err: '', flash: '' };
+    const W = { rows: null, dates: [], reads: {}, moves: [], view: 'list', ally: null, type: '', cls: '', rule: '', sort: null, asc: false, loading: false, err: '', flash: '' };
     const sel = new Set();
     const el = k => $(o.el + k);
     const cfg = () => Admin.settings.cards[o.id];
@@ -140,30 +140,61 @@
       if (W.sort === null) { W.sort = C.sort === 'last' ? W.dates[W.dates.length - 1] || 'name' : C.sort; W.asc = !!(DEF[W.sort] && DEF[W.sort].text); }
     }
 
-    /* ---- highlights (admin → Filters & columns → Highlights) ---- */
-    const rule = k => { const h = (Admin.settings.highlight || {})[k]; return h && h.on && h.cards.includes(o.id) ? h : null; };
+    /* ---- the rules (admin → Filters & columns → Rules) ---- */
     const DAY = 864e5;
     // days in a row, up to the latest, a player is missing from (only once they have been on a day)
     const missedRun = r => { if (!W.dates.some(d => onDay(r, d))) return 0; let n = 0; for (let i = W.dates.length - 1; i >= 0 && !onDay(r, W.dates[i]); i--) n++; return n; };
-    // new: first seen within the rule's days, and not on the card from its start (its first day, or the
-    // roster's first read), when everyone was new
-    function isNew(r, days) {
+    // days since a player was first seen; Infinity for one there from the card's start (its first day, or
+    // the roster's first read), when everyone was new
+    function seenDays(r) {
       if (o.id === 'ro') {
         const first = Math.min(...W.rows.map(x => x.firstAt || Infinity));
-        return !!r.firstAt && Date.now() - r.firstAt < days * DAY && r.firstAt - first > DAY / 2;
+        return r.firstAt && r.firstAt - first > DAY / 2 ? (Date.now() - r.firstAt) / DAY : Infinity;
       }
       const ds = W.dates.filter(d => onDay(r, d));
-      return !!ds.length && ds[0] !== W.dates[0] && Date.now() - Date.parse(ds[0] + 'T00:00:00Z') < days * DAY;
+      return ds.length && ds[0] !== W.dates[0] ? (Date.now() - Date.parse(ds[0] + 'T00:00:00Z')) / DAY : Infinity;
     }
-    const isAway = (r, days) => r.status !== 'Left' && !r.online && r.last && Date.now() / 1000 - r.last > days * 86400;
+    // each field's value on this card (Admin.RULE_FIELDS says which cards have which); CP in millions
+    const FV = {
+      cp: r => (o.id === 'ro' ? r.power || 0 : o.id === 'st' ? top(r) : DEF.best.val(r)) / 1e6,
+      pts: r => Math.max(0, ...Object.values(r.pts || {})),
+      missed: missedRun,
+      present: r => W.dates.filter(d => onDay(r, d)).length,
+      seen: seenDays,
+      ally: r => r[allyKey] || '',
+      unit: r => bests(r).map(b => b[0]),
+      name: r => r.name + ' ' + (r.search || ''),
+      rank: r => r.rank || 0,
+      last: r => r.online ? 0 : r.last ? (Date.now() / 1000 - r.last) / 86400 : Infinity,
+      joined: r => r.join ? (Date.now() / 1000 - r.join) / 86400 : Infinity,
+      cls: r => r.cls || '',
+      status: r => r.status === 'Left' ? 'Left' : 'Active',
+    };
+    const lc = v => String(v).toLowerCase();
+    function test(c, r) {
+      const x = FV[c.f](r);
+      if (c.f === 'unit') return c.op === 'not' ? !x.includes(c.v) : x.includes(c.v);
+      if (c.f === 'ally' && c.v === 'OTHER') { const other = !Admin.settings.alliances.includes(x); return c.op === 'not' ? !other : other; }
+      switch (c.op) {
+        case 'ge': return x >= +c.v; case 'le': return x <= +c.v; case 'eq': return Math.floor(x) === +c.v;
+        case 'bt': return x >= +c.v && x <= +c.v2;
+        case 'is': return lc(x) === lc(c.v); case 'not': return lc(x) !== lc(c.v); case 'has': return lc(x).includes(lc(c.v));
+      }
+      return false;
+    }
+    // the rules on this card: on, ticked for it, and only testing what it has
+    const rules = () => (Admin.settings.rules || []).filter(x => x.on && x.cards.includes(o.id) &&
+      x.all.every(c => FV[c.f] && (Admin.RULE_FIELDS[c.f] || { cards: [] }).cards.includes(o.id)));
+    const matches = (x, r) => x.all.every(c => test(c, r));
+    const firstRule = r => rules().find(x => matches(x, r));
+    // the pill by the name: the first rule's label, its name and what it tested on hover
     function badges(r) {
-      let out = '';
-      const m = rule('missed'), f = rule('fresh');
-      if (m) { const n = missedRun(r); if (n >= m.days) out += ` <span class="hl hl-${m.color}" title="Not on the last ${n} ${n === 1 ? 'day' : 'days'}">missed ${n}</span>`; }
-      if (f && isNew(r, f.days)) out += ` <span class="hl hl-${f.color}" title="New in the last ${f.days} days">new</span>`;
-      return out;
+      const x = firstRule(r);
+      if (!x) return '';
+      const why = x.all.map(c => { const v = FV[c.f](r), f = Admin.RULE_FIELDS[c.f];
+        return `${f.label}: ${Array.isArray(v) ? v.join(', ') : typeof v === 'number' ? (v === Infinity ? 'from the start' : Math.round(v * 10) / 10) : v}`; }).join(' · ');
+      return x.label ? ` <span class="hl hl-${x.color}" title="${esc(x.name + ' — ' + why)}">${esc(x.label)}</span>` : '';
     }
-    const awayDays = () => { const a = (Admin.settings.highlight || {}).away; return a && a.days || 3; };
 
     function draw() {
       const box = el('View');
@@ -173,19 +204,21 @@
       $(o.tab).querySelector('.rapp').classList.toggle('admin', admin);
       drawAdminBar();
       if (W.rows) defaults();
-      const q = fold(el('Q').value), now = Date.now() / 1000;
+      const q = fold(el('Q').value);
+      const chipRule = W.rule && rules().find(x => x.chip && x.id === W.rule);
+      if (W.rule && !chipRule) W.rule = '';                        // its rule turned off, or no longer a chip here
       el('Reads').innerHTML = o.id === 'ro'
         ? AL.map(a => `<span><span class="rtag t${esc(a)}">${esc(a)}</span> ${W.reads[a] ? 'read ' + ago(W.reads[a]) : '<span class="rdim">not read yet</span>'}${admin ? ` <button type="button" class="rgo mini" data-reset="${esc(a)}">Reset</button><button type="button" class="rgo mini" data-wipe="${esc(a)}">Wipe</button>` : ''}</span>`).join('')
         : W.rows ? `${W.rows.length} players · ${W.dates.length} ${W.dates.length === 1 ? 'day' : 'days'}` + (W.dates.length ? ` · last read ${head(W.dates[W.dates.length - 1])}` : '') : '';
       if (o.id === 'ro' && W.view === 'moves') return drawMoves(box, q);
       const rows = (W.rows || []).filter(r => (!q || fold(r.name).includes(q) || (r.search && fold(r.search).includes(q))) &&
         (!W.ally || (W.ally === 'OTHER' ? !AL.includes(r[allyKey]) : r[allyKey] === W.ally)) &&
-        (!W.type || bests(r).some(b => b[0] === W.type)) && (!W.cls || r.cls === W.cls) && (!W.away || now - r.last > awayDays() * 86400));
+        (!W.type || bests(r).some(b => b[0] === W.type)) && (!W.cls || r.cls === W.cls) && (!chipRule || matches(chipRule, r)));
       el('Chips').innerHTML =
         ['', ...AL, ...(o.id === 'ro' ? [] : ['OTHER'])].map(a => `<button type="button" class="rchip ${W.ally === a ? 'on' : ''}" data-a="${esc(a)}">${a === 'OTHER' ? 'Other' : esc(a) || (o.id === 'ro' ? 'All alliances' : 'Everyone')}</button>`).join('') +
         (o.id === 'st' && C.unitFilters ? TYPES.map(t => `<button type="button" class="rchip ${W.type === t ? 'on' : ''}" data-t="${t}">${t}</button>`).join('') : '') +
-        (o.id === 'ro' ? ['CE', 'MM'].map(c => `<button type="button" class="rchip ${W.cls === c ? 'on' : ''}" data-c="${c}">${c}</button>`).join('') +
-          `<button type="button" class="rchip ${W.away ? 'on' : ''}" data-w="1">Away ${awayDays()}+ days</button>` : '') +
+        (o.id === 'ro' ? ['CE', 'MM'].map(c => `<button type="button" class="rchip ${W.cls === c ? 'on' : ''}" data-c="${c}">${c}</button>`).join('') : '') +
+        rules().filter(x => x.chip).map(x => `<button type="button" class="rchip rulechip ${W.rule === x.id ? 'on' : ''}" data-rule="${esc(x.id)}"><i class="hld hl-${x.color}"></i>${esc(x.name)}</button>`).join('') +
         (W.rows ? `<span class="rcount">${rows.length} of ${W.rows.length} players</span>` : '');
       if (o.id === 'ro') el('Chips').insertAdjacentHTML('afterbegin', views());
       drawBulk();
@@ -201,13 +234,11 @@
         return `<th class="${c.k === 'name' ? 'nm' : ''} ${f.n ? 'd' : ''} ${f.hs ? 'hs' : ''}" data-k="${c.k}">${esc(c.label)}${arrow(c.k)}` +
           (game[c.k] ? '<span class="gamef" title="The next read from the game replaces an edit here">⚠</span>' : '') +
           (admin && c.date ? `<button type="button" class="dedit" data-d="${c.k}" title="Change date, clear or remove">✎</button>` : '') + '</th>';
-      }).join('')}</tr></thead><tbody>${rows.map(r => `<tr data-id="${esc(r.id)}" class="${r.status === 'Left' ? 'left' : ''} ${sel.has(r.id) ? 'sel' : ''} ${W.flash === r.id ? 'flash' : ''}">${cols.map(c => {
+      }).join('')}</tr></thead><tbody>${rows.map(r => `<tr data-id="${esc(r.id)}" class="${r.status === 'Left' ? 'left' : ''} ${sel.has(r.id) ? 'sel' : ''} ${W.flash === r.id ? 'flash' : ''} ${(x => x ? 'hlrow hl-' + x.color : '')(firstRule(r))}">${cols.map(c => {
         const f = defOf(c.k), ed = admin && f.edit ? (f.edit === 'toggle' ? 'tog' : 'ed') : '';
         if (c.k === 'name') return `<td class="nm ${ed}" data-k="name">${admin ? `<input type="checkbox" class="rsel" data-sel="${esc(r.id)}" ${sel.has(r.id) ? 'checked' : ''} aria-label="Select">` : ''}<span class="nmv">${f.cell(r)}</span>${badges(r)}${admin ? `<button type="button" class="rdots" data-row="${esc(r.id)}" title="Row actions">⋯</button>` : ''}</td>`;
         return `<td class="${f.n ? 'n' : ''} ${f.hs ? 'hs' : ''} ${f.cls ? f.cls(r) : ''} ${ed}" data-k="${c.k}">${f.cell(r)}</td>`;
       }).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length}" class="rdim">${W.rows.length ? 'No players match.' : 'No players yet: add one with + Player.'}</td></tr>`}</tbody></table>`;
-      const aw = rule('away');
-      if (aw) box.querySelectorAll('tbody tr[data-id]').forEach(tr => { const r = byId(tr.dataset.id), td = tr.querySelector('td[data-k="last"]'); if (r && td && isAway(r, aw.days)) td.classList.add('hlc', 'hl-' + aw.color); });
       if (W.flash) { const tr = box.querySelector('tr.flash'); if (tr) tr.scrollIntoView({ block: 'center' }); W.flash = ''; }
     }
 
@@ -655,7 +686,7 @@
       if (b && b.classList.contains('rchip')) {
         if ('v' in d) { W.view = d.v; W.ally = W.view === 'moves' ? '' : null; defaults(); }
         else if ('a' in d) W.ally = d.a; else if ('t' in d) W.type = W.type === d.t ? '' : d.t;
-        else if ('c' in d) W.cls = W.cls === d.c ? '' : d.c; else if ('w' in d) W.away = !W.away;
+        else if ('c' in d) W.cls = W.cls === d.c ? '' : d.c; else if ('rule' in d) W.rule = W.rule === d.rule ? '' : d.rule;
         return draw();
       }
       if (Admin.on) {

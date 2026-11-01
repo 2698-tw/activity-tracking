@@ -1075,16 +1075,31 @@ const DEFAULT_SETTINGS = {
   sheets: Object.fromEntries(Object.entries(SHEET_BASE).map(([k, t]) => [k, { id: t.id, gid: t.gid }])),
   // which sections the bookmark's panel in the game shows
   bookmark: { members: true, wb: true, st: true, et: true, ma: true, ev: true, frost: true },
-  // highlights on the cards: players missing from the latest days, roster players away a while, and
-  // players new to a card; each with its number of days, colour and cards
-  highlight: {
-    missed: { on: true, days: 2, color: 'red', cards: ['wb', 'st', 'et', 'ma'] },
-    away: { on: true, days: 3, color: 'amber', cards: ['ro'] },
-    fresh: { on: true, days: 7, color: 'green', cards: ['ro', 'wb', 'st', 'et', 'ma'] },
-  },
+  // the cards' rules (admin → Filters & columns → Rules), checked in order: a player takes the colour and
+  // label of the first one they match on a card, and a rule can also be a filter chip there
+  rules: [
+    { id: 'missed', name: 'Missed days', label: 'missed', on: true, color: 'red', chip: false, cards: ['wb', 'st', 'et', 'ma'], all: [{ f: 'missed', op: 'ge', v: 2 }] },
+    { id: 'away', name: 'Away', label: 'away', on: true, color: 'amber', chip: true, cards: ['ro'], all: [{ f: 'last', op: 'ge', v: 3 }, { f: 'status', op: 'is', v: 'Active' }] },
+    { id: 'fresh', name: 'New players', label: 'new', on: true, color: 'green', chip: false, cards: ['ro', 'wb', 'st', 'et', 'ma'], all: [{ f: 'seen', op: 'le', v: 7 }] },
+  ],
 };
 const HL_COLORS = ['red', 'amber', 'green', 'blue', 'purple'];
-const HL_CARDS = { missed: ['wb', 'st', 'et', 'ma'], away: ['ro'], fresh: ['ro', 'wb', 'st', 'et', 'ma'] };
+// what a rule can test (cards.js has each one's value), and how
+const RULE_FIELDS = ['cp', 'pts', 'missed', 'present', 'seen', 'ally', 'unit', 'name', 'rank', 'last', 'joined', 'cls', 'status'];
+const RULE_OPS = ['ge', 'le', 'eq', 'bt', 'is', 'not', 'has'];
+// the three highlights from before the rules, as their rules: days, colour, cards and on/off kept
+function rulesFromHighlight(h) {
+  const out = structuredClone(DEFAULT_SETTINGS.rules);
+  for (const r of out) {
+    const i = h[r.id];
+    if (!i || typeof i !== 'object') continue;
+    if (typeof i.on === 'boolean') r.on = i.on;
+    if (Number.isInteger(i.days) && i.days >= 1 && i.days <= 365) r.all[0].v = i.days;
+    if (HL_COLORS.includes(i.color)) r.color = i.color;
+    if (Array.isArray(i.cards)) r.cards = r.cards.filter(c => i.cards.includes(c));
+  }
+  return out;
+}
 // settings as sent, made safe: unknown fields dropped, each value checked, the defaults filling the gaps
 function cleanSettings(s) {
   const out = structuredClone(DEFAULT_SETTINGS);
@@ -1131,14 +1146,20 @@ function cleanSettings(s) {
     }
   }
   for (const k of Object.keys(out.bookmark)) if (s.bookmark && typeof s.bookmark[k] === 'boolean') out.bookmark[k] = s.bookmark[k];
-  for (const [k, o] of Object.entries(out.highlight)) {
-    const i = s.highlight && s.highlight[k];
-    if (!i || typeof i !== 'object') continue;
-    if (typeof i.on === 'boolean') o.on = i.on;
-    if (Number.isInteger(i.days) && i.days >= 1 && i.days <= 365) o.days = i.days;
-    if (HL_COLORS.includes(i.color)) o.color = i.color;
-    if (Array.isArray(i.cards)) o.cards = HL_CARDS[k].filter(c => i.cards.includes(c));
-  }
+  if (Array.isArray(s.rules)) {
+    const val = v => typeof v === 'number' ? (Number.isFinite(v) && Math.abs(v) < 1e12 ? v : null) : str(v, 40);
+    const ids = new Set();
+    out.rules = s.rules.slice(0, 30).filter(r => r && typeof r === 'object' && /^[a-z0-9]{1,12}$/.test(r.id) && !ids.has(r.id) && ids.add(r.id))
+      .map(r => ({
+        id: r.id, name: str(r.name, 40) || 'Rule', label: str(r.label, 16), on: r.on !== false,
+        color: HL_COLORS.includes(r.color) ? r.color : 'blue', chip: r.chip === true,
+        cards: ['wb', 'st', 'ro', 'et', 'ma'].filter(c => Array.isArray(r.cards) && r.cards.includes(c)),
+        all: (Array.isArray(r.all) ? r.all : []).slice(0, 6)
+          .filter(c => c && RULE_FIELDS.includes(c.f) && RULE_OPS.includes(c.op) && val(c.v) != null)
+          .map(c => ({ f: c.f, op: c.op, v: val(c.v), ...(c.op === 'bt' && typeof c.v2 === 'number' && Number.isFinite(c.v2) ? { v2: c.v2 } : {}) })),
+      }))
+      .filter(r => r.all.length);
+  } else if (s.highlight && typeof s.highlight === 'object') out.rules = rulesFromHighlight(s.highlight);
   for (const name of Object.keys(SHEET_BASE)) {
     const i = s.sheets && s.sheets[name];
     if (i && /^[\w-]{20,100}$/.test(i.id) && Number.isInteger(i.gid) && i.gid >= 0) out.sheets[name] = { id: i.id, gid: i.gid };

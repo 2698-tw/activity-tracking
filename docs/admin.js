@@ -27,19 +27,32 @@ window.Admin = (function () {
     home: { title: '2698 Data Extractor', banner: '2698', cards: [] },
     sheets: {},
     bookmark: { members: true, wb: true, st: true, et: true, ma: true, ev: true, frost: true },
-    highlight: {
-      missed: { on: true, days: 2, color: 'red', cards: ['wb', 'st', 'et', 'ma'] },
-      away: { on: true, days: 3, color: 'amber', cards: ['ro'] },
-      fresh: { on: true, days: 7, color: 'green', cards: ['ro', 'wb', 'st', 'et', 'ma'] },
-    },
-  };
-  // the highlight rules: what each marks, and the cards it can go on
-  const HL = {
-    missed: { name: 'Missed days', hint: n => `Players missing from the last ${n} days in a row (or more)`, cards: ['wb', 'st', 'et', 'ma'] },
-    away: { name: 'Away', hint: n => `Last online more than ${n} days ago (also the Away chip)`, cards: ['ro'] },
-    fresh: { name: 'New players', hint: n => `First seen in the last ${n} days`, cards: ['ro', 'wb', 'st', 'et', 'ma'] },
+    rules: [
+      { id: 'missed', name: 'Missed days', label: 'missed', on: true, color: 'red', chip: false, cards: ['wb', 'st', 'et', 'ma'], all: [{ f: 'missed', op: 'ge', v: 2 }] },
+      { id: 'away', name: 'Away', label: 'away', on: true, color: 'amber', chip: true, cards: ['ro'], all: [{ f: 'last', op: 'ge', v: 3 }, { f: 'status', op: 'is', v: 'Active' }] },
+      { id: 'fresh', name: 'New players', label: 'new', on: true, color: 'green', chip: false, cards: ['ro', 'wb', 'st', 'et', 'ma'], all: [{ f: 'seen', op: 'le', v: 7 }] },
+    ],
   };
   const HL_COLORS = ['red', 'amber', 'green', 'blue', 'purple'];
+  // What a rule can test, and on which cards (cards.js has each one's value). CP in millions, the best
+  // a player has: the roster's CP, Snow Train's best March CP, Energy Tower's and Mammoth's best.
+  const DATED = ['wb', 'st', 'et', 'ma'], ALL5 = ['wb', 'st', 'et', 'ma', 'ro'];
+  A.RULE_FIELDS = {
+    cp: { label: 'CP (M, best)', kind: 'num', cards: ['ro', 'st', 'et', 'ma'] },
+    pts: { label: 'Points (best day)', kind: 'num', cards: ['wb'] },
+    missed: { label: 'Days missed in a row', kind: 'num', cards: DATED },
+    present: { label: 'Days there', kind: 'num', cards: DATED },
+    seen: { label: 'First seen (days ago)', kind: 'num', cards: ALL5 },
+    ally: { label: 'Alliance', kind: 'opt', cards: ALL5, opts: () => [...A.settings.alliances, 'OTHER'] },
+    unit: { label: 'Unit type', kind: 'opt', cards: ['st'], opts: () => ['Army', 'Navy', 'Air Force'] },
+    name: { label: 'Name', kind: 'text', cards: ALL5 },
+    rank: { label: 'Rank (1–5)', kind: 'num', cards: ['ro'] },
+    last: { label: 'Last online (days ago)', kind: 'num', cards: ['ro'] },
+    joined: { label: 'Joined (days ago)', kind: 'num', cards: ['ro'] },
+    cls: { label: 'MM / CE', kind: 'opt', cards: ['ro'], opts: () => ['MM', 'CE'] },
+    status: { label: 'Status', kind: 'opt', cards: ['ro'], opts: () => ['Active', 'Left'] },
+  };
+  const RULE_OPS = { num: [['ge', 'at least'], ['le', 'at most'], ['eq', 'exactly'], ['bt', 'between']], opt: [['is', 'is'], ['not', 'is not']], text: [['has', 'contains'], ['is', 'is']] };
   const SHEET_NAMES = { kartz: 'Kartz ranking (Send on the Kartz page)', cp: 'Base CP (Alliance Rosters, RawData-CP)', ranking: 'Whitebeard ranking (bookmark Send)', snowtrain: 'Snow Train (bookmark Send)', energytower: 'Energy Tower (bookmark Send)', mammoth: 'Mammoth Assault (bookmark Send)' };
   const HOME_NAMES = { kartz: 'Kartz ranking', cp: 'Alliance roster', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault', frost: 'Frost Crystal Contest' };
   const BOOKMARK_NAMES = { members: 'Alliance members', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault', ev: 'Events (home page)', frost: 'Frost Crystal Contest' };
@@ -257,27 +270,82 @@ window.Admin = (function () {
   const arrows = (attr, i, n, first = 0) => `<button type="button" class="abtn sm" data-${attr}u="${i}" ${i > first ? '' : 'disabled'} aria-label="Up">↑</button><button type="button" class="abtn sm" data-${attr}d="${i}" ${i >= first && i < n - 1 ? '' : 'disabled'} aria-label="Down">↓</button>`;
   const swap = (list, i, j) => { [list[i], list[j]] = [list[j], list[i]]; };
 
-  /* ---- highlights: the rules the cards mark players by ---- */
-  const hlOf = k => ({ ...DEFAULTS.highlight[k], ...((A.settings.highlight || {})[k] || {}) });
-  function highlights() {
-    return `<div class="apanel"><h2>Highlights</h2><p class="ahint">Marks on the cards for everyone to see. Each rule: on or off, its number of days, its colour and the cards it goes on.</p><div class="alist">
-      ${Object.entries(HL).map(([k, h]) => { const r = hlOf(k); return `<div class="ali wrapline">
-        <label class="acheck"><input type="checkbox" data-hl="${k}" data-hf="on" ${r.on ? 'checked' : ''}> <b>${h.name}</b></label>
-        <input type="number" data-hl="${k}" data-hf="days" value="${r.days}" min="1" max="365" class="tiny" aria-label="Days"> days
-        <select data-hl="${k}" data-hf="color" class="hlpick">${HL_COLORS.map(c => `<option value="${c}" ${r.color === c ? 'selected' : ''}>${c[0].toUpperCase() + c.slice(1)}</option>`).join('')}</select>
-        <span class="hl hl-${r.color}">${k === 'missed' ? 'missed ' + r.days : k === 'fresh' ? 'new' : 'away'}</span>
-        ${h.cards.length > 1 ? h.cards.map(c => `<label class="acheck"><input type="checkbox" data-hl="${k}" data-hc="${c}" ${r.cards.includes(c) ? 'checked' : ''}> ${CARD_NAMES[c]}</label>`).join('') : `<span class="ahint">${CARD_NAMES[h.cards[0]]}</span>`}
-        <p class="ahint" style="flex-basis:100%;margin:0">${h.hint(r.days)}</p></div>`; }).join('')}</div></div>`;
+  /* ---- rules: what the cards colour players by, and their own filter chips ---- */
+  const rulesOf = () => A.settings.rules || DEFAULTS.rules;
+  const fieldsFor = cards => Object.entries(A.RULE_FIELDS).filter(([, f]) => !cards.length || cards.every(c => f.cards.includes(c)));
+  const optName = v => v === 'OTHER' ? 'Other' : v;
+  function rulesPanel() {
+    const R = rulesOf();
+    const val = (c, i, j) => {
+      const f = A.RULE_FIELDS[c.f], at = `data-rl="${i}" data-rc="${j}"`;
+      if (f.kind === 'opt') return `<select ${at} data-rp="v">${f.opts().map(o => `<option value="${esc(o)}" ${o === c.v ? 'selected' : ''}>${esc(optName(o))}</option>`).join('')}</select>`;
+      if (f.kind === 'text') return `<input type="text" ${at} data-rp="v" value="${esc(c.v)}" maxlength="40" class="rlv">`;
+      return `<input type="number" ${at} data-rp="v" value="${esc(c.v)}" step="any" class="tiny">` + (c.op === 'bt' ? ` and <input type="number" ${at} data-rp="v2" value="${esc(c.v2 ?? '')}" step="any" class="tiny">` : '');
+    };
+    return `<div class="apanel"><h2>Rules</h2><p class="ahint">Checked top to bottom on each card: a player takes the colour and label of the <b>first</b> rule they match (a later rule is the "else"), and a rule ticked as a filter chip is one on its cards. CP is in millions, the best a player has.</p>
+      ${R.map((r, i) => `<div class="arule ${r.on ? '' : 'off'}">
+        <div class="arhead"><span class="arord">${i ? 'ELSE IF' : 'IF'}</span><input type="text" data-rl="${i}" data-rp="name" value="${esc(r.name)}" maxlength="40" aria-label="Rule name" class="arname">
+          <label class="acheck"><input type="checkbox" data-rl="${i}" data-rp="on" ${r.on ? 'checked' : ''}> On</label>${arrows('rl', i, R.length)}<button type="button" class="abtn sm" data-rlx="${i}">Delete</button></div>
+        ${r.all.map((c, j) => {
+          const f = A.RULE_FIELDS[c.f], miss = r.cards.filter(k => !f.cards.includes(k));
+          return `<div class="arcond"><span class="arw">${j ? 'AND' : ''}</span>
+          <select data-rl="${i}" data-rc="${j}" data-rp="f">${fieldsFor(r.cards).concat(fieldsFor(r.cards).some(([k]) => k === c.f) ? [] : [[c.f, f]]).map(([k, x]) => `<option value="${k}" ${k === c.f ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>
+          <select data-rl="${i}" data-rc="${j}" data-rp="op">${RULE_OPS[f.kind].map(([k, l]) => `<option value="${k}" ${k === c.op ? 'selected' : ''}>${l}</option>`).join('')}</select>
+          ${val(c, i, j)}${r.all.length > 1 ? `<button type="button" class="abtn sm" data-rlcx="${i}.${j}" aria-label="Remove">✕</button>` : ''}
+          ${miss.length ? `<span class="ahint arwarn">Not on ${miss.map(k => CARD_NAMES[k]).join(', ')}: the rule is skipped there</span>` : ''}</div>`;
+        }).join('')}
+        <div class="arcond"><span class="arw"></span><button type="button" class="abtn sm" data-rlca="${i}" ${r.all.length >= 6 ? 'disabled' : ''}>+ And</button></div>
+        <div class="arthen"><span class="arw">THEN</span>
+          <span class="arsw">${HL_COLORS.map(c => `<button type="button" class="hl-${c} ${r.color === c ? 'on' : ''}" data-rlcol="${i}" data-col="${c}" aria-label="${c}" title="${c}"></button>`).join('')}</span>
+          <input type="text" data-rl="${i}" data-rp="label" value="${esc(r.label)}" maxlength="16" placeholder="label" class="rlv" aria-label="Label">
+          ${r.label ? `<span class="hl hl-${r.color}">${esc(r.label)}</span>` : ''}
+          <label class="acheck"><input type="checkbox" data-rl="${i}" data-rp="chip" ${r.chip ? 'checked' : ''}> Filter chip</label></div>
+        <div class="arcards"><span class="arw">ON</span>${ALL5.map(k => `<label class="acheck"><input type="checkbox" data-rl="${i}" data-rk="${k}" ${r.cards.includes(k) ? 'checked' : ''}> ${CARD_NAMES[k]}</label>`).join('')}</div>
+      </div>`).join('')}
+      ${R.length ? '<p class="ahint">ELSE: no colour.</p>' : ''}
+      <button type="button" class="abtn sm" data-rladd>+ Add a rule</button></div>`;
   }
-  function hlChange(t, d) {
-    const k = d.hl, r = hlOf(k), h = HL[k];
-    let next = { ...r }, from, to;
-    if (d.hc) { next.cards = h.cards.filter(c => c === d.hc ? t.checked : r.cards.includes(c)); from = r.cards.includes(d.hc) ? 'on' : 'off'; to = t.checked ? 'on' : 'off'; }
-    else if (d.hf === 'on') { next.on = t.checked; from = r.on ? 'on' : 'off'; to = t.checked ? 'on' : 'off'; }
-    else if (d.hf === 'days') { const n = Math.round(+t.value); if (!(n >= 1 && n <= 365)) { t.value = r.days; return; } next.days = n; from = r.days + ' days'; to = n + ' days'; }
-    else { next.color = t.value; from = r.color; to = t.value; }
-    const what = d.hc ? `${h.name} on ${CARD_NAMES[d.hc]}` : d.hf === 'on' ? h.name : `${h.name} · ${d.hf}`;
-    return save(n => { n.highlight = { ...DEFAULTS.highlight, ...n.highlight, [k]: next }; }, { what: `Highlights · ${what}`, from, to });
+  // every change saved at once, with a line in History
+  const ruleSave = (fn, what, from, to) => save(n => { n.rules = n.rules || structuredClone(DEFAULTS.rules); fn(n.rules); }, { what: 'Rules · ' + what, from, to });
+  function ruleChange(t, d) {
+    const R = rulesOf(), i = +d.rl, r = R[i];
+    if (d.rk) return ruleSave(L => { const c = L[i].cards; L[i].cards = ALL5.filter(k => k === d.rk ? t.checked : c.includes(k)); },
+      `${r.name} on ${CARD_NAMES[d.rk]}`, r.cards.includes(d.rk) ? 'on' : 'off', t.checked ? 'on' : 'off');
+    if (d.rc != null) {
+      const j = +d.rc, c = r.all[j], F = A.RULE_FIELDS;
+      let v = t.value;
+      if (d.rp === 'f') {
+        const f = F[v], next = { f: v, op: RULE_OPS[f.kind][0][0], v: f.kind === 'opt' ? f.opts()[0] : f.kind === 'num' ? 0 : '' };
+        return ruleSave(L => { L[i].all[j] = next; }, `${r.name} · condition ${j + 1}`, F[c.f].label, f.label);
+      }
+      if (d.rp === 'op') return ruleSave(L => { L[i].all[j].op = v; if (v === 'bt' && L[i].all[j].v2 == null) L[i].all[j].v2 = +L[i].all[j].v || 0; }, `${r.name} · condition ${j + 1}`, c.op, v);
+      if (F[c.f].kind === 'num') { v = Number(v); if (!Number.isFinite(v)) { t.value = c[d.rp] ?? ''; return; } }
+      return ruleSave(L => { L[i].all[j][d.rp] = v; }, `${r.name} · ${F[c.f].label}`, String(c[d.rp] ?? '—'), String(v));
+    }
+    if (d.rp === 'name' || d.rp === 'label') {
+      const v = t.value.trim();
+      if (d.rp === 'name' && !v) { t.value = r.name; return; }
+      return ruleSave(L => { L[i][d.rp] = v; }, `${r.name} · ${d.rp}`, r[d.rp] || '—', v || '—');
+    }
+    return ruleSave(L => { L[i][d.rp] = t.checked; }, `${r.name}${d.rp === 'chip' ? ' · filter chip' : ''}`, r[d.rp] ? 'on' : 'off', t.checked ? 'on' : 'off');
+  }
+  async function ruleClick(d) {
+    const R = rulesOf();
+    if (d.rlcol != null) { const r = R[d.rlcol]; return ruleSave(L => { L[d.rlcol].color = d.col; }, `${r.name} · colour`, r.color, d.col); }
+    if (d.rlu != null || d.rld != null) { const i = +(d.rlu ?? d.rld), j = d.rlu != null ? i - 1 : i + 1; return ruleSave(L => swap(L, i, j), `moved ${R[i].name}`, `place ${i + 1}`, `place ${j + 1}`); }
+    if (d.rlca != null) { const r = R[d.rlca], [k, f] = fieldsFor(r.cards)[0] || ['name', A.RULE_FIELDS.name];
+      return ruleSave(L => { L[d.rlca].all.push({ f: k, op: RULE_OPS[f.kind][0][0], v: f.kind === 'opt' ? f.opts()[0] : f.kind === 'num' ? 0 : '' }); }, `${r.name} · added a condition`, '—', f.label); }
+    if (d.rlcx != null) { const [i, j] = d.rlcx.split('.').map(Number), r = R[i]; return ruleSave(L => { L[i].all.splice(j, 1); }, `${r.name} · removed a condition`, A.RULE_FIELDS[r.all[j].f].label, '—'); }
+    if (d.rlx != null) {
+      const r = R[d.rlx];
+      if (await A.confirm(`Delete ${esc(r.name)}?`, 'The rule comes off every card. History can undo it.', 'Delete'))
+        ruleSave(L => { L.splice(d.rlx, 1); }, 'deleted a rule', r.name, '—');
+      return;
+    }
+    if ('rladd' in d) {
+      const id = 'r' + Date.now().toString(36).slice(-8);
+      return ruleSave(L => { L.push({ id, name: 'New rule', label: '', on: true, color: 'blue', chip: false, cards: ['st'], all: [{ f: 'cp', op: 'ge', v: 100 }] }); }, 'added a rule', '—', 'New rule');
+    }
   }
 
   function colsPage() {
@@ -305,11 +373,11 @@ window.Admin = (function () {
       <p class="ahint">The filter chips on every card, in this order. Renaming one renames it on every player too. The bookmark still labels its own reads 698N, 698S, 698W and 698C.</p>
       <div class="alist">${AL.map((a, i) => `<div class="ali">${tag(a)}<input type="text" data-ar="${i}" value="${esc(a)}" maxlength="12">${arrows('a', i, AL.length)}<button type="button" class="abtn sm" data-ax="${i}" ${AL.length > 1 ? '' : 'disabled'}>Remove</button></div>`).join('')}
         <div class="ali"><input type="text" data-an placeholder="New alliance tag" maxlength="12"><button type="button" class="abtn sm pri" data-aadd>Add</button></div></div></div>
-      ${highlights()}
+      ${rulesPanel()}
       <div class="acols">${['wb', 'st', 'et', 'ma', 'ro'].map(card).join('')}</div>`;
     view.onchange = async e => {
       const t = e.target, d = t.dataset, c = d.c, C = c && S.cards[c];
-      if (d.hl) return hlChange(t, d);
+      if (d.rl != null) return ruleChange(t, d);
       if (d.ar) {
         const from = AL[d.ar], to = t.value.trim();
         if (!to || to === from) { t.value = from; return; }
@@ -330,6 +398,7 @@ window.Admin = (function () {
     view.onclick = async e => {
       const b = e.target.closest('button'); if (!b) return;
       const d = b.dataset;
+      if (['rlcol', 'rlu', 'rld', 'rlca', 'rlcx', 'rlx', 'rladd'].some(k => k in d)) return ruleClick(d);
       for (const c of ['wb', 'st', 'et', 'ma', 'ro']) {
         const u = d['c' + c + 'u'], dn = d['c' + c + 'd'];
         if (u == null && dn == null) continue;

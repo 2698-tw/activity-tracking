@@ -27,6 +27,8 @@ body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-app
 .wrap{padding:16px}
 .bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
 .bar .grow{flex:1}
+/* on a phone: the tabs and Download CSV on one line, the status on its own line below */
+@media (max-width:640px){.bar .status{order:3;flex-basis:100%}.bar #csv{margin-left:auto}}
 button,.btn{font:inherit;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
 button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
 button:disabled{opacity:.55;cursor:default}

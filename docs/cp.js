@@ -32,6 +32,8 @@ function showTab(name) {
   document.documentElement.classList.remove('athome');
   delete document.documentElement.dataset.view;      // index.html's first-paint view, now shown by the classes
   closeMenu();
+  // every switch, the Home button's too (no hashchange for that one): the banner writes the name in again
+  dispatchEvent(new CustomEvent('viewchange', { detail: name }));
 }
 const viewFromAddress = () => ({ '#cp': 'cp', '#kartz': 'kartz', '#roster': 'roster', '#whitebeard': 'whitebeard', '#snowtrain': 'snowtrain', '#energytower': 'energytower', '#mammoth': 'mammoth', '#frost': 'frost', '#admin': 'admin' })[location.hash] || 'home';
 // the Frost Crystal Contest is its own page (frost.html), shown here in a frame: loaded the first time,
