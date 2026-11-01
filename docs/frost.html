@@ -55,6 +55,24 @@ button:disabled{opacity:.55;cursor:default}
 .days button{flex:none;border:0;border-bottom:3px solid transparent;border-radius:0;padding:8px 14px;background:transparent;color:var(--dim);font-size:15px}
 .days button.on{color:var(--ink);border-bottom-color:var(--acc)}
 .days[hidden]{display:none}
+/* Battle: a snapshot per Read battle, picked by its time */
+.snaps{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 14px;font-size:13px;color:var(--dim)}
+.snaps button{padding:4px 11px;border-radius:999px;font-weight:600;font-size:12.5px}
+.snaps button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.btgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start;margin:0 0 18px}
+@media (max-width:820px){.btgrid{grid-template-columns:minmax(0,1fr)}}
+.box{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.box h3{margin:0;padding:9px 12px;font-size:14px;background:var(--head);border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:baseline}
+.box h3 small{margin-left:auto;font-weight:500;color:var(--dim);font-size:12px}
+.box table td{padding:5px 10px}
+.box tr.us td{background:var(--us);color:var(--usink);font-weight:700}
+td.up{color:var(--usink);font-size:12px;text-align:right;white-space:nowrap}
+.spark{display:block}
+.mask{font-size:12px;margin-left:4px;cursor:help}
+.bf .stats{padding:0 12px 8px;font-size:12.5px;color:var(--dim)}
+.bf .stats b{color:var(--ink)}
+.bf li .who{color:var(--dim)}
+.bf li.empty{color:var(--dim)}
 .tabs{display:inline-flex;gap:2px;padding:3px;border-radius:10px;background:var(--line)}
 .tabs button{border:0;border-radius:8px;padding:6px 14px;background:transparent;color:var(--dim)}
 .tabs button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
@@ -92,7 +110,7 @@ td.cp{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
 <div class="wrap">
   <div class="days" id="days" role="tablist" hidden></div>
   <div class="bar">
-    <div class="tabs" role="tablist"><button type="button" id="tabSum" role="tab">Summary</button><button type="button" id="tabPl" role="tab">Players</button></div>
+    <div class="tabs" role="tablist"><button type="button" id="tabSum" role="tab">Summary</button><button type="button" id="tabPl" role="tab">Players</button><button type="button" id="tabBt" role="tab">Battle</button></div>
     <span class="status grow" id="status">Loading…</span>
     <button type="button" id="csv" disabled>Download CSV</button>
   </div>
@@ -110,28 +128,32 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const M = v => Math.round(v / 1e6) + 'M';
   let days = {}, day = '', read = null;            // every contest date's read; the date shown and its read {fields, servers, at}
+  let bdays = {}, snapAt = null;                    // every contest date's battle snapshots; the one picked (its time), else the latest
 
   const top = (s, n = TOP) => ((read.servers || {})[s] || []).slice(0, n);
   const total = (s, n = TOP) => top(s, n).reduce((a, p) => a + p[1], 0);
   const M1 = v => (v / 1e6).toFixed(1) + 'M';
   // the view last picked, on this device
   let view = 'sum';
-  try { if (localStorage.getItem('frost.view') === 'pl') view = 'pl'; } catch {}
+  try { const v = localStorage.getItem('frost.view'); if (v === 'pl' || v === 'bt') view = v; } catch {}
   async function load() {
     $('out').innerHTML = '<div class="map">' + '<div class="skel bf"></div>'.repeat(3) + '</div>';
     try {
-      const r = await fetch(API + '/frost-read', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      const post = path => fetch(API + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      const [r, rb] = await Promise.all([post('/frost-read'), post('/frost-battle').catch(() => null)]);
       const j = await r.json().catch(() => null);
       if (!r.ok) throw new Error((j && j.error) || 'the read could not be fetched (' + r.status + ')');
       days = (j && j.days) || {};
-      const dates = Object.keys(days).sort();
+      const jb = rb && rb.ok ? await rb.json().catch(() => null) : null;
+      bdays = (jb && jb.days) || {};
+      const dates = [...new Set([...Object.keys(days), ...Object.keys(bdays)])].sort();
       if (!dates.length) {
         $('status').textContent = 'Nothing read yet.';
         $('out').innerHTML = '<div class="empty">Open the game and tap <b>Read battlefields</b> in the 2698 Data Extractor bookmark: it reads the contest\'s map and the top 20 of every server on it.</div>';
         return;
       }
       day = dates[dates.length - 1];                // the latest contest first
-      $('days').hidden = false; read = days[day]; draw(); $('csv').disabled = false;
+      $('days').hidden = false; read = days[day] || null; draw(); $('csv').disabled = false;
     } catch (e) {
       $('status').className = 'status grow bad'; $('status').textContent = '✗ ' + (e.message || e);
       $('out').innerHTML = '';
@@ -148,11 +170,11 @@ if (window.frameElement) document.getElementById('homeLink').remove();
 
   const dayName = d => new Date(d + 'T00:00:00Z').toLocaleDateString([], { day: 'numeric', month: 'short', timeZone: 'UTC' });
   function draw() {
-    $('days').innerHTML = Object.keys(days).sort().map(d =>
+    $('days').innerHTML = [...new Set([...Object.keys(days), ...Object.keys(bdays)])].sort().map(d =>
       `<button type="button" role="tab" data-day="${esc(d)}" class="${d === day ? 'on' : ''}" aria-selected="${d === day}">${esc(dayName(d))}</button>`).join('');
-    $('tabSum').classList.toggle('on', view === 'sum'); $('tabPl').classList.toggle('on', view === 'pl');
-    $('tabSum').setAttribute('aria-selected', view === 'sum'); $('tabPl').setAttribute('aria-selected', view === 'pl');
-    if (!read) return;
+    for (const [id, v] of [['tabSum', 'sum'], ['tabPl', 'pl'], ['tabBt', 'bt']]) { $(id).classList.toggle('on', view === v); $(id).setAttribute('aria-selected', view === v); }
+    if (view === 'bt') return drawBattle();
+    if (!read) { $('status').textContent = 'No battlefields read for this date.'; $('out').innerHTML = '<div class="empty">Tap <b>Read battlefields</b> in the bookmark for this contest\'s top 20s.</div>'; return; }
     const t = new Date(read.at).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
     $('status').textContent = `${read.fields.flat().length} servers · top ${view === 'sum' ? TOP : LONG} by base CP · read from the game ${t}`;
     if (view === 'pl') return drawPlayers();
@@ -178,14 +200,71 @@ if (window.frameElement) document.getElementById('homeLink').remove();
         <div class="grid">${ranked.map((s, j) => card(s, j + 1)).join('')}</div></section>`;
     }).join('');
   }
+  // Battle: the snapshot picked; the servers by crystals (with the change since the snapshot before, and the
+  // whole hour as a line), each battlefield's mines and who holds them, and our players by score
+  const N = v => Number(v || 0).toLocaleString('en-US');
+  const hm = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const maskIcon = '<span class="mask" title="Master Thief: masked in the game">🎭</span>';
+  function spark(vals) {
+    if (vals.length < 2) return '';
+    const w = 90, h = 22, max = Math.max(...vals, 1);
+    const pts = vals.map((v, i) => `${(i / (vals.length - 1) * w).toFixed(1)},${(h - 2 - v / max * (h - 4)).toFixed(1)}`).join(' ');
+    return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>`;
+  }
+  function drawBattle() {
+    const list = bdays[day] || [];
+    if (!list.length) {
+      $('status').textContent = 'No battle read for this date.';
+      $('out').innerHTML = '<div class="empty">During the contest\'s battle, tap <b>Read battle</b> in the 2698 Data Extractor bookmark. Each tap adds a snapshot here; tap it every so often to follow the hour.</div>';
+      return;
+    }
+    let i = list.findIndex(x => x.at === snapAt); if (i < 0) i = list.length - 1;
+    const sn = list[i], prev = list[i - 1], upTo = list.slice(0, i + 1);
+    $('status').textContent = `Battle · ${list.length} ${list.length === 1 ? 'snapshot' : 'snapshots'} · this one read ${hm(sn.at)}`;
+    const was = {}; if (prev) for (const x of prev.servers) was[x.server] = x.crystals;
+    const servers = `<div class="box"><h3>Servers by crystals<small>${sn.servers.length} servers</small></h3><table>${sn.servers.map(x => {
+      const d = prev && was[x.server] != null ? x.crystals - was[x.server] : null;
+      const line = spark(upTo.map(s => (s.servers.find(y => y.server === x.server) || {}).crystals || 0));
+      return `<tr class="${String(x.server) === US ? 'us' : ''}"><td class="n">${x.rank}</td><td class="nm">S${esc(x.server)}</td><td class="cp">${N(x.crystals)}</td>
+        <td class="up">${d ? '+' + N(d) : ''}</td><td>${line}</td></tr>`;
+    }).join('')}</table></div>`;
+    const players = `<div class="box"><h3>S${US} players by score<small>top ${sn.players.length}</small></h3><table>${sn.players.map(p =>
+      `<tr><td class="n">${p.rank}</td><td class="nm" title="${esc(p.name)}">${esc(p.name || 'Master Thief')}${p.masked ? maskIcon : ''}</td><td class="cp">${N(p.score)}</td></tr>`).join('')}</table></div>`;
+    const fields = '<div class="map">' + sn.status.map((f, k) => {
+      const us = f.us || {};
+      return `<section class="bf${['', ' l', ' r'][k % 3]}"><h2>Battlefield ${k + 1}</h2>
+        <p class="stats"><b>${N(f.players)}</b> players (${N(us.players)} ours) · <b>${N(f.masked)}</b> masked (${N(us.masked)} ours) · <b>${N(f.freeOre)}</b> free ore · our crystals <b>${N(us.crystals)}</b></p>
+        <ul>${f.mines.map((m, j) => {
+          const sp = m.spot != null ? m.spot : f.servers[j], spot = sp ? 'S' + esc(sp) : 'Open spot';   // the mine's own server spot
+          if (!m.server) return `<li class="empty"><b>${spot}:</b><span>empty</span></li>`;
+          return `<li${String(m.server) === US ? ' class="us"' : ''}><b>${spot}:</b><span>S${esc(m.server)} · ${N(m.players)} ${m.players === 1 ? 'player' : 'players'}${m.name ? ` <span class="who">· ${esc(m.name)}${m.masked ? maskIcon : ''}${m.power ? ' ' + M(m.power) : ''}</span>` : m.masked ? ' ' + maskIcon : ''}</span></li>`;
+        }).join('')}</ul></section>`;
+    }).join('') + '</div>';
+    $('out').innerHTML = `<div class="snaps">Read at ${list.map(x => `<button type="button" data-snap="${x.at}" class="${x === sn ? 'on' : ''}">${hm(x.at)}</button>`).join('')}</div>
+      <div class="btgrid">${servers}${players}</div>${fields}`;
+  }
+  $('out').addEventListener('click', e => { const b = e.target.closest('[data-snap]'); if (b) { snapAt = +b.dataset.snap; drawBattle(); } });
   const pick = v => { view = v; try { localStorage.setItem('frost.view', v); } catch {} draw(); };
-  $('days').onclick = e => { const b = e.target.closest('[data-day]'); if (b && days[b.dataset.day]) { day = b.dataset.day; read = days[day]; draw(); } };
+  $('days').onclick = e => { const b = e.target.closest('[data-day]'); if (b && (days[b.dataset.day] || bdays[b.dataset.day])) { day = b.dataset.day; read = days[day] || null; snapAt = null; draw(); } };
+  $('tabBt').onclick = () => pick('bt');
   $('tabSum').onclick = () => pick('sum');
   $('tabPl').onclick = () => pick('pl');
   draw();
 
   $('csv').onclick = () => {
     const q = v => /[",\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : v;
+    if (view === 'bt') {
+      const list = bdays[day] || [], sn = list.find(x => x.at === snapAt) || list[list.length - 1];
+      if (!sn) return;
+      const rows = [['Kind', 'Rank', 'Server', 'Name', 'Crystals / score', 'Masked']]
+        .concat(sn.servers.map(x => ['Server', x.rank, x.server, '', x.crystals, '']), sn.players.map(p => ['Player', p.rank, p.server, p.name, p.score, p.masked ? 'yes' : '']));
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob(['\ufeff' + rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' }));
+      a.download = `frost-battle-${day}-${new Date(sn.at).toISOString().slice(11, 16).replace(':', '')}.csv`;
+      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      return;
+    }
+    if (!read) return;
     const rows = [['Battlefield', 'Server', 'Rank', 'Name', 'Base CP']];
     const n = view === 'sum' ? TOP : LONG;
     read.fields.forEach((f, i) => f.forEach(s => top(s, n).forEach((p, j) => rows.push([i + 1, s, j + 1, p[0], p[1]]))));

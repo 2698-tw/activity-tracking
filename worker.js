@@ -464,7 +464,7 @@ export default {
     // the game page may reach the ranking route, the roster's MM/CE list and the settings (which of
     // the bookmark's sections to show), and nothing else
     const rankingCall = origin === RANKING_ORIGIN
-      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points', 'api/et-send', 'api/st-send', 'api/ma-update', 'api/ma-send', 'api/events', 'api/schedule', 'api/frost-read']
+      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points', 'api/et-send', 'api/st-send', 'api/ma-update', 'api/ma-send', 'api/events', 'api/schedule', 'api/frost-read', 'api/frost-battle']
         .includes(url.pathname.replace(/^\/+/, ''));
     const allowed = knownOrigin || hasPass || rankingCall;
 
@@ -716,6 +716,21 @@ export default {
         day: b.day, fields: f.map(x => x.map(String)),
         servers: Object.fromEntries(Object.entries(sv).map(([k, l]) => [k, l.slice(0, 20).map(p => [p[0], p[1]])])),
       }, reply);
+    }
+
+    // The Frost page's Battle tab: snapshots of the contest's battle, read in the game by the bookmark (Read
+    // battle) as many times as wanted during its hour, kept per contest date. An empty body gives every
+    // date's snapshots, {days: {date: [snapshot, …]}}; only the bookmark, or the admin password, adds one.
+    if (url.pathname.replace(/^\/+/, '') === 'api/frost-battle') {
+      if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
+      const body = await request.text();
+      if (body.length > 512 * 1024) return reply({ error: 'Request too large.' }, 413);
+      let b;
+      try { b = body ? JSON.parse(body) : {}; } catch { return reply({ error: 'Not JSON.' }, 400); }
+      if (b.status === undefined) return rosterCall(env, '/battle-get', null, reply);
+      if (origin !== RANKING_ORIGIN && !hasPass) return reply({ error: 'The battle is read in the game, with the bookmark.' }, 403);
+      try { return rosterCall(env, '/battle-add', checkBattle(b), reply); }
+      catch (e) { return reply({ error: String(e.message || e) }, 400); }
     }
 
     // The home page's upcoming events: each section's stage times for the season, read in the game by the
@@ -1100,6 +1115,28 @@ function rulesFromHighlight(h) {
   }
   return out;
 }
+// One battle read from the bookmark, checked: its date, the battlefields (each mine's holder), the servers
+// by crystals and the players by score. UIDs only to name masked players here; never kept.
+function checkBattle(b) {
+  const int = (v, lo, hi) => Number.isFinite(v) && v >= lo && v <= hi ? Math.round(v) : 0;
+  const nm = v => String(v == null ? '' : v).slice(0, 40), uid = v => /^\d{5,20}$/.test(String(v)) ? String(v) : '';
+  if (!/^20\d\d-\d\d-\d\d$/.test(b.day || '')) throw new Error('day must be the contest date, YYYY-MM-DD');
+  if (!Array.isArray(b.status) || b.status.length > 16 || !Array.isArray(b.servers) || b.servers.length > 100 || !Array.isArray(b.players) || b.players.length > 500)
+    throw new Error('a battle read is {day, status, servers, players}');
+  const B = 1e12;
+  return {
+    day: b.day,
+    status: b.status.map(f => ({
+      servers: (Array.isArray(f.servers) ? f.servers : []).slice(0, 6).map(x => int(x, 0, 99999)),
+      players: int(f.players, 0, 1e6), masked: int(f.masked, 0, 1e6), freeOre: int(f.freeOre, 0, 1e6),
+      us: { players: int(f.us && f.us.players, 0, 1e6), masked: int(f.us && f.us.masked, 0, 1e6), crystals: int(f.us && f.us.crystals, 0, B), rate: int(f.us && f.us.rate, 0, B) },
+      mines: (Array.isArray(f.mines) ? f.mines : []).slice(0, 6).map(m => ({ spot: int(m.spot, 0, 99999), server: int(m.server, 0, 99999), players: int(m.players, 0, 1e6), masked: !!m.masked, name: nm(m.name), power: int(m.power, 0, B), uid: uid(m.uid) })),
+    })),
+    servers: b.servers.map(x => ({ rank: int(x.rank, 0, 1e4), server: int(x.server, 0, 99999), crystals: int(x.crystals, 0, B) })),
+    players: b.players.map(x => ({ rank: int(x.rank, 0, 1e5), server: int(x.server, 0, 99999), masked: !!x.masked, name: nm(x.name), score: int(x.score, 0, B), merit: int(x.merit, 0, B), uid: uid(x.uid) })),
+  };
+}
+
 // A player read under a name other than the one they had: a rename in the roster card's Log
 // ({kind: 'name', from: old name, to: new name, ally}), unless that one is already the latest there.
 function renameNoted(moves, k, from, to, ally, now) {
@@ -1197,7 +1234,7 @@ async function rosterCall(env, path, body, reply) {
 }
 
 // What a backup holds and a restore may write: the cards' data and the settings, not History
-const DATA_KEY = /^(rows|reads|moves|settings|frost:map|frost:read|frost:day:\d{4}-\d{2}-\d{2}|events|(wb|st|et|ma):who|(wb|st|et|ma):day:\d{4}-\d{2}-\d{2}|et:pts:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et|ma))$/;
+const DATA_KEY = /^(rows|reads|moves|settings|frost:map|frost:read|frost:day:\d{4}-\d{2}-\d{2}|frost:battle:\d{4}-\d{2}-\d{2}|events|(wb|st|et|ma):who|(wb|st|et|ma):day:\d{4}-\d{2}-\d{2}|et:pts:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et|ma))$/;
 const LOG_MAX = 100;
 const MOVES_MAX = 3000;                       // alliance changes kept on the roster card's Log
 const MOVE_JOIN = 30 * 60 * 1000;             // leaving and joining within this is one change                          // changes kept in History, each with what it replaced
@@ -1502,6 +1539,27 @@ const ADMIN_OPS = {
 // brings back anyone who returns. Rows are never deleted by a read; the admin view can.
 export class RosterStore {
   constructor(state, env) { this.state = state; this.env = env; }
+  // Every contest date's battle snapshots, oldest first, {days: {date: [snapshot]}}.
+  async battleDays() {
+    const days = {};
+    for (const [k, v] of await this.state.storage.list({ prefix: 'frost:battle:' })) days[k.slice(13)] = v;
+    return { days };
+  }
+  // A battle read added to its date (at most 60 a contest). Masked players come with no name in the
+  // Individual Ranking: ours are named from the roster by UID. No UID is kept.
+  async battleAdd(b) {
+    const roster = await this.load(), named = uid => (uid && roster[uid] && roster[uid].name) || '';
+    const snap = {
+      at: Date.now(),
+      status: b.status.map(f => ({ ...f, mines: f.mines.map(({ uid, ...m }) => ({ ...m, name: m.name || named(uid) })) })),
+      servers: b.servers,
+      players: b.players.map(({ uid, ...p }) => ({ ...p, name: p.name || named(uid) })),
+    };
+    const key = 'frost:battle:' + b.day, list = (await this.state.storage.get(key)) || [];
+    list.push(snap);
+    await this.state.storage.put(key, list.slice(-60));
+    return { day: b.day, n: list.length, at: snap.at };
+  }
   // Every contest date's Frost read, {days: {date: {fields, servers, at}}}. The one read saved before
   // reads were kept by date (S2698's first contest, whose battle was on 1 Nov 2026) moves to that date.
   async frostDays() {
@@ -1538,6 +1596,8 @@ export class RosterStore {
         await this.state.storage.put('frost:day:' + day, read);
         return Response.json({ day, at: read.at, servers: Object.keys(read.servers).length });
       }
+      if (path === '/battle-get') return Response.json(await this.battleDays());
+      if (path === '/battle-add') return Response.json(await this.battleAdd(await request.json()));
       if (path === '/ev-get') return Response.json((await this.state.storage.get('events')) || null);
       if (path === '/ev-set') {
         const ev = { ...(await request.json()), at: Date.now() };

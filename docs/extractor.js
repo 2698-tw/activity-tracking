@@ -369,7 +369,7 @@
     })(cc.director.getScene());
     return hit;
   };
-  async function readFrostMap(step) {
+  async function readFrostMap(step, then) {
     var U = ui(), WM = win('CQ26MainPanel'), WA = win('ActivityPanelNew'), opened = [];
     var map = function () { var c = compNamed('CQ26WLBMainContent'); return c && c._data && c._data.dLandInfoList ? c : null; };
     var close = function () { opened.forEach(function (w) { try { U.CloseUI(w); } catch (e) {} }); };
@@ -400,11 +400,73 @@
       }
       var c = map();
       if (!c) throw new Error('the Frost Crystal Contest map did not load — is the contest on?');
+      if (then) return await then(c);                         // a battle read, with the contest open
       return c._data.dLandInfoList.map(function (b) {
         return (b.mineInfoList || []).map(function (m) { return String(m.serverId); }).filter(function (s) { return /^\d{1,5}$/.test(s) && s !== '0'; });
       }).filter(function (f) { return f.length; });
     } finally { close(); }
   }
+  // The battle, during the contest's hour, as its screens show it: from the contest open, its Status (every
+  // battlefield and who holds each mine, masked holders' real names included, as the game sends them), then
+  // its Ranking (servers by crystals) and that Ranking's Individual tab (our warzone's players by score).
+  // Each opened with the game's own button, read and closed again.
+  async function readBattle(step) {
+    var U = ui(), WF = win('CQ26WLBFightPanel'), WR = win('CQ26WLBRankPanel');
+    if (!U || !WF || !WR) throw new Error('the game has changed: no contest Status or Ranking found');
+    var uname = function (x) { var p = parse(x); return String(p.username || p.nickname || '').slice(0, 40); };
+    var num = function (v) { return Number(longText(v)) || 0; };
+    return readFrostMap(step, async function (contest) {
+      var out = { status: [], servers: [], players: [] };
+      await wait(between(600, 1200));
+      // Status: fresh from its own request when it opens
+      step('Opening Status…', .3);
+      contest.onFightInfoClick();
+      try {
+        var F = null;
+        for (var t0 = Date.now(); Date.now() - t0 < 12000; await wait(200)) {
+          F = compNamed('CQ26WLBFightInfoNode');
+          if (F && F._wDatas && F._wDatas.length && F._wDatas[0].fight) break; F = null;
+        }
+        if (!F) throw new Error('Status did not load — is the battle on?');
+        out.status = F._wDatas.map(function (w) {
+          var f = w.fight || {}, me = f.selfForceFightingInfo || {}, spotOf = {};
+          (w.info.mineInfoList || []).forEach(function (m) { spotOf[m.specId] = Number(m.serverId) || 0; });   // each mine's server spot, by its id
+          return { servers: (w.info.mineInfoList || []).map(function (m) { return Number(m.serverId) || 0; }),
+            players: f.totalPlayerCount || 0, masked: f.totalGhostCount || 0, freeOre: f.freeOreCount || 0,
+            us: { players: me.playerCount || 0, masked: me.ghostCount || 0, crystals: num(me.cncPower), rate: num(me.cncPowerRate) },
+            mines: (f.mineFightingInfoList || []).map(function (m) {
+              return { spot: spotOf[m.specId] || 0, server: Number(m.occupyForceId) || 0, players: m.occupyPlayerCount || 0, masked: !!m.occupyGhostEnable,
+                name: m.occupyTopPlayerInfo ? uname(m.occupyTopPlayerInfo) : '', power: num(m.occupyTopPlayerPower), uid: longText(m.occupyTopUid) };
+            }) };
+        });
+        await wait(between(1500, 3000));                 // a moment to look
+      } finally { try { U.CloseUI(WF); } catch (e) {} }
+      await wait(between(600, 1200));
+      // the Ranking: its servers, then its Individual tab
+      step('Opening the Ranking…', .6);
+      contest.onRankClick();
+      try {
+        var list = function (k) { var P = compNamed('CQ26WLBRankPanel'), L = P && P[k]; return L && Array.isArray(L.rankList) ? L : null; };
+        var got = async function (k) {
+          for (var t1 = Date.now(); Date.now() - t1 < 8000; await wait(200)) { var L = list(k); if (L && !L._isRequesting && (L.rankList.length || Date.now() - t1 > 4000)) return L; }
+          return list(k);
+        };
+        var S0 = await got('serverComp');
+        out.servers = (S0 ? S0.rankList : []).map(function (r) { return { rank: r.rank || 0, server: Number(r.serverId) || 0, crystals: num(r.cncPower) }; });
+        await wait(between(1200, 2500));
+        step('Reading the Individual Ranking…', .8);
+        var P = compNamed('CQ26WLBRankPanel'); P.onTabClick(null, '1');
+        var P0 = await got('playerComp');
+        out.players = (P0 ? P0.rankList : []).map(function (r) {
+          return { rank: r.rank || 0, server: Number(r.serverId) || 0, masked: !!r.ghostEnable, name: r.playerInfo ? uname(r.playerInfo) : '',
+            score: num(r.score), merit: num(r.merit), uid: longText(r.uid) };
+        });
+        await wait(between(800, 1500));
+      } finally { try { U.CloseUI(WR); } catch (e) {} }
+      return out;
+    });
+  }
+
   // One server the way a person looks it up: tapped on the warzone map (the game asks for its briefing
   // and opens its warzone card), a moment to look, then the card's Individual CP Ranking button. Its
   // top 20 read, then the ranking and the card closed again. map: the open warzone map.
@@ -517,7 +579,7 @@
   S.members = S.members || {}; S.prev = S.prev || {};
   // only the four alliances: a read of another one saved by an earlier version is dropped
   [S.members, S.prev].forEach(function (o) { Object.keys(o).forEach(function (t) { if (!ALLY[t]) delete o[t]; }); });
-  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null, st: S.st || null, et: S.et || null, etp: S.etp || null, ma: S.ma || null, ev: S.ev || null, fr: S.fr || null })); } catch (e) {} }
+  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null, st: S.st || null, et: S.et || null, etp: S.etp || null, ma: S.ma || null, ev: S.ev || null, fr: S.fr || null, fb: S.fb || null })); } catch (e) {} }
   var fold = function (s) { return String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, ''); };
   // MM/CE from the roster. Names repeat ("Woody" is 698S's in-game name and 698C's search name; 698S
   // has two Gikeys), so the candidates are tried in order: in-game name in the player's own alliance,
@@ -712,7 +774,7 @@
     '<div data-sec="ev"><h3>Events</h3>' +
     '<div class="row2">' + act('evr', 'main', 'Read events', 'For the home page') + '</div></div>' +
     '<div data-sec="frost"><h3>Frost Crystal Contest</h3>' +
-    '<div class="row2">' + act('frr', 'main', 'Read battlefields', 'For the Frost page') + '</div></div>' +
+    '<div class="row2">' + act('frr', 'main', 'Read battlefields', 'For the Frost page') + act('frb', 'main', 'Read battle', 'During the battle') + '</div></div>' +
     '<div class="status idle" id="st"><span class="si"></span><span class="tx">Ready. Tap a button to start.</span></div></div>';
   document.body.appendChild(host);
   var $ = function (s) { return root.querySelector(s); };
@@ -1178,6 +1240,27 @@
     } catch (e) {
       finish(b, false); sub(b, 'tap to try again');
       status('bad', 'Events not saved<small>' + esc(e.message || e) + '</small>');
+    }
+    lock(false); refresh();
+  };
+
+  /* Read battle: the battle as it stands, saved under the contest's date as one more snapshot of the hour
+     (api/frost-battle); the Worker names masked players of ours from the roster and keeps no UIDs. */
+  $('#frb').onclick = async function () {
+    if (busy) return; lock(true);
+    var b = $('#frb'); start(b); sub(b, 'reading…');
+    try {
+      var bt = await readBattle(function (t, p) { status('work', t, p); setP(b, p); });
+      setP(b, .92); sub(b, 'saving…'); status('work', 'Saving the battle…', .95);
+      var j = await postJson('/frost-battle', { day: contestDay(), status: bt.status, servers: bt.servers, players: bt.players });
+      var us = bt.servers.filter(function (x) { return x.server === 2698; })[0];
+      S.fb = { at: Date.now() }; save();
+      setP(b, 1); finish(b, true); sub(b, 'snapshot ' + (j.n || 1) + ' · now');
+      status('ok', 'Battle read' + (us ? ' · S2698 #' + us.rank + ', ' + us.crystals.toLocaleString() + ' crystals' : '') +
+        '<small>' + bt.status.length + ' battlefields, ' + bt.servers.length + ' servers, ' + bt.players.length + ' players · on the Frost page\'s Battle tab.</small>');
+    } catch (e) {
+      finish(b, false); sub(b, 'tap to try again');
+      status('bad', 'Battle not read<small>' + esc(e.message || e) + '</small>');
     }
     lock(false); refresh();
   };
