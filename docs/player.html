@@ -150,8 +150,9 @@ if (window.frameElement) document.getElementById('homeLink').remove();
 
   async function load() {
     try {
+      // the rounds from api/schedule, not api/events: ad blockers stop any address ending in /events
       const post = path => fetch(API + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then(r => r.ok ? r.json() : null).catch(() => null);
-      const [ev, wb, st, et, ma, fb, nc, sn] = await Promise.all(['/events', '/wb', '/st', '/et', '/ma', '/frost-battle', '/nc-read', '/search-names'].map(post));
+      const [ev, wb, st, et, ma, fb, nc, sn] = await Promise.all(['/schedule', '/wb', '/st', '/et', '/ma', '/frost-battle', '/nc-read', '/search-names'].map(post));
       if (sn) snames = [nameMap(sn.roster), nameMap(sn.raw)];
       rounds = (ev && ev.rounds) || [];
       if (!rounds.length) throw new Error('the season\'s rounds are not read yet (the bookmark\'s Read events)');
