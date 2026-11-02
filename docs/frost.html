@@ -155,6 +155,32 @@ td.cp{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
 .empty{padding:14px 11px;color:var(--dim)}
 .skel{height:200px;border-radius:10px;background:linear-gradient(90deg,var(--card),var(--head),var(--card));background-size:200% 100%;animation:sk 1.4s linear infinite;border:1px solid var(--line)}
 @keyframes sk{to{background-position:-200% 0}}
+/* the tables as the site's cards draw them (index.html, cards.js): the title row with its buttons, the reads
+   line, the chips, the name kept in view when the columns scroll sideways, sortable headers */
+.rapp{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;min-height:560px}
+.rsearch{padding-right:6px;transition:box-shadow .15s ease}
+.rsearch input{border-radius:0;line-height:22px;width:auto}
+.rgo{width:auto;flex:none;border:0;border-radius:999px;padding:7px 14px;font:inherit;font-weight:700;color:#fff;cursor:pointer;background:rgba(255,255,255,.12)}
+.rgo:hover{background:rgba(255,255,255,.2)}
+.rsheet{flex:none;display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:7px 13px;font-weight:700;font-size:13.5px;text-decoration:none;color:#fff;background:rgba(255,255,255,.12)}
+.rsheet:hover{background:rgba(255,255,255,.2)}
+.rsheet svg{width:15px;height:15px}
+.rreads{gap:6px 14px}
+.rchip{font-weight:400}
+.rbody{flex:1}
+.rtable th{cursor:pointer;border:0}
+.rtable td{border-top:0;border-bottom:1px solid rgba(255,255,255,.08)}
+.wbtable{border-collapse:separate;border-spacing:0;min-width:100%;width:auto}
+.wbtable th.n{text-align:right}
+.wbtable td{background:#1a1a23}
+.wbtable th:first-child,.wbtable td:first-child{position:sticky;left:0;z-index:1}
+.wbtable th:first-child{z-index:3}
+.wbtable td:first-child{box-shadow:1px 0 0 rgba(255,255,255,.08)}
+.wbtable tr.us td{background:#1d2a23}
+.bar[hidden]{display:none}
+@media (max-width:640px){.rapp{border-radius:14px}}
+.rtag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;background:#3a3a3a;color:#ddd}
+.rtag.tLeft{background:transparent;color:#8a8f99;box-shadow:inset 0 0 0 1px #4a4f58}.rtag.t698N{background:#22324f;color:#9ec5ff}.rtag.t698S{background:#3b2340;color:#e9a8ff}.rtag.t698W{background:#203d33;color:#7ee2a8}.rtag.t698C{background:#45321b;color:#ffc078}
 </style>
 </head>
 <body>
@@ -164,7 +190,7 @@ td.cp{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
 </div></div>
 <div class="wrap">
   <div class="days" id="days" role="tablist" hidden></div>
-  <div class="bar">
+  <div class="bar" id="bar">
     <div class="tabs" role="tablist"><button type="button" id="tabSum" role="tab">Battlefield Summary</button><button type="button" id="tabPl" role="tab">Top 20 (All servers)</button><button type="button" id="tabBt" role="tab">Battle Results</button><button type="button" id="tabRk" role="tab">Ranking</button></div>
     <span class="status grow" id="status">Loading…</span>
     <button type="button" id="csv" disabled>Download CSV</button>
@@ -202,6 +228,30 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   // a name as the other cards show it: the in-game name, then the search name where it differs
   const nameCell = name => { const s = searchOf(name); return esc(name) + (s && s !== name ? ` <span class="rdim">(${esc(s)})</span>` : ''); };
   // the search matches the in-game name or the search name, fancy letters or not
+  // as the site's cards: each alliance as its coloured label; the chips Everyone, the site's alliances (as the admin
+  // view sets them, kept by the site on this device) and Other; a header sorts by its column, again the other way
+  const AL = (() => { try { const a = JSON.parse(localStorage.getItem('site.settings')).alliances; if (Array.isArray(a) && a.length) return a; } catch {} return ['698N', '698S', '698W', '698C']; })();
+  let al = '';
+  const allyTag = a => a ? `<span class="rtag t${esc(a)}">${esc(a)}</span>` : '<span class="rdim">—</span>';
+  const inAl = ally => !al || (al === 'OTHER' ? !AL.includes(ally) : ally === al);
+  const chips = () => ['', ...AL, 'OTHER'].map(a => `<button type="button" class="rchip${al === a ? ' on' : ''}" data-al="${esc(a)}">${a === 'OTHER' ? 'Other' : esc(a) || 'Everyone'}</button>`).join('');
+  const sorts = {};                                // each table's sort, {k, asc}
+  function sorted(id, rows, val, def) {
+    const s = sorts[id] || (sorts[id] = { k: def, asc: false }), v = val[s.k] || val[def], dir = s.asc ? 1 : -1;
+    return rows.slice().sort((a, b) => { const x = v(a), y = v(b); return (typeof x === 'string' ? x.localeCompare(y) : (x ?? -1) - (y ?? -1)) * dir; });
+  }
+  const th = (id, k, label, num) => { const s = sorts[id] || {}; return `<th class="${num ? 'n' : ''}" data-sort="${id}:${esc(k)}">${label}${s.k === k ? (s.asc ? ' ▲' : ' ▼') : ''}</th>`; };
+  // a header's click: its column, highest first (names A to Z), then the other way
+  function sortClick(e, redraw) {
+    const h = e.target.closest('[data-sort]'); if (!h) return false;
+    const [id, k] = h.dataset.sort.split(':'), s = sorts[id] || (sorts[id] = {});
+    if (s.k === k) s.asc = !s.asc; else { s.k = k; s.asc = k === 'name' || k === 'ally'; }
+    redraw(); return true;
+  }
+  const SHEET_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 3v18"/></svg>';
+  // each player's alliance, from the roster workbook's Alliance Rosters tab by name (the contest has no alliance)
+  let allies = new Map();
+  const allyOf = name => allies.get(name) || allies.get('~' + fold(name)) || '';
   const nameHit = (name, q) => !q || fold(name).includes(q) || fold(searchOf(name)).includes(q);
 
   const top = (s, n = TOP) => ((read.servers || {})[s] || []).slice(0, n);
@@ -217,6 +267,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
       const [r, rb, rn] = await Promise.all([post('/frost-read'), post('/frost-battle').catch(() => null), post('/search-names').catch(() => null)]);
       const jn = rn && rn.ok ? await rn.json().catch(() => null) : null;
       if (jn) snames = [nameMap(jn.roster), nameMap(jn.raw)];
+      if (jn) for (const [name, ally] of jn.roster || []) for (const k of [name, '~' + fold(name)]) if (ally && !allies.has(k)) allies.set(k, ally);
       const j = await r.json().catch(() => null);
       if (!r.ok) throw new Error((j && j.error) || 'the read could not be fetched (' + r.status + ')');
       days = (j && j.days) || {};
@@ -249,6 +300,8 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     $('days').innerHTML = (Object.keys(bdays).length ? [ALL] : []).concat([...new Set([...Object.keys(days), ...Object.keys(bdays)])].sort()).map(d =>
       `<button type="button" role="tab" data-day="${esc(d)}" class="${d === day ? 'on' : ''}" aria-selected="${d === day}">${d === ALL ? 'All' : esc(dayName(d))}</button>`).join('');
     document.querySelector('.tabs').hidden = day === ALL;
+    $('bar').hidden = day === ALL;                   // All and Ranking: their Export CSV is in the card, as on the other cards
+    $('csv').hidden = view === 'rk';
     if (day === ALL) return drawAll();
     for (const [id, v] of [['tabSum', 'sum'], ['tabPl', 'pl'], ['tabBt', 'bt'], ['tabRk', 'rk']]) { $(id).classList.toggle('on', view === v); $(id).setAttribute('aria-selected', view === v); }
     if (view === 'bt') return drawBattle();
@@ -345,23 +398,26 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     if (rkWhat === 'servers' && rkQ && !/^s?\d*$/i.test(rkQ.trim())) rkWhat = 'players';
     const q = rkQ.toLowerCase();
     $('status').textContent = '';
-    let rows, head, n, total;
+    let rows, head, n, total, cols;
     if (rkWhat === 'servers') {
-      const l = sn.servers.filter(x => !q || ('s' + x.server).includes(q.replace(/^s?/, 's')));
-      n = l.length; total = sn.servers.length;
-      head = `<th class="n">#</th><th>Server</th><th class="n">Crystals</th>`;
-      rows = l.map(x => `<tr class="${String(x.server) === US ? 'us' : ''}"><td class="n">${x.rank}</td><td>S${esc(x.server)}</td><td class="n">${N(x.crystals)}</td></tr>`);
+      const l = sorted('rks', sn.servers.filter(x => !q || ('s' + x.server).includes(q.replace(/^s?/, 's'))), { server: x => x.server, crystals: x => x.crystals }, 'crystals');
+      n = l.length; total = sn.servers.length; cols = 2;
+      head = th('rks', 'server', 'Server') + th('rks', 'crystals', 'Crystals', 1);
+      rows = l.map(x => `<tr class="${String(x.server) === US ? 'us' : ''}"><td>S${esc(x.server)}</td><td class="n">${N(x.crystals)}</td></tr>`);
     } else {
-      const l = sn.players.filter(p => nameHit(p.name, fold(rkQ)));
-      n = l.length; total = sn.players.length;
-      head = `<th class="n">#</th><th>Name</th><th class="n">Score</th>`;
-      rows = l.map(p => `<tr><td class="n">${p.rank}</td><td>${p.name ? nameCell(p.name) : 'Master Thief'}${p.masked ? maskIcon : ''}</td><td class="n">${N(p.score)}</td></tr>`);
+      const l = sorted('rkp', sn.players.filter(p => inAl(allyOf(p.name)) && nameHit(p.name, fold(rkQ))),
+        { name: p => p.name, ally: p => allyOf(p.name), score: p => p.score }, 'score');
+      n = l.length; total = sn.players.length; cols = 3;
+      head = th('rkp', 'name', 'Name') + th('rkp', 'ally', 'Alliance') + th('rkp', 'score', 'Score', 1);
+      rows = l.map(p => `<tr><td>${p.name ? nameCell(p.name) : 'Master Thief'}${p.masked ? maskIcon : ''}</td><td>${allyTag(allyOf(p.name))}</td><td class="n">${N(p.score)}</td></tr>`);
     }
     $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>Frost Crystal ranking</b>
-        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="rkQ" type="text" placeholder="${rkWhat === 'servers' ? 'Search a server or name' : 'Search a name'}" autocomplete="off" value="${esc(rkQ)}"><button type="button" class="rclear" id="rkX" title="Clear the search" aria-label="Clear the search"${rkQ ? '' : ' hidden'}>✕</button></label></div>
+        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="rkQ" type="text" placeholder="${rkWhat === 'servers' ? 'Search a server or name' : 'Search a name'}" autocomplete="off" value="${esc(rkQ)}"><button type="button" class="rclear" id="rkX" title="Clear the search" aria-label="Clear the search"${rkQ ? '' : ' hidden'}>✕</button></label>
+        <button type="button" class="rgo" data-csv>Export CSV</button></div>
+      <div class="rreads">${N(sn.servers.length)} servers · ${N(sn.players.length)} S${US} players · ${esc(dayName(day))}</div>
       <div class="rbar"><button type="button" class="rchip ${rkWhat === 'servers' ? 'on' : ''}" data-rk="servers">Servers</button><button type="button" class="rchip ${rkWhat === 'players' ? 'on' : ''}" data-rk="players">S${US} players</button>
-        <span class="rcount">${n === total ? N(total) : N(n) + ' of ' + N(total)} ${rkWhat === 'servers' ? 'servers' : 'players'}</span></div>
-      <div class="rbody"><table class="rtable"><thead><tr>${head}</tr></thead><tbody>${rows.join('') || `<tr><td colspan="3" class="rdim">No ${rkWhat === 'servers' ? 'server' : 'player'} matches.</td></tr>`}</tbody></table></div></div>`;
+        ${rkWhat === 'players' ? chips() : ''}<span class="rcount">${N(n)} of ${N(total)} ${rkWhat === 'servers' ? 'servers' : 'players'}</span></div>
+      <div class="rbody"><table class="rtable wbtable"><thead><tr>${head}</tr></thead><tbody>${rows.join('') || `<tr><td colspan="${cols}" class="rdim">No ${rkWhat === 'servers' ? 'server' : 'player'} matches.</td></tr>`}</tbody></table></div></div>`;
     searchBox(drawRanking);
   }
   // the search box of All and Ranking, as the other cards have it: a ✕ to empty it, shown once something is typed
@@ -382,18 +438,26 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   }
   function drawAll() {
     const { ds, rows } = allRows(), q = fold(rkQ);
-    const l = rows.filter(r => nameHit(r.name, q));
-    $('status').textContent = `S${US} players across ${ds.length} ${ds.length === 1 ? 'contest' : 'contests'}`;
-    const head = `<th>Name</th>${ds.map(d => `<th class="n">${esc(dayName(d))}</th>`).join('')}`;
-    const body = l.map(r => `<tr><td>${nameCell(r.name)}${r.masked ? maskIcon : ''}</td>${ds.map(d => r.on[d]
+    const val = { name: r => r.name, ally: r => allyOf(r.name), total: r => r.total, ...Object.fromEntries(ds.map(d => [d, r => r.on[d] && r.on[d].score])) };
+    const l = sorted('all', rows.filter(r => inAl(allyOf(r.name)) && nameHit(r.name, q)), val, 'total');
+    const head = th('all', 'name', 'Name') + th('all', 'ally', 'Alliance') + ds.map(d => th('all', d, esc(dayName(d)), 1)).join('');
+    const body = l.map(r => `<tr><td>${nameCell(r.name)}${r.masked ? maskIcon : ''}</td><td>${allyTag(allyOf(r.name))}</td>${ds.map(d => r.on[d]
       ? `<td class="n">${N(r.on[d].score)}</td>` : '<td class="n rdim">—</td>').join('')}</tr>`).join('');
-    $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>S${US} points, all dates</b>
-        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="rkQ" type="text" placeholder="Search a name" autocomplete="off" value="${esc(rkQ)}"><button type="button" class="rclear" id="rkX" title="Clear the search" aria-label="Clear the search"${rkQ ? '' : ' hidden'}>✕</button></label></div>
-      <div class="rbar"><span class="rcount">${l.length === rows.length ? N(rows.length) : N(l.length) + ' of ' + N(rows.length)} players</span></div>
-      <div class="rbody"><table class="rtable"><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${ds.length + 1}" class="rdim">No player matches.</td></tr>`}</tbody></table></div></div>`;
+    $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>Frost Crystal Contest</b>
+        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="rkQ" type="text" placeholder="Search a name" autocomplete="off" value="${esc(rkQ)}"><button type="button" class="rclear" id="rkX" title="Clear the search" aria-label="Clear the search"${rkQ ? '' : ' hidden'}>✕</button></label>
+        <button type="button" class="rgo" data-csv>Export CSV</button></div>
+      <div class="rreads">${N(rows.length)} players · ${ds.length} ${ds.length === 1 ? 'contest' : 'contests'}${ds.length ? ' · last read ' + esc(dayName(ds[ds.length - 1])) : ''}</div>
+      <div class="rbar">${chips()}<span class="rcount">${N(l.length)} of ${N(rows.length)} players</span></div>
+      <div class="rbody"><table class="rtable wbtable"><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${ds.length + 2}" class="rdim">No player matches.</td></tr>`}</tbody></table></div></div>`;
     searchBox(drawAll);
   }
-  $('out').addEventListener('click', e => { const r = e.target.closest('[data-rk]'); if (r) { rkWhat = r.dataset.rk; rkQ = ''; drawRanking(); } });
+  $('out').addEventListener('click', e => {
+    const redraw = () => day === ALL ? drawAll() : drawRanking();
+    if (e.target.closest('[data-csv]')) return $('csv').click();
+    if (sortClick(e, redraw)) return;
+    const c = e.target.closest('[data-al]'); if (c) { al = c.dataset.al; return redraw(); }
+    const r = e.target.closest('[data-rk]'); if (r) { rkWhat = r.dataset.rk; rkQ = ''; al = ''; drawRanking(); }
+  });
   const pick = v => { view = v; try { localStorage.setItem('frost.view', v); } catch {} draw(); };
   $('days').onclick = e => { const b = e.target.closest('[data-day]'); if (b && (b.dataset.day === ALL || days[b.dataset.day] || bdays[b.dataset.day])) { day = b.dataset.day; read = days[day] || null; draw(); } };
   $('tabBt').onclick = () => pick('bt');
@@ -406,8 +470,8 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     const q = v => /[",\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : v;
     if (day === ALL) {
       const { ds, rows: l } = allRows();
-      const rows = [['Name', 'Search name', 'Masked', ...ds]]
-        .concat(l.map(r => [r.name, searchOf(r.name), r.masked ? 'yes' : '', ...ds.map(d => r.on[d] ? r.on[d].score : '')]));
+      const rows = [['Name', 'Search name', 'Alliance', 'Masked', ...ds]]
+        .concat(l.map(r => [r.name, searchOf(r.name), allyOf(r.name), r.masked ? 'yes' : '', ...ds.map(d => r.on[d] ? r.on[d].score : '')]));
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob(['\ufeff' + rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' }));
       a.download = `frost-s${US}-all-dates.csv`;
@@ -417,8 +481,8 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     if (view === 'bt' || view === 'rk') {
       const sn = battle();
       if (!sn) return;
-      const rows = [['Kind', 'Rank', 'Server', 'Name', 'Search name', 'Crystals / score', 'Masked']]
-        .concat(sn.servers.map(x => ['Server', x.rank, x.server, '', '', x.crystals, '']), sn.players.map(p => ['Player', p.rank, p.server, p.name, searchOf(p.name), p.score, p.masked ? 'yes' : '']));
+      const rows = [['Kind', 'Rank', 'Server', 'Name', 'Search name', 'Alliance', 'Crystals / score', 'Masked']]
+        .concat(sn.servers.map(x => ['Server', x.rank, x.server, '', '', '', x.crystals, '']), sn.players.map(p => ['Player', p.rank, p.server, p.name, searchOf(p.name), allyOf(p.name), p.score, p.masked ? 'yes' : '']));
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob(['\ufeff' + rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' }));
       a.download = `frost-battle-${day}.csv`;
