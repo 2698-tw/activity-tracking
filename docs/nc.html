@@ -93,9 +93,42 @@ h2.sec:first-child{margin-top:0}
 .usline{font-size:13px;margin:0 0 6px;font-variant-numeric:tabular-nums}
 .city ol{margin:0;padding-left:22px;font-size:13px}
 .city ol li.me{font-weight:700;color:var(--usink)}
-.city .pl{display:inline-block;margin-top:6px;font-size:12.5px;font-weight:600;color:var(--acc);text-decoration:none}
-.city .pl:hover{text-decoration:underline}
+/* a city's two lists: its ranking, then every server that declared on it (ranked or not) */
+.city h4{margin:8px 0 3px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);font-weight:700}
+.decl{display:flex;flex-wrap:wrap;gap:4px}
+.decl span{font-size:12px;padding:1px 7px;border-radius:6px;background:var(--head);border:1px solid var(--line);font-variant-numeric:tabular-nums}
+.decl span.me{font-weight:700;color:var(--usink);border-color:color-mix(in srgb,var(--usink) 45%,transparent)}
+.decl span.no{color:var(--dim)}
 .rchip small{opacity:.6;margin-left:4px}
+/* each alliance in its colour, as the other cards show it (index.html) */
+.rtag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;background:#3a3a3a;color:#ddd}
+.rtag.tLeft{background:transparent;color:#8a8f99;box-shadow:inset 0 0 0 1px #4a4f58}.rtag.t698N{background:#22324f;color:#9ec5ff}.rtag.t698S{background:#3b2340;color:#e9a8ff}.rtag.t698W{background:#203d33;color:#7ee2a8}.rtag.t698C{background:#45321b;color:#ffc078}
+/* the tables as the site's cards draw them (index.html, cards.js): the title row with its buttons, the reads
+   line, the chips, the name kept in view when the columns scroll sideways, sortable headers */
+.rapp{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;min-height:560px}
+.rsearch{padding-right:6px;transition:box-shadow .15s ease}
+.rsearch input{border-radius:0;line-height:22px;width:auto}
+.rgo{width:auto;flex:none;border:0;border-radius:999px;padding:7px 14px;font:inherit;font-weight:700;color:#fff;cursor:pointer;background:rgba(255,255,255,.12)}
+.rgo:hover{background:rgba(255,255,255,.2)}
+.rsheet{flex:none;display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:7px 13px;font-weight:700;font-size:13.5px;text-decoration:none;color:#fff;background:rgba(255,255,255,.12)}
+.rsheet:hover{background:rgba(255,255,255,.2)}
+.rsheet svg{width:15px;height:15px}
+.rreads{gap:6px 14px}
+.rchip{font-weight:400}
+.rbody{flex:1}
+.rtable th{cursor:pointer;border:0}
+.rtable td{border-top:0;border-bottom:1px solid rgba(255,255,255,.08)}
+.wbtable{border-collapse:separate;border-spacing:0;min-width:100%;width:auto}
+.wbtable th.n{text-align:right}
+.wbtable td{background:#1a1a23}
+.wbtable th:first-child,.wbtable td:first-child{position:sticky;left:0;z-index:1}
+.wbtable th:first-child{z-index:3}
+.wbtable td:first-child{box-shadow:1px 0 0 rgba(255,255,255,.08)}
+.wbtable tr.us td{background:#1d2a23}
+.bar[hidden]{display:none}
+@media (max-width:640px){.rapp{border-radius:14px}}
+.rtag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;background:#3a3a3a;color:#ddd}
+.rtag.tLeft{background:transparent;color:#8a8f99;box-shadow:inset 0 0 0 1px #4a4f58}.rtag.t698N{background:#22324f;color:#9ec5ff}.rtag.t698S{background:#3b2340;color:#e9a8ff}.rtag.t698W{background:#203d33;color:#7ee2a8}.rtag.t698C{background:#45321b;color:#ffc078}
 </style>
 </head>
 <body>
@@ -105,7 +138,7 @@ h2.sec:first-child{margin-top:0}
 </div></div>
 <div class="wrap">
   <div class="days" id="days" role="tablist" hidden></div>
-  <div class="bar">
+  <div class="bar" id="bar">
     <span class="status grow" id="status">Loading…</span>
     <button type="button" id="csv" disabled>Download CSV</button>
   </div>
@@ -124,6 +157,28 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   const N = v => Number(v || 0).toLocaleString();
   let days = {}, day = ALL, q = '';                // every battle date's read {players, cities, summary}; the tab shown; the search
   let bf = '';                                     // the battlefield shown under a date's cities
+  // as the site's cards: each alliance as its coloured label; the chips Everyone, the site's alliances (as the admin
+  // view sets them, kept by the site on this device) and Other; a header sorts by its column, again the other way
+  const AL = (() => { try { const a = JSON.parse(localStorage.getItem('site.settings')).alliances; if (Array.isArray(a) && a.length) return a; } catch {} return ['698N', '698S', '698W', '698C']; })();
+  let al = '';
+  const allyTag = a => a ? `<span class="rtag t${esc(a)}">${esc(a)}</span>` : '<span class="rdim">—</span>';
+  const inAl = ally => !al || (al === 'OTHER' ? !AL.includes(ally) : ally === al);
+  const chips = () => ['', ...AL, 'OTHER'].map(a => `<button type="button" class="rchip${al === a ? ' on' : ''}" data-al="${esc(a)}">${a === 'OTHER' ? 'Other' : esc(a) || 'Everyone'}</button>`).join('');
+  const sorts = {};                                // each table's sort, {k, asc}
+  function sorted(id, rows, val, def) {
+    const s = sorts[id] || (sorts[id] = { k: def, asc: false }), v = val[s.k] || val[def], dir = s.asc ? 1 : -1;
+    return rows.slice().sort((a, b) => { const x = v(a), y = v(b); return (typeof x === 'string' ? x.localeCompare(y) : (x ?? -1) - (y ?? -1)) * dir; });
+  }
+  const th = (id, k, label, num) => { const s = sorts[id] || {}; return `<th class="${num ? 'n' : ''}" data-sort="${id}:${esc(k)}">${label}${s.k === k ? (s.asc ? ' ▲' : ' ▼') : ''}</th>`; };
+  // a header's click: its column, highest first (names A to Z), then the other way
+  function sortClick(e, redraw) {
+    const h = e.target.closest('[data-sort]'); if (!h) return false;
+    const [id, k] = h.dataset.sort.split(':'), s = sorts[id] || (sorts[id] = {});
+    if (s.k === k) s.asc = !s.asc; else { s.k = k; s.asc = k === 'name' || k === 'ally'; }
+    redraw(); return true;
+  }
+  const SHEET_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 3v18"/></svg>';
+  const SHEET = 'https://docs.google.com/spreadsheets/d/1NeHELo_UY1KYNMSKzlHo0z0jlMUrtP1gEFZQXYW2h_U/edit#gid=0';
   // each player's search name, as the site's other cards have it (docs/cards.js, frost.html): from the roster
   // workbook's Alliance Rosters tab first, then the Base CP sends; the exact name first, then one written
   // without the fancy letters
@@ -168,6 +223,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   function draw() {
     $('days').innerHTML = [ALL, ...dates()].map(d =>
       `<button type="button" role="tab" data-day="${esc(d)}" class="${d === day ? 'on' : ''}" aria-selected="${d === day}">${d === ALL ? 'All' : esc(dayName(d))}</button>`).join('');
+    $('bar').hidden = day === ALL;                 // All: its Export CSV is in the card, as on the other cards
     day === ALL ? drawAll() : drawDay();
   }
 
@@ -182,15 +238,18 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     return { ds, rows: [...by.values()].sort((a, b) => b.sum - a.sum).map((r, i) => ({ ...r, rank: i + 1 })) };
   }
   function drawAll() {
-    const { ds, rows } = allRows(), f = fold(q), l = rows.filter(r => nameHit(r.name, f));
-    $('status').textContent = `S${US} players across ${ds.length} ${ds.length === 1 ? 'battle' : 'battles'}`;
-    const head = `<th class="n">#</th><th>Name</th><th>Alliance</th>${ds.map(d => `<th class="n">${esc(dayName(d))}</th>`).join('')}`;
-    const body = l.map(r => `<tr><td class="n">${r.rank}</td><td>${nameCell(r.name)}</td><td>${esc(r.ally)}</td>${ds.map(d => r.on[d] != null
+    const { ds, rows } = allRows(), f = fold(q);
+    const val = { name: r => r.name, ally: r => r.ally, sum: r => r.sum, ...Object.fromEntries(ds.map(d => [d, r => r.on[d]])) };
+    const l = sorted('all', rows.filter(r => inAl(r.ally) && nameHit(r.name, f)), val, 'sum');
+    const head = th('all', 'name', 'Name') + th('all', 'ally', 'Alliance') + ds.map(d => th('all', d, esc(dayName(d)), 1)).join('');
+    const body = l.map(r => `<tr><td>${nameCell(r.name)}</td><td>${allyTag(r.ally)}</td>${ds.map(d => r.on[d] != null
       ? `<td class="n">${N(r.on[d])}</td>` : '<td class="n rdim">—</td>').join('')}</tr>`).join('');
-    $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>S${US} individual scores, all battles</b>
-        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="q" type="text" placeholder="Search a name" autocomplete="off" value="${esc(q)}"><button type="button" class="rclear" id="qx" title="Clear the search" aria-label="Clear the search"${q ? '' : ' hidden'}>✕</button></label></div>
-      <div class="rbar"><span class="rcount">${l.length === rows.length ? N(rows.length) : N(l.length) + ' of ' + N(rows.length)} players</span></div>
-      <div class="rbody"><table class="rtable"><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${ds.length + 3}" class="rdim">No player matches.</td></tr>`}</tbody></table></div></div>`;
+    $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>Neutral City</b>
+        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="q" type="text" placeholder="Search a name" autocomplete="off" value="${esc(q)}"><button type="button" class="rclear" id="qx" title="Clear the search" aria-label="Clear the search"${q ? '' : ' hidden'}>✕</button></label>
+        <button type="button" class="rgo" data-csv>Export CSV</button><a class="rsheet" href="${SHEET}" target="_blank" rel="noopener" title="Open in Google Sheets">${SHEET_ICON}Sheet ↗</a></div>
+      <div class="rreads">${N(rows.length)} players · ${ds.length} ${ds.length === 1 ? 'battle' : 'battles'}${ds.length ? ' · last read ' + esc(dayName(ds[ds.length - 1])) : ''}</div>
+      <div class="rbar">${chips()}<span class="rcount">${N(l.length)} of ${N(rows.length)} players</span></div>
+      <div class="rbody"><table class="rtable wbtable"><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${ds.length + 2}" class="rdim">No player matches.</td></tr>`}</tbody></table></div></div>`;
     const inp = $('q');
     inp.oninput = () => { q = inp.value; const at = inp.selectionStart; drawAll(); const k = $('q'); k.focus(); k.setSelectionRange(at, at); };
     $('qx').onclick = e => { e.preventDefault(); q = ''; drawAll(); $('q').focus(); };
@@ -198,7 +257,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
 
   // a date: its round's numbers, then every city by level
   function drawDay() {
-    const D = days[day], S = D.summary, pl = D.players || [], fields = D.cities || {};
+    const D = days[day], S = D.summary, pl = D.players || [];
     if (!S) {
       $('status').textContent = '';
       $('out').innerHTML = `<div class="empty">No cities read for this battle: only its Points Log (${N(pl.length)} players, on the All tab). The bookmark reads the cities after the battle, until the next round's.</div><div id="bf"></div>`;
@@ -216,10 +275,11 @@ if (window.frameElement) document.getElementById('homeLink').remove();
       h += `<section class="lv"><h2 class="sec">${LV[lv]}</h2><div class="cities">` + cs.map(c => {
         const r = res[c.n];
         return `<div class="city${c.own === US ? ' us' : r === false ? ' lost' : ''}"><h3>City ${c.n}${r === true ? '<span class="tag won">Won</span>' : r === false ? '<span class="tag lost">Lost</span>' : ''}</h3>
-          <div class="own">Held by <b>${c.own ? 'S' + c.own : 'nobody'}</b>${c.fight.length ? ' · ' + c.fight.length + ' servers fought' : ''}</div>
+          <div class="own">Held by <b>${c.own ? 'S' + c.own : 'nobody'}</b></div>
           ${c.us ? `<div class="usline">S${US}: #${c.us.rank} · ${N(c.us.score)} pts · ${c.us.st} stations, ${c.us.hub} hubs</div>` : ''}
-          ${c.rk.length ? '<ol>' + c.rk.map(s => `<li${s === US ? ' class="me"' : ''}>S${s}</li>`).join('') + '</ol>' : '<div class="own">No battle this round</div>'}
-          ${fields[c.n] ? `<a class="pl" href="#bf" data-bf="${c.n}">${N(fields[c.n].length)} players' points ↓</a>` : ''}</div>`;
+          ${c.rk.length || c.fight.length ? `<h4>Ranked servers</h4>${c.rk.length ? '<ol>' + c.rk.map(s => `<li${s === US ? ' class="me"' : ''}>S${s}</li>`).join('') + '</ol>' : '<div class="own">None</div>'}
+            <h4>Servers that declared on this city (${c.fight.length})</h4><div class="decl">${c.fight.slice().sort((a, b) => a - b).map(s =>
+              `<span class="${s === US ? 'me' : c.rk.includes(s) ? '' : 'no'}" title="${c.rk.includes(s) ? 'Ranked' : 'Not ranked'}">S${s}</span>`).join('')}</div>` : '<div class="own">No battle this round</div>'}</div>`;
       }).join('') + '</div></section>';
     }
     $('out').innerHTML = h + '<div id="bf"></div>';
@@ -231,24 +291,30 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     const fields = (days[day] || {}).cities || {}, ns = Object.keys(fields).sort((a, b) => a - b);
     if (!ns.length || !$('bf')) return;
     if (!fields[bf]) bf = ns[0];
-    const f = fold(q), all = fields[bf], l = all.map((p, i) => ({ rank: i + 1, name: p[0], score: p[1], ally: p[2] || '' })).filter(r => nameHit(r.name, f));
-    const sum = all.reduce((a, p) => a + p[1], 0);
+    const f = fold(q), all = fields[bf], sum = all.reduce((a, p) => a + p[1], 0);
+    const l = sorted('bf', all.map(p => ({ name: p[0], score: p[1], ally: p[2] || '' })).filter(r => inAl(r.ally) && nameHit(r.name, f)),
+      { name: r => r.name, ally: r => r.ally, score: r => r.score }, 'score');
     $('bf').innerHTML = `<div class="rapp"><div class="rhead"><b>Points by battlefield</b>
-        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="q" type="text" placeholder="Search a name" autocomplete="off" value="${esc(q)}"><button type="button" class="rclear" id="qx" title="Clear the search" aria-label="Clear the search"${q ? '' : ' hidden'}>✕</button></label></div>
-      <div class="rbar">${ns.map(n => `<button type="button" class="rchip${n === bf ? ' on' : ''}" data-bf="${n}">City ${n}<small>${N(fields[n].length)}</small></button>`).join('')}
-        <span class="rcount">${l.length === all.length ? N(all.length) : N(l.length) + ' of ' + N(all.length)} players · ${N(sum)} pts</span></div>
-      <div class="rbody"><table class="rtable"><thead><tr><th class="n">#</th><th>Name</th><th>Alliance</th><th class="n">Points</th></tr></thead><tbody>
-      ${l.map(r => `<tr><td class="n">${r.rank}</td><td>${nameCell(r.name)}</td><td>${esc(r.ally)}</td><td class="n">${N(r.score)}</td></tr>`).join('') || '<tr><td colspan="4" class="rdim">No player matches.</td></tr>'}
+        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="q" type="text" placeholder="Search a name" autocomplete="off" value="${esc(q)}"><button type="button" class="rclear" id="qx" title="Clear the search" aria-label="Clear the search"${q ? '' : ' hidden'}>✕</button></label>
+        <button type="button" class="rgo" data-csv>Export CSV</button></div>
+      <div class="rreads">City ${esc(bf)} · ${N(all.length)} players · ${N(sum)} points</div>
+      <div class="rbar">${ns.map(n => `<button type="button" class="rchip${n === bf ? ' on' : ''}" data-bf="${n}">City ${n}<small>${N(fields[n].length)}</small></button>`).join('')}</div>
+      <div class="rbar">${chips()}<span class="rcount">${N(l.length)} of ${N(all.length)} players</span></div>
+      <div class="rbody"><table class="rtable wbtable"><thead><tr>${th('bf', 'name', 'Name')}${th('bf', 'ally', 'Alliance')}${th('bf', 'score', 'Points', 1)}</tr></thead><tbody>
+      ${l.map(r => `<tr><td>${nameCell(r.name)}</td><td>${allyTag(r.ally)}</td><td class="n">${N(r.score)}</td></tr>`).join('') || '<tr><td colspan="3" class="rdim">No player matches.</td></tr>'}
       </tbody></table></div></div>`;
     const inp = $('q');
     inp.oninput = () => { q = inp.value; const at = inp.selectionStart; drawField(); const k = $('q'); k.focus(); k.setSelectionRange(at, at); };
     $('qx').onclick = e => { e.preventDefault(); q = ''; drawField(); $('q').focus(); };
   }
-  // a city's chip, or its "players' points" link on its card: that city's list, brought into view from the card
+  // a city's chip: that city's list
   $('out').addEventListener('click', e => {
+    if (e.target.closest('[data-csv]')) return $('csv').click();
+    if (sortClick(e, () => day === ALL ? drawAll() : drawField())) return;
+    const c = e.target.closest('[data-al]');
+    if (c) { al = c.dataset.al; return day === ALL ? drawAll() : drawField(); }
     const b = e.target.closest('[data-bf]'); if (!b) return;
-    e.preventDefault(); bf = b.dataset.bf; drawField();
-    if (b.tagName === 'A') $('bf').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    bf = b.dataset.bf; drawField();
   });
 
   $('days').onclick = e => { const b = e.target.closest('[data-day]'); if (b && (b.dataset.day === ALL || days[b.dataset.day])) { day = b.dataset.day; q = ''; bf = ''; draw(); } };
