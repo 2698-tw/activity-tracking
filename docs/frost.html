@@ -438,17 +438,18 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   }
   function drawAll() {
     const { ds, rows } = allRows(), q = fold(rkQ);
-    const val = { name: r => r.name, ally: r => allyOf(r.name), total: r => r.total, ...Object.fromEntries(ds.map(d => [d, r => r.on[d] && r.on[d].score])) };
+    const val = { name: r => r.name, ally: r => allyOf(r.name), total: r => r.total, ...Object.fromEntries(ds.flatMap(d => [[d, r => r.on[d] && r.on[d].score], ['m' + d, r => r.on[d] && r.on[d].masked ? 1 : 0]])) };
     const l = sorted('all', rows.filter(r => inAl(allyOf(r.name)) && nameHit(r.name, q)), val, 'total');
-    const head = th('all', 'name', 'Name') + th('all', 'ally', 'Alliance') + ds.map(d => th('all', d, esc(dayName(d)), 1)).join('');
-    const body = l.map(r => `<tr><td>${nameCell(r.name)}${r.masked ? maskIcon : ''}</td><td>${allyTag(allyOf(r.name))}</td>${ds.map(d => r.on[d]
-      ? `<td class="n">${N(r.on[d].score)}</td>` : '<td class="n rdim">—</td>').join('')}</tr>`).join('');
+    const head = th('all', 'name', 'Name') + th('all', 'ally', 'Alliance') + ds.map(d => th('all', d, esc(dayName(d)), 1) + th('all', 'm' + d, 'Masked')).join('');
+    // each date: the player's points, then Masked (Yes when they were masked in that contest)
+    const body = l.map(r => `<tr><td>${nameCell(r.name)}</td><td>${allyTag(allyOf(r.name))}</td>${ds.map(d => (r.on[d]
+      ? `<td class="n">${N(r.on[d].score)}</td>` : '<td class="n rdim">—</td>') + `<td>${r.on[d] && r.on[d].masked ? 'Yes' : ''}</td>`).join('')}</tr>`).join('');
     $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>Frost Crystal Contest</b>
         <label class="rsearch"><span aria-hidden="true">🔍</span><input id="rkQ" type="text" placeholder="Search a name" autocomplete="off" value="${esc(rkQ)}"><button type="button" class="rclear" id="rkX" title="Clear the search" aria-label="Clear the search"${rkQ ? '' : ' hidden'}>✕</button></label>
         <button type="button" class="rgo" data-csv>Export CSV</button></div>
       <div class="rreads">${N(rows.length)} players · ${ds.length} ${ds.length === 1 ? 'contest' : 'contests'}${ds.length ? ' · last read ' + esc(dayName(ds[ds.length - 1])) : ''}</div>
       <div class="rbar">${chips()}<span class="rcount">${N(l.length)} of ${N(rows.length)} players</span></div>
-      <div class="rbody"><table class="rtable wbtable"><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${ds.length + 2}" class="rdim">No player matches.</td></tr>`}</tbody></table></div></div>`;
+      <div class="rbody"><table class="rtable wbtable"><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${ds.length * 2 + 2}" class="rdim">No player matches.</td></tr>`}</tbody></table></div></div>`;
     searchBox(drawAll);
   }
   $('out').addEventListener('click', e => {
@@ -470,8 +471,8 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     const q = v => /[",\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : v;
     if (day === ALL) {
       const { ds, rows: l } = allRows();
-      const rows = [['Name', 'Search name', 'Alliance', 'Masked', ...ds]]
-        .concat(l.map(r => [r.name, searchOf(r.name), allyOf(r.name), r.masked ? 'yes' : '', ...ds.map(d => r.on[d] ? r.on[d].score : '')]));
+      const rows = [['Name', 'Search name', 'Alliance', ...ds.flatMap(d => [d, 'Masked ' + d])]]
+        .concat(l.map(r => [r.name, searchOf(r.name), allyOf(r.name), ...ds.flatMap(d => [r.on[d] ? r.on[d].score : '', r.on[d] && r.on[d].masked ? 'Yes' : ''])]));
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob(['\ufeff' + rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' }));
       a.download = `frost-s${US}-all-dates.csv`;
