@@ -155,12 +155,22 @@
     var title = 'Whitebeard ranking';
     // the rest of the list, a page at a time: glide to the end and say it got there, as a finger
     // scroll does; the game asks for its next page itself. Uneven, like a quick flick through.
-    for (var stuck = 0; scroller && list.length < want && stuck < 2;) {
-      var n0 = list.length, glide = between(0.2, 0.45);
+    // The list is done when the game's request for a page comes back with nothing new (the ranking has
+    // no count on screen any more): the game's network keeps each request it is waiting on.
+    var net = req('NetMgr'), ids = req('NRequestIdV2');
+    net = net && (net.default || net).NET;
+    var rid = ids && ids.NRequestIdV2 && ids.NRequestIdV2.SERIES_FROST_MONSTER_CLEANUP_RANK;
+    var pending = net && net.findRequest && rid != null ? function () { return !!net.findRequest(function (a) { return a && a.pack && a.pack.c === rid; }); } : null;
+    for (var stuck = 0; scroller && list.length < want && stuck < (pending ? 1 : 2);) {
+      var n0 = list.length, glide = between(0.2, 0.45), saw = false;
       scroller.scrollToBottom(glide);
       await wait(glide * 1000 + 50);
       scroller.node.emit('scroll-to-bottom', scroller);
-      for (var t1 = Date.now(); list.length === n0 && Date.now() - t1 < 6000;) await wait(150);
+      for (var t1 = Date.now(); list.length === n0 && Date.now() - t1 < 6000; await wait(100)) {
+        if (!pending) continue;
+        var p1 = pending(); saw = saw || p1;
+        if ((saw && !p1) || (!saw && Date.now() - t1 > 1500)) break;      // answered with nothing new, or never asked
+      }
       stuck = list.length === n0 ? stuck + 1 : 0;
       progress(list.length, want);
       await wait(Math.random() < 0.12 ? between(1000, 2000) : between(250, 900));
@@ -538,14 +548,20 @@
             await wait(300);
             for (var t5 = Date.now(); Date.now() - t5 < 8000 && (P._isRequesting || !P._data.length); await wait(200));
           }
-          // every page, 30 at a time, the way scrolling to the end of the list loads the next
+          // every page, 30 at a time: glide the list to its end, as a finger scroll does, and load the next the
+          // way reaching the end does. Done when a request comes back with nothing new.
+          if (P.scrollview) P.scrollview.scrollToTop(0);
           for (var pg = 0; pg < 100; pg++) {
-            var had = P._data.length;
+            var had = P._data.length, saw4 = false;
             step('Reading the Points Log, ' + dayText(d) + (label ? ', city ' + label : '') + '… ' + had + ' players',
               .15 + .65 * (i + (j + 1) / Math.max(picks.length, 1)) / times.length);
             await wait(between(500, 1100));
+            if (P.scrollview) { var g4 = between(0.2, 0.45); P.scrollview.scrollToBottom(g4); await wait(g4 * 1000 + 50); }
             P.scrollToBottomEvent();
-            for (var t4 = Date.now(); Date.now() - t4 < 6000 && (P._isRequesting || P._data.length === had); await wait(200));
+            for (var t4 = Date.now(); Date.now() - t4 < 6000 && P._data.length === had; await wait(100)) {
+              saw4 = saw4 || P._isRequesting;
+              if ((saw4 && !P._isRequesting) || (!saw4 && Date.now() - t4 > 1500)) break;
+            }
             if (P._data.length === had) break;
           }
           // the UID only for the Worker to find each player's alliance in the roster; it keeps none

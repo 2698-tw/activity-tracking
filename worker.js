@@ -1125,7 +1125,8 @@ const DEFAULT_SETTINGS = {
     { id: 'et', title: 'Energy Tower', show: true, link: '' },
     { id: 'ma', title: 'Mammoth Assault', show: true, link: '' },
     { id: 'frost', title: 'Frost Crystal Contest', show: true, link: '' },
-    { id: 'nc', title: 'Neutral City', show: true, link: '' }] },
+    { id: 'nc', title: 'Neutral City', show: true, link: '' },
+    { id: 'player', title: 'Player Summary', show: true, link: '' }] },
   sheets: Object.fromEntries(Object.entries(SHEET_BASE).map(([k, t]) => [k, { id: t.id, gid: t.gid }])),
   // which sections the bookmark's panel in the game shows
   bookmark: { members: true, wb: true, st: true, et: true, ma: true, ev: true, frost: true, nc: true },

@@ -21,7 +21,7 @@ catch { document.documentElement.classList.add('homewait'); setTimeout(() => doc
 // #events: the home page with only the upcoming events, a link for people outside the alliances
 document.documentElement.classList.toggle('evonly', location.hash === '#events');
 // No #kartz or #cp in the address: the home page, shown from the first paint (cp.js takes over).
-if (!/^#(kartz|cp|roster|whitebeard|snowtrain|energytower|mammoth|frost|nc|admin)$/.test(location.hash)) document.documentElement.classList.add('athome');
+if (!/^#(kartz|cp|roster|whitebeard|snowtrain|energytower|mammoth|frost|nc|player|admin)$/.test(location.hash)) document.documentElement.classList.add('athome');
 // Another view in the address (#roster…): that one from the first paint too, not Kartz, the page's
 // own first view, while cp.js loads.
 else if (location.hash !== '#kartz') document.documentElement.dataset.view = location.hash.slice(1);
@@ -182,7 +182,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .athome #app{display:none}
 html[data-view] #tab-kartz{display:none}
 html[data-view=cp] #tab-cp,html[data-view=roster] #tab-roster,html[data-view=whitebeard] #tab-wb,html[data-view=snowtrain] #tab-st,
-html[data-view=energytower] #tab-et,html[data-view=mammoth] #tab-ma,html[data-view=frost] #tab-frost,html[data-view=nc] #tab-nc,html[data-view=admin] #tab-admin{display:block}
+html[data-view=energytower] #tab-et,html[data-view=mammoth] #tab-ma,html[data-view=frost] #tab-frost,html[data-view=nc] #tab-nc,html[data-view=player] #tab-player,html[data-view=admin] #tab-admin{display:block}
 /* the Frost Crystal Contest (#frost): frost.html in a frame the height of the window, the page wider for its tables */
 html[data-view=frost] #app,body:has(#tab-frost:not(.hide)) #app,html[data-view=nc] #app,body:has(#tab-nc:not(.hide)) #app{max-width:1320px}
 .frostframe{display:block;width:100%;height:80vh;border:0;border-radius:12px;background:var(--panel)}
@@ -239,6 +239,8 @@ html[data-view=frost] #app,body:has(#tab-frost:not(.hide)) #app,html[data-view=n
 .hcard.frost .go{color:#1c2541}
 .hcard.nc{background:linear-gradient(135deg,#3b2a1a,#9a5b1e 55%,#f0b45e)}
 .hcard.nc .go{color:#3b2a1a}
+.hcard.player{background:linear-gradient(135deg,#3a1630,#a3285e 55%,#ef8fb4)}
+.hcard.player .go{color:#3a1630}
 /* ---- upcoming events (the game's Seal Stone calendar) ---- */
 .events{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 14px 10px}
 .events h2{display:flex;align-items:baseline;gap:8px;margin:0 0 10px}
@@ -490,6 +492,7 @@ a.ev:hover{background:var(--line)}
       <div class="hcard ma" data-card="ma"><b>Mammoth Assault</b><a class="go" href="#mammoth">Open</a></div>
       <div class="hcard frost" data-card="frost"><b>Frost Crystal Contest</b><a class="go" href="#frost">Open</a></div>
       <div class="hcard nc" data-card="nc"><b>Neutral City</b><a class="go" href="#nc">Open</a></div>
+      <div class="hcard player" data-card="player"><b>Player Summary</b><a class="go" href="#player">Open</a></div>
     </div>
    </div>
   </div>
@@ -501,7 +504,7 @@ a.ev:hover{background:var(--line)}
 (function () {
   const home = document.getElementById('home'), title = document.getElementById('bandTitle');
   try { const t = JSON.parse(localStorage.getItem('site.settings')).home.title; if (t) title.textContent = t; } catch {}
-  const atHome = () => !/^#(kartz|cp|roster|whitebeard|snowtrain|energytower|mammoth|frost|nc|admin)$/.test(location.hash);
+  const atHome = () => !/^#(kartz|cp|roster|whitebeard|snowtrain|energytower|mammoth|frost|nc|player|admin)$/.test(location.hash);
   function write() {
     home.classList.remove('writing');
     title.parentNode.style.setProperty('--w', title.offsetWidth + 'px');
@@ -746,6 +749,8 @@ a.ev:hover{background:var(--line)}
 <div id="tab-frost" class="hide"><iframe id="frostFrame" class="frostframe" title="Frost Crystal Contest" scrolling="no"></iframe></div>
 <!-- Neutral City: nc.html, the same way -->
 <div id="tab-nc" class="hide"><iframe id="ncFrame" class="frostframe" title="Neutral City" scrolling="no"></iframe></div>
+<!-- Player Summary: player.html, the same way -->
+<div id="tab-player" class="hide"><iframe id="playerFrame" class="frostframe" title="Player Summary" scrolling="no"></iframe></div>
 
 <!-- Admin (admin.js): settings, Sheets, backup and History, once unlocked with the pill -->
 <div id="tab-admin" class="hide">

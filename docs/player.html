@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Player Summary</title>
+<link rel="icon" href="icon.png">
+<!-- Player Summary (player.html): one player, every event of the Frost season. Search a name; the events are the
+     rows and the season's rounds the columns, from what the site's cards already keep (Whitebeard, Snow Train,
+     Energy Tower, Mammoth Assault, Frost Crystal Contest, Neutral City). "No": the event was read that round and
+     the player had nothing in it; "—": the event wasn't read that round. -->
+<style>
+:root{--bg:#eef4f9;--card:#fff;--ink:#14212e;--dim:#62748a;--line:#dbe5ee;--head:#f4f8fb;--acc:#1789a8;--us:#e8f6ea;--usink:#1f7a3a;--bad:#b42318;
+  --band1:#0b3b57;--band2:#1789a8;--band3:#8fd6e6}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0d151d;--card:#15212c;--ink:#e6eef5;--dim:#8ea2b5;--line:#243444;--head:#1a2835;--acc:#5cc6d6;--us:#173322;--usink:#7fd99a;--bad:#ff8a80}}
+:root[data-theme="dark"]{--bg:#0d151d;--card:#15212c;--ink:#e6eef5;--dim:#8ea2b5;--line:#243444;--head:#1a2835;--acc:#5cc6d6;--us:#173322;--usink:#7fd99a;--bad:#ff8a80}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+.band{background:linear-gradient(135deg,var(--band1),var(--band2) 60%,var(--band3));color:#fff;padding:22px 16px 18px}
+.band .in,.wrap{max-width:1280px;margin:0 auto}
+.band h1{margin:0;font-size:24px;letter-spacing:.01em}
+.band p{margin:4px 0 0;opacity:.85}
+.band a{color:#fff}
+.homelink{display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;padding:4px 12px 4px 10px;border-radius:999px;font-size:13px;font-weight:600;
+  text-decoration:none;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35)}
+.homelink:hover{background:rgba(255,255,255,.26)}
+.wrap{padding:16px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.bar .grow{flex:1}
+/* on a phone: the tabs and Download CSV on one line, the status on its own line below */
+@media (max-width:640px){.bar .status{order:3;flex-basis:100%}.bar #csv{margin-left:auto}}
+button,.btn{font:inherit;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
+.rapp{color-scheme:dark;color:#f3f3f7;background:rgba(22,22,30,.97);border-radius:18px;box-shadow:0 12px 40px rgba(0,0,0,.25),inset 0 0 0 2px rgba(224,69,123,.55);overflow:hidden}
+.rhead{display:flex;align-items:center;gap:10px;padding:12px 14px 8px;flex-wrap:wrap}
+.rhead b{font-size:15.5px}
+.rsearch{flex:1;min-width:160px;display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.08);border-radius:999px;padding:6px 14px;margin:0}
+.rsearch:focus-within{box-shadow:inset 0 0 0 2px rgba(224,69,123,.85)}
+.rsearch input{flex:1;min-width:0;border:0;outline:0;background:none;color:#fff;font:inherit;font-size:15px;padding:0;caret-color:#fff}
+.rreads{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 14px 8px;font-size:12.5px;color:rgba(235,235,245,.65)}
+.rbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 14px 10px}
+.rchip{border:0;background:rgba(255,255,255,.08);color:#f3f3f7;border-radius:999px;padding:5px 12px;font:inherit;font-size:12.5px;font-weight:400;cursor:pointer}
+.rchip.on{background:rgba(195,20,65,.35);box-shadow:inset 0 0 0 1px #e0457b}
+.rcount{margin-left:auto;font-size:12.5px;color:rgba(235,235,245,.5)}
+.rbody{overflow:auto;padding:0 14px 14px}
+.rtable{width:100%;border-collapse:collapse;font-size:13.5px}
+.rtable th{position:sticky;top:0;background:#20212c;text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:rgba(235,235,245,.6);padding:8px 10px;font-weight:600;white-space:nowrap}
+.rtable th.n,.rtable td.n{text-align:right;font-variant-numeric:tabular-nums}
+.rtable td{padding:7px 10px;border-top:1px solid rgba(255,255,255,.08);white-space:nowrap;color:#f3f3f7}
+.rtable tr.us td{background:rgba(126,226,168,.12);color:#8ff0b5;font-weight:700}
+.rtable td.up{color:#8ff0b5;font-size:12.5px}
+.rtable .rdim{color:rgba(235,235,245,.45)}
+.tabs[hidden]{display:none}
+.rclear{flex:none;width:22px;height:22px;display:grid;place-items:center;border:0;border-radius:50%;padding:0;background:rgba(255,255,255,.16);color:#fff;font-size:12px;line-height:1;cursor:pointer}
+.rclear:hover{background:rgba(255,255,255,.28)}
+.rclear[hidden]{display:none}
+.empty{padding:14px 11px;color:var(--dim)}
+.skel{height:200px;border-radius:10px;background:linear-gradient(90deg,var(--card),var(--head),var(--card));background-size:200% 100%;animation:sk 1.4s linear infinite;border:1px solid var(--line)}
+@keyframes sk{to{background-position:-200% 0}}
+.rtable td.n{color:#f3f3f7}
+.rtable td.n.rdim{color:rgba(235,235,245,.45)}
+/* a date: its round's cities by level, ours in green, the ones we declared on and lost in red */
+.rsearch{padding-right:6px;transition:box-shadow .15s ease}
+.rsearch input{border-radius:0;line-height:22px;width:auto}
+.rgo{width:auto;flex:none;border:0;border-radius:999px;padding:7px 14px;font:inherit;font-weight:700;color:#fff;cursor:pointer;background:rgba(255,255,255,.12)}
+.rgo:hover{background:rgba(255,255,255,.2)}
+.rsheet{flex:none;display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:7px 13px;font-weight:700;font-size:13.5px;text-decoration:none;color:#fff;background:rgba(255,255,255,.12)}
+.rsheet:hover{background:rgba(255,255,255,.2)}
+.rsheet svg{width:15px;height:15px}
+.rreads{gap:6px 14px}
+.rchip{font-weight:400}
+.rbody{flex:1}
+.rtable th{cursor:pointer;border:0}
+.rtable td{border-top:0;border-bottom:1px solid rgba(255,255,255,.08)}
+.wbtable{border-collapse:separate;border-spacing:0;min-width:100%;width:auto}
+.wbtable th.n{text-align:right}
+.wbtable td{background:#1a1a23}
+.wbtable th:first-child,.wbtable td:first-child{position:sticky;left:0;z-index:1}
+.wbtable th:first-child{z-index:3}
+.wbtable td:first-child{box-shadow:1px 0 0 rgba(255,255,255,.08)}
+.wbtable tr.us td{background:#1d2a23}
+.bar[hidden]{display:none}
+@media (max-width:640px){.rapp{border-radius:14px}}
+.rtag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;background:#3a3a3a;color:#ddd}
+.rtag.tLeft{background:transparent;color:#8a8f99;box-shadow:inset 0 0 0 1px #4a4f58}.rtag.t698N{background:#22324f;color:#9ec5ff}.rtag.t698S{background:#3b2340;color:#e9a8ff}.rtag.t698W{background:#203d33;color:#7ee2a8}.rtag.t698C{background:#45321b;color:#ffc078}
+.pick{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 12px}
+.who{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:2px 14px 10px;font-size:15px}
+.who b{font-size:17px}
+.rtable td.no{color:#ff9b9b;font-weight:600}
+.rtable td small{display:block;font-size:11px;color:rgba(235,235,245,.5)}
+.hint{padding:30px 14px;color:rgba(235,235,245,.6);text-align:center}
+</style>
+</head>
+<body>
+<div class="band"><div class="in">
+  <a class="homelink" id="homeLink" href="./"><span aria-hidden="true">←</span>Home</a>
+  <h1>Player Summary</h1>
+</div></div>
+<div class="wrap">
+  <div id="out"><div class="skel"></div></div>
+</div>
+<script>
+// inside the site (index.html#player) the site's own header has the way back
+if (window.frameElement) document.getElementById('homeLink').remove();
+</script>
+<script>
+(function () {
+  const API = location.hostname.endsWith('.workers.dev') ? '/api' : 'https://data-collection.jk06nm04.workers.dev/api';
+  const US = 2698;
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const N = v => Number(v || 0).toLocaleString();
+  const allyTag = a => a ? `<span class="rtag t${esc(a)}">${esc(a)}</span>` : '';
+  const fold = s => String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, '');
+  let snames = [new Map(), new Map()];
+  function nameMap(list) {
+    const m = new Map(), weakKeys = new Set();
+    for (const [name, , search, weak] of list || []) for (const k of [name, '~' + fold(name)]) {
+      if (weak && m.has(k) && !weakKeys.has(k)) continue;
+      m.set(k, search); weak ? weakKeys.add(k) : weakKeys.delete(k);
+    }
+    return m;
+  }
+  const searchOf = name => { for (const m of snames) { const s = m.get(name) || (fold(name) !== '' && m.get('~' + fold(name))); if (s) return s; } return ''; };
+  const nameCell = name => { const s = searchOf(name); return esc(name) + (s && s !== name ? ` <span class="rdim">(${esc(s)})</span>` : ''); };
+  const nameHit = (name, f) => !f || fold(name).includes(f) || fold(searchOf(name)).includes(f);
+
+  // the events, as the rows: each from its card's own data, one value per player per date (the garrison events: Yes or No)
+  const EVENTS = [
+    { id: 'wb', name: 'Whitebeard', what: 'level' },
+    { id: 'st', name: 'Snow Train', what: 'garrisoned', yes: 1 },
+    { id: 'et', name: 'Energy Tower', what: 'points' },
+    { id: 'ma', name: 'Mammoth Assault', what: 'garrisoned', yes: 1 },
+    { id: 'frost', name: 'Frost Crystal Contest', what: 'individual points' },
+    { id: 'nc', name: 'Neutral City', what: 'individual points' },
+  ];
+  let rounds = [], players = new Map(), read = {}, q = '', who = '';   // the season's rounds; name → {ally, v: {event: {round: value}}}; event → rounds read
+
+  // a date's round: the round running at noon (UTC) that day; dates before the season count as round 1
+  const roundOf = d => { const t = Date.parse(d + 'T12:00:00Z') / 1000, r = rounds.find(x => x.st <= t && t < x.et); return r ? r.round : t < rounds[0].st ? rounds[0].round : null; };
+  // one value for a player on a date; a round read more than once keeps its latest date
+  function put(ev, name, ally, d, v) {
+    const r = roundOf(d); if (!name || r == null) return;
+    const p = players.get(name) || { name, ally: '', v: {}, at: {} };
+    if (ally) p.ally = ally;
+    const k = ev + ':' + r;
+    if (!(k in p.at) || d >= p.at[k]) { (p.v[ev] = p.v[ev] || {})[r] = Number(v) || 0; p.at[k] = d; }
+    players.set(name, p);
+  }
+  const seen = (ev, d) => { const r = roundOf(d); if (r != null) (read[ev] = read[ev] || new Set()).add(r); };
+
+  async function load() {
+    try {
+      const post = path => fetch(API + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then(r => r.ok ? r.json() : null).catch(() => null);
+      const [ev, wb, st, et, ma, fb, nc, sn] = await Promise.all(['/events', '/wb', '/st', '/et', '/ma', '/frost-battle', '/nc-read', '/search-names'].map(post));
+      if (sn) snames = [nameMap(sn.roster), nameMap(sn.raw)];
+      rounds = (ev && ev.rounds) || [];
+      if (!rounds.length) throw new Error('the season\'s rounds are not read yet (the bookmark\'s Read events)');
+      // the garrison cards: their rows, each with its value on each date (the Snow Train's, by troop type)
+      const sum = v => v && typeof v === 'object' ? Object.values(v).reduce((a, b) => a + (Number(b) || 0), 0) : v;
+      for (const [id, j, f] of [['wb', wb, r => r.pts], ['st', st, r => r.pts], ['et', et, r => r.score], ['ma', ma, r => r.pts]]) {
+        if (!j) continue;
+        (j.dates || []).forEach(d => seen(id, d));
+        for (const r of j.rows || []) for (const [d, v] of Object.entries(f(r) || {})) put(id, r.name, r.ally, d, sum(v));
+      }
+      for (const [d, b] of Object.entries((fb && fb.days) || {})) {
+        seen('frost', d);
+        for (const p of b.players || []) if (String(p.server) === String(US)) put('frost', p.name, '', d, p.score);
+      }
+      for (const [d, b] of Object.entries((nc && nc.days) || {})) {
+        if (!(b.players || []).length) continue;
+        seen('nc', d);
+        for (const [name, score, ally] of b.players) put('nc', name, ally, d, score);
+      }
+      draw();
+    } catch (e) {
+      $('out').innerHTML = `<div class="empty">✗ ${esc(e.message || e)}</div>`;
+    }
+  }
+
+  function draw() {
+    const f = fold(q), list = f ? [...players.values()].filter(p => nameHit(p.name, f)).sort((a, b) => a.name.localeCompare(b.name)) : [];
+    if (list.length === 1) who = list[0].name;
+    const p = players.get(who) && (!f || nameHit(who, f)) ? players.get(who) : null;
+    let body;
+    if (p) {
+      const cell = (e, r) => {
+        if (!(read[e.id] && read[e.id].has(r.round))) return '<td class="n rdim">—</td>';
+        const v = p.v[e.id] && p.v[e.id][r.round];
+        return v ? `<td class="n">${e.yes ? 'Yes' : N(v)}</td>` : '<td class="n no">No</td>';
+      };
+      body = `<div class="who"><b>${nameCell(p.name)}</b>${allyTag(p.ally)}</div>
+        <div class="rbody"><table class="rtable wbtable"><thead><tr><th>Event</th>${rounds.map(r => `<th class="n">Round ${r.round}</th>`).join('')}</tr></thead>
+        <tbody>${EVENTS.map(e => `<tr><td>${esc(e.name)}<small>${esc(e.what)}</small></td>${rounds.map(r => cell(e, r)).join('')}</tr>`).join('')}</tbody></table></div>`;
+    } else if (!f) body = '<div class="hint">Search your name to see every event of the season, round by round.</div>';
+    else if (!list.length) body = '<div class="hint">No player matches.</div>';
+    else body = `<div class="pick">${list.slice(0, 40).map(x => `<button type="button" class="rchip" data-who="${esc(x.name)}">${nameCell(x.name)}</button>`).join('')}</div>
+      ${list.length > 40 ? `<div class="hint">${N(list.length)} players match: type more of the name.</div>` : ''}`;
+    $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>Player Summary</b>
+        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="q" type="text" placeholder="Search your name" autocomplete="off" value="${esc(q)}"><button type="button" class="rclear" id="qx" title="Clear the search" aria-label="Clear the search"${q ? '' : ' hidden'}>✕</button></label></div>
+      <div class="rreads">${N(players.size)} players · ${EVENTS.length} events · ${rounds.length} rounds</div>${body}</div>`;
+    const inp = $('q');
+    inp.oninput = () => { q = inp.value; who = ''; const at = inp.selectionStart; draw(); const k = $('q'); k.focus(); k.setSelectionRange(at, at); };
+    $('qx').onclick = e => { e.preventDefault(); q = ''; who = ''; draw(); $('q').focus(); };
+  }
+  $('out').addEventListener('click', e => { const b = e.target.closest('[data-who]'); if (b) { who = b.dataset.who; q = who; draw(); } });
+  load();
+})();
+</script>
+</body>
+</html>
