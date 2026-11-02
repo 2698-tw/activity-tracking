@@ -10,7 +10,7 @@
     wb: ['Disruptive Whitebeard', 'g', '#whitebeard'], st: ['Snow Train', 'g', '#snowtrain'],
     et: ['Defend Energy', 'g', '#energytower'], ma: ['Mammoth Assault', 'g', '#mammoth'],
     tundra: ['Desolate Tundra', 'b', ''], frost: ['Frost Crystal Contest', 'b', '#frost'],
-    feast: ['Monster Feast', 'b', ''], nc: ['Neutral City', 'o', ''], realm: ['Realm', 'p', ''],
+    feast: ['Monster Feast', 'b', ''], nc: ['Neutral City', 'o', '#nc'], realm: ['Realm', 'p', ''],
     storm: ['Storm Duel', 'r', ''], blizzard: ['Blizzard', 'r', ''],
   };
   const COL = { g: '#22c55e', b: '#3b82f6', o: '#f59e0b', p: '#a855f7', r: '#ef4444' };

@@ -14,6 +14,9 @@
  *     date columns (api/et-points).
  *   Mammoth Assault: its View Queues, opened with the Mammoth Assault screen's own View Queues button;
  *     the site's Mammoth Assault card (api/ma-update) and its sheet (api/ma-send).
+ *   Neutral City: its Points Log, opened with the Neutral City tab's own Record button, every battle date's
+ *     every page, for all and for each city fought in (its city picker); and the round's cities. For the site's Neutral City page (api/nc-read);
+ *     Send puts the latest battle's players in SS P2 Neutral City (api/nc-send).
  * The panel is buttons only. Each alliance read updates the site's Alliance roster card
  * (api/roster-update) and each Whitebeard read the site's Whitebeard card (api/wb-update).
  * Nothing here sends anything to the game: the game makes its own usual requests for what it opens.
@@ -476,6 +479,102 @@
     });
   }
 
+  // Neutral City, after a battle: the season screen's Neutral City card (the Event Center at its Neutral City
+  // tab), then that tab's Record button: the Points Log, one tab per battle date, each date's every page read the
+  // way scrolling to the end loads it, for All and then each city in its picker (the cities we fought in). Then the round's cities as the game has them, once its battle is over
+  // (until the next round's battle, the cities are that round's). Everything opened is closed again.
+  async function readNeutral(step) {
+    var U = ui(), WM = win('CQ26MainPanel'), WA = win('ActivityPanelNew'), WS = win('CQ25NeutralScorePanel'), CN = req('CQ26NeutralController');
+    if (!U || !WM || !WA || !WS || !CN) throw new Error('no Neutral City in the game right now');
+    var ctl = CN.default.getInstance(), opened = [];
+    var uname = function (x) { var p = parse(x); return String(p.username || p.nickname || '').slice(0, 40); };
+    var num = function (v) { return Number(longText(v)) || 0; };
+    var utc = function (t) { return new Date(t * 1000).toISOString().slice(0, 10); };
+    var days = {}, cities = {}, summary = null;
+    try {
+      var N = compNamed('CQ26NeutralMain');
+      if (!N) {
+        var M = compNamed('CQ26MainPanel');
+        if (!M) {
+          step('Opening the season screen…', .02);
+          U.OpenUI(WM); opened.unshift(WM);
+          for (var t0 = Date.now(); Date.now() - t0 < 10000 && !(M = compNamed('CQ26MainPanel')); await wait(200));
+          if (!M) throw new Error('the season screen did not open');
+          await wait(between(400, 800));
+        }
+        step('Opening Neutral City…', .05);
+        M.onClickNeutralCity(); opened.unshift(WA);
+        for (var t1 = Date.now(); Date.now() - t1 < 10000 && !(N = compNamed('CQ26NeutralMain')); await wait(200));
+        if (!N) throw new Error('the Neutral City tab did not open');
+        await wait(between(600, 1100));
+      }
+      step('Opening the Points Log…', .1);
+      N.onRecordClick(); opened.unshift(WS);
+      var P = null;
+      for (var t2 = Date.now(); Date.now() - t2 < 10000; await wait(200)) {
+        P = compNamed('CQ25NeutralScorePanel');
+        if (P && Array.isArray(P._times) && (!P._times.length || (Array.isArray(P._data) && !P._isRequesting && Date.now() - t2 > 1500))) break;
+        P = null;
+      }
+      if (!P) throw new Error('the Points Log did not open');
+      var times = P._times.slice();
+      for (var i = 0; i < times.length; i++) {
+        var d = utc(times[i]);
+        if (P._curTabIdx !== i) {
+          await wait(between(900, 1600));
+          var before = P._data;
+          P.onTabClick(null, String(i));
+          for (var t3 = Date.now(); Date.now() - t3 < 8000 && (P._isRequesting || P._data === before); await wait(200));
+        }
+        // the picker's cities for this date (the first is All); All first, then each city as picking it does
+        var picks = (P._timesMap && P._timesMap.get && P._timesMap.get(times[i])) || [], cityNum = {};
+        Object.keys((ctl.getMainInfo() || {}).city || {}).forEach(function (k) { var c = ctl.getMainInfo().city[k]; cityNum[c.cityId] = c.showNum; });
+        for (var j = 0; j < Math.max(picks.length, 1); j++) {
+          var id = picks[j] ? picks[j].id : 0, label = id ? String(cityNum[id] || (String(picks[j].msg).match(/\d+$/) || [''])[0]) : '';
+          if (id && !label) continue;
+          if (P._selectIdx !== id) {
+            await wait(between(900, 1600));
+            P.onSelectClose(); P._selectIdx = id; P.requestData(true);      // what picking it in the city picker runs
+            await wait(300);
+            for (var t5 = Date.now(); Date.now() - t5 < 8000 && (P._isRequesting || !P._data.length); await wait(200));
+          }
+          // every page, 30 at a time, the way scrolling to the end of the list loads the next
+          for (var pg = 0; pg < 100; pg++) {
+            var had = P._data.length;
+            step('Reading the Points Log, ' + dayText(d) + (label ? ', city ' + label : '') + '… ' + had + ' players',
+              .15 + .65 * (i + (j + 1) / Math.max(picks.length, 1)) / times.length);
+            await wait(between(500, 1100));
+            P.scrollToBottomEvent();
+            for (var t4 = Date.now(); Date.now() - t4 < 6000 && (P._isRequesting || P._data.length === had); await wait(200));
+            if (P._data.length === had) break;
+          }
+          // the UID only for the Worker to find each player's alliance in the roster; it keeps none
+          var rows = P._data.map(function (r) { return [uname(r.playerInfo), num(r.score), longText(r.uid)]; }).filter(function (r) { return r[0]; });
+          if (id) { (cities[d] = cities[d] || {})[label] = rows; } else days[d] = rows;
+        }
+        if (P._selectIdx !== 0) { await wait(between(600, 1000)); P.onSelectClose(); P._selectIdx = 0; P.requestData(true); }   // back to All
+      }
+      await wait(between(800, 1500));                  // a moment to look
+      // the round's cities: who holds each, the servers' ranking there, and ours where we fought
+      var stt = ctl.getStatus(), m = ctl.getMainInfo(), now = Date.now() / 1000;
+      if (stt && m && m.city && stt.fightEndTime && now >= stt.fightEndTime) {
+        step('Reading the cities…', .85);
+        summary = {
+          day: utc(stt.fightBeginTime), round: stt.round, score: num(m.score),
+          cities: Object.keys(m.city).map(function (k) {
+            var c = m.city[k], b = ctl.getFightBattleInfoByCityId(c.cityId);
+            return { n: c.showNum, own: c.mSid || 0, rk: c.rankSid || [], fight: c.fightSid || [],
+              us: b ? { score: num(b.score), rank: b.rank || 0, st: b.outerBuildNum || 0, hub: b.innerBuildNum || 0 } : null };
+          }),
+          declared: (m.selfToOtherCity || []).filter(function (x) { return x.round === stt.round && (x.result === 1 || x.result === 2); })
+            .map(function (x) { return { n: x.showNum, won: x.result === 1 }; }),
+        };
+      }
+    } finally { opened.forEach(function (w) { try { U.CloseUI(w); } catch (e) {} }); }
+    if (!Object.keys(days).length && !summary) throw new Error('no Neutral City battle yet');
+    return { days: days, cities: cities, summary: summary };
+  }
+
   // One server the way a person looks it up: tapped on the warzone map (the game asks for its briefing
   // and opens its warzone card), a moment to look, then the card's Individual CP Ranking button. Its
   // top 20 read, then the ranking and the card closed again. map: the open warzone map.
@@ -588,7 +687,7 @@
   S.members = S.members || {}; S.prev = S.prev || {};
   // only the four alliances: a read of another one saved by an earlier version is dropped
   [S.members, S.prev].forEach(function (o) { Object.keys(o).forEach(function (t) { if (!ALLY[t]) delete o[t]; }); });
-  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null, st: S.st || null, et: S.et || null, etp: S.etp || null, ma: S.ma || null, ev: S.ev || null, fr: S.fr || null, fb: S.fb || null })); } catch (e) {} }
+  function save() { try { localStorage.setItem(STORE, JSON.stringify({ members: S.members, prev: S.prev, wb: S.wb || null, st: S.st || null, et: S.et || null, etp: S.etp || null, ma: S.ma || null, ev: S.ev || null, fr: S.fr || null, fb: S.fb || null, nc: S.nc || null })); } catch (e) {} }
   var fold = function (s) { return String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, ''); };
   // MM/CE from the roster. Names repeat ("Woody" is 698S's in-game name and 698C's search name; 698S
   // has two Gikeys), so the candidates are tried in order: in-game name in the player's own alliance,
@@ -784,6 +883,8 @@
     '<div class="row2">' + act('evr', 'main', 'Read events', 'For the home page') + '</div></div>' +
     '<div data-sec="frost"><h3>Frost Crystal Contest</h3>' +
     '<div class="row2">' + act('frr', 'main', 'Read battlefields', 'For the Frost page') + act('frb', 'main', 'Read battle', 'At the battle\'s end') + '</div></div>' +
+    '<div data-sec="nc"><h3>Neutral City</h3>' +
+    '<div class="row2">' + act('ncr', 'main', 'Read Neutral City', 'After a battle') + act('ncs', 'send', 'Send to sheet', 'The latest battle') + '</div></div>' +
     '<div class="status idle" id="st"><span class="si"></span><span class="tx">Ready. Tap a button to start.</span></div></div>';
   document.body.appendChild(host);
   var $ = function (s) { return root.querySelector(s); };
@@ -963,6 +1064,8 @@
     if (!evb.classList.contains('busy') && !evb.classList.contains('err')) sub(evb, S.ev ? S.ev.n + ' events · ' + ago(S.ev.at / 1000) : 'For the home page');
     var frb = $('#frr');
     if (!frb.classList.contains('busy') && !frb.classList.contains('err')) sub(frb, S.fr ? S.fr.n + ' servers · ' + ago(S.fr.at / 1000) : 'For the Frost page');
+    var ncb = $('#ncr');
+    if (!ncb.classList.contains('busy') && !ncb.classList.contains('err')) sub(ncb, S.nc ? S.nc.n + ' players · ' + ago(S.nc.at / 1000) : 'After a battle');
     var etp = $('#towerp');
     if (!etp.classList.contains('busy') && !etp.classList.contains('err')) sub(etp, S.etp ? S.etp.n + ' players · ' + ago(S.etp.at / 1000) : '');
   }
@@ -1314,6 +1417,38 @@
       status('bad', 'Battlefields not read<small>' + esc(e.message || e) + '</small>');
     }
     lock(false); refresh();
+  };
+
+  /* Read Neutral City: every battle date's Points Log and the round's cities to the site's Neutral City page
+     (api/nc-read), each date replacing the one read before. No UIDs are sent. */
+  $('#ncr').onclick = async function () {
+    if (busy) return; lock(true);
+    var b = $('#ncr'); start(b); sub(b, 'reading…');
+    try {
+      var r = await readNeutral(function (t, p) { status('work', t, p); setP(b, p); });
+      var ds = Object.keys(r.days).sort(), last = ds.length ? r.days[ds[ds.length - 1]].length : 0;
+      setP(b, .92); sub(b, 'saving…'); status('work', 'Saving for the Neutral City page…', .95);
+      await postJson('/nc-read', r);
+      S.nc = { at: Date.now(), n: last }; save();
+      setP(b, 1); finish(b, true); sub(b, last + ' players · now');
+      status('ok', 'Neutral City read · ' + ds.length + ' ' + (ds.length === 1 ? 'battle' : 'battles') + '<small>' +
+        (ds.length ? last + ' players on ' + dayText(ds[ds.length - 1]) + '. ' : '') +
+        (r.summary ? 'Round ' + r.summary.round + '\'s cities read. ' : 'Cities not read: the round\'s battle is not over. ') + 'On the site\'s Neutral City page.</small>');
+    } catch (e) {
+      finish(b, false); sub(b, 'tap to try again');
+      status('bad', 'Neutral City not read<small>' + esc(e.message || e) + '</small>');
+    }
+    lock(false); refresh();
+  };
+
+  $('#ncs').onclick = async function () {
+    if (busy) return;
+    var b = $('#ncs');
+    var j = await sendTo(b, '/nc-send', {}, 'the latest Neutral City battle');
+    if (!j) return;
+    sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
+    status('ok', 'Neutral City sent<small>' + Number(j.rows).toLocaleString() + ' players added, dated ' + esc(j.date) +
+      ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
   };
 
   /* Energy Tower points: its Rankings to the site's card (api/et-points), each player's points in

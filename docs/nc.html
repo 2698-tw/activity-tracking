@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neutral City</title>
+<link rel="icon" href="icon.png">
+<!-- Neutral City (nc.html): the Frost season's Neutral City battles. All: every S2698 player's individual
+     score on each battle date (the game's Points Log). Each date: that round's cities, who holds each, the
+     servers' ranking there and how our declared battles went, then our players' points in each city we fought in. The bookmark's Read Neutral City reads them in
+     the game and keeps them on the Worker (api/nc-read) for everyone. -->
+<style>
+:root{--bg:#eef4f9;--card:#fff;--ink:#14212e;--dim:#62748a;--line:#dbe5ee;--head:#f4f8fb;--acc:#1789a8;--us:#e8f6ea;--usink:#1f7a3a;--bad:#b42318;
+  --band1:#0b3b57;--band2:#1789a8;--band3:#8fd6e6}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0d151d;--card:#15212c;--ink:#e6eef5;--dim:#8ea2b5;--line:#243444;--head:#1a2835;--acc:#5cc6d6;--us:#173322;--usink:#7fd99a;--bad:#ff8a80}}
+:root[data-theme="dark"]{--bg:#0d151d;--card:#15212c;--ink:#e6eef5;--dim:#8ea2b5;--line:#243444;--head:#1a2835;--acc:#5cc6d6;--us:#173322;--usink:#7fd99a;--bad:#ff8a80}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+.band{background:linear-gradient(135deg,var(--band1),var(--band2) 60%,var(--band3));color:#fff;padding:22px 16px 18px}
+.band .in,.wrap{max-width:1280px;margin:0 auto}
+.band h1{margin:0;font-size:24px;letter-spacing:.01em}
+.band p{margin:4px 0 0;opacity:.85}
+.band a{color:#fff}
+.homelink{display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;padding:4px 12px 4px 10px;border-radius:999px;font-size:13px;font-weight:600;
+  text-decoration:none;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35)}
+.homelink:hover{background:rgba(255,255,255,.26)}
+.wrap{padding:16px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.bar .grow{flex:1}
+/* on a phone: the tabs and Download CSV on one line, the status on its own line below */
+@media (max-width:640px){.bar .status{order:3;flex-basis:100%}.bar #csv{margin-left:auto}}
+button,.btn{font:inherit;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
+button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+button:disabled{opacity:.55;cursor:default}
+.status{color:var(--dim)}
+.status.bad{color:var(--bad)}
+.days{display:flex;gap:4px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;margin:0 0 14px;box-shadow:inset 0 -1px 0 var(--line)}
+.days::-webkit-scrollbar{display:none}
+.days button{flex:none;border:0;border-bottom:3px solid transparent;border-radius:0;padding:8px 14px;background:transparent;color:var(--dim);font-size:15px}
+.days button.on{color:var(--ink);border-bottom-color:var(--acc)}
+.days[hidden]{display:none}
+:root{--won:#1f9d55;--wonbg:#e3f5ea;--lose:#d64545;--losebg:#fbe7e7;--oth:#6b7f94;--othbg:#eef2f6}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--won:#5fd38d;--wonbg:#16301f;--lose:#ff7a7a;--losebg:#3a1d22;--oth:#9fb1c4;--othbg:#1d2a37}}
+:root[data-theme="dark"]{--won:#5fd38d;--wonbg:#16301f;--lose:#ff7a7a;--losebg:#3a1d22;--oth:#9fb1c4;--othbg:#1d2a37}
+h2.sec{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:18px 2px 8px}
+h2.sec:first-child{margin-top:0}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width:820px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.tile .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);font-weight:700}
+.tile .v{font-size:24px;font-weight:800;margin-top:2px}
+.tile .v small{font-size:14px;color:var(--dim)}
+.tile .s{font-size:12.5px;color:var(--dim)}
+.rapp{color-scheme:dark;color:#f3f3f7;background:rgba(22,22,30,.97);border-radius:18px;box-shadow:0 12px 40px rgba(0,0,0,.25),inset 0 0 0 2px rgba(224,69,123,.55);overflow:hidden}
+.rhead{display:flex;align-items:center;gap:10px;padding:12px 14px 8px;flex-wrap:wrap}
+.rhead b{font-size:15.5px}
+.rsearch{flex:1;min-width:160px;display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.08);border-radius:999px;padding:6px 14px;margin:0}
+.rsearch:focus-within{box-shadow:inset 0 0 0 2px rgba(224,69,123,.85)}
+.rsearch input{flex:1;min-width:0;border:0;outline:0;background:none;color:#fff;font:inherit;font-size:15px;padding:0;caret-color:#fff}
+.rreads{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 14px 8px;font-size:12.5px;color:rgba(235,235,245,.65)}
+.rbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 14px 10px}
+.rchip{border:0;background:rgba(255,255,255,.08);color:#f3f3f7;border-radius:999px;padding:5px 12px;font:inherit;font-size:12.5px;font-weight:400;cursor:pointer}
+.rchip.on{background:rgba(195,20,65,.35);box-shadow:inset 0 0 0 1px #e0457b}
+.rcount{margin-left:auto;font-size:12.5px;color:rgba(235,235,245,.5)}
+.rbody{overflow:auto;padding:0 14px 14px}
+.rtable{width:100%;border-collapse:collapse;font-size:13.5px}
+.rtable th{position:sticky;top:0;background:#20212c;text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:rgba(235,235,245,.6);padding:8px 10px;font-weight:600;white-space:nowrap}
+.rtable th.n,.rtable td.n{text-align:right;font-variant-numeric:tabular-nums}
+.rtable td{padding:7px 10px;border-top:1px solid rgba(255,255,255,.08);white-space:nowrap;color:#f3f3f7}
+.rtable tr.us td{background:rgba(126,226,168,.12);color:#8ff0b5;font-weight:700}
+.rtable td.up{color:#8ff0b5;font-size:12.5px}
+.rtable .rdim{color:rgba(235,235,245,.45)}
+.tabs[hidden]{display:none}
+.rclear{flex:none;width:22px;height:22px;display:grid;place-items:center;border:0;border-radius:50%;padding:0;background:rgba(255,255,255,.16);color:#fff;font-size:12px;line-height:1;cursor:pointer}
+.rclear:hover{background:rgba(255,255,255,.28)}
+.rclear[hidden]{display:none}
+.empty{padding:14px 11px;color:var(--dim)}
+.skel{height:200px;border-radius:10px;background:linear-gradient(90deg,var(--card),var(--head),var(--card));background-size:200% 100%;animation:sk 1.4s linear infinite;border:1px solid var(--line)}
+@keyframes sk{to{background-position:-200% 0}}
+.rtable td.n{color:#f3f3f7}
+.rtable td.n.rdim{color:rgba(235,235,245,.45)}
+/* a date: its round's cities by level, ours in green, the ones we declared on and lost in red */
+.tiles{margin:0 0 18px}
+.lv{margin:0 0 18px}
+.cities{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.city{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.city.us{border-color:color-mix(in srgb,var(--won) 55%,transparent);background:var(--wonbg)}
+.city.lost{border-color:color-mix(in srgb,var(--lose) 55%,transparent);background:var(--losebg)}
+.city h3{margin:0 0 4px;font-size:15px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.tag{font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;color:#fff}
+.tag.won{background:var(--won)}.tag.lost{background:var(--lose)}
+.own{font-size:13px;color:var(--dim);margin-bottom:4px}.own b{color:var(--ink)}
+.usline{font-size:13px;margin:0 0 6px;font-variant-numeric:tabular-nums}
+.city ol{margin:0;padding-left:22px;font-size:13px}
+.city ol li.me{font-weight:700;color:var(--usink)}
+.city .pl{display:inline-block;margin-top:6px;font-size:12.5px;font-weight:600;color:var(--acc);text-decoration:none}
+.city .pl:hover{text-decoration:underline}
+.rchip small{opacity:.6;margin-left:4px}
+</style>
+</head>
+<body>
+<div class="band"><div class="in">
+  <a class="homelink" id="homeLink" href="./"><span aria-hidden="true">←</span>Home</a>
+  <h1>Neutral City</h1>
+</div></div>
+<div class="wrap">
+  <div class="days" id="days" role="tablist" hidden></div>
+  <div class="bar">
+    <span class="status grow" id="status">Loading…</span>
+    <button type="button" id="csv" disabled>Download CSV</button>
+  </div>
+  <div id="out"></div>
+</div>
+<script>
+// inside the site (index.html#nc) the site's own header has the way back
+if (window.frameElement) document.getElementById('homeLink').remove();
+</script>
+<script>
+(function () {
+  const API = location.hostname.endsWith('.workers.dev') ? '/api' : 'https://data-collection.jk06nm04.workers.dev/api';
+  const US = 2698, ALL = 'all';
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const N = v => Number(v || 0).toLocaleString();
+  let days = {}, day = ALL, q = '';                // every battle date's read {players, cities, summary}; the tab shown; the search
+  let bf = '';                                     // the battlefield shown under a date's cities
+  // each player's search name, as the site's other cards have it (docs/cards.js, frost.html): from the roster
+  // workbook's Alliance Rosters tab first, then the Base CP sends; the exact name first, then one written
+  // without the fancy letters
+  const fold = s => String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, '');
+  let snames = [new Map(), new Map()];
+  function nameMap(list) {
+    const m = new Map(), weakKeys = new Set();
+    for (const [name, , search, weak] of list || []) for (const k of [name, '~' + fold(name)]) {
+      if (weak && m.has(k) && !weakKeys.has(k)) continue;
+      m.set(k, search); weak ? weakKeys.add(k) : weakKeys.delete(k);
+    }
+    return m;
+  }
+  const searchOf = name => { for (const m of snames) { const s = m.get(name) || (fold(name) !== '' && m.get('~' + fold(name))); if (s) return s; } return ''; };
+  const nameCell = name => { const s = searchOf(name); return esc(name) + (s && s !== name ? ` <span class="rdim">(${esc(s)})</span>` : ''); };
+  const nameHit = (name, f) => !f || fold(name).includes(f) || fold(searchOf(name)).includes(f);
+
+  async function load() {
+    $('out').innerHTML = '<div class="skel"></div>';
+    try {
+      const post = path => fetch(API + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      const [r, rn] = await Promise.all([post('/nc-read'), post('/search-names').catch(() => null)]);
+      const jn = rn && rn.ok ? await rn.json().catch(() => null) : null;
+      if (jn) snames = [nameMap(jn.roster), nameMap(jn.raw)];
+      const j = await r.json().catch(() => null);
+      if (!r.ok) throw new Error((j && j.error) || 'the read could not be fetched (' + r.status + ')');
+      days = (j && j.days) || {};
+      if (!Object.keys(days).length) {
+        $('status').textContent = 'Nothing read yet.';
+        $('out').innerHTML = '<div class="empty">Open the game and tap <b>Read Neutral City</b> in the 2698 Data Extractor bookmark after a battle: it reads the Points Log and the round\'s cities.</div>';
+        return;
+      }
+      $('days').hidden = false; draw(); $('csv').disabled = false;
+    } catch (e) {
+      $('status').className = 'status grow bad'; $('status').textContent = '✗ ' + (e.message || e);
+      $('out').innerHTML = '';
+    }
+  }
+
+  const dates = () => Object.keys(days).sort();
+  const dayName = d => new Date(d + 'T00:00:00Z').toLocaleDateString([], { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  function draw() {
+    $('days').innerHTML = [ALL, ...dates()].map(d =>
+      `<button type="button" role="tab" data-day="${esc(d)}" class="${d === day ? 'on' : ''}" aria-selected="${d === day}">${d === ALL ? 'All' : esc(dayName(d))}</button>`).join('');
+    day === ALL ? drawAll() : drawDay();
+  }
+
+  // All: every player of the Points Logs, ranked by their scores on every date together, one column per date
+  function allRows() {
+    const ds = dates().filter(d => (days[d].players || []).length), by = new Map();
+    for (const d of ds) for (const [name, score, ally] of days[d].players) {
+      if (!name) continue;
+      const r = by.get(name) || { name, ally: '', on: {}, sum: 0 };
+      r.on[d] = score; r.sum += score; r.ally = ally || r.ally; by.set(name, r);    // the latest battle's alliance
+    }
+    return { ds, rows: [...by.values()].sort((a, b) => b.sum - a.sum).map((r, i) => ({ ...r, rank: i + 1 })) };
+  }
+  function drawAll() {
+    const { ds, rows } = allRows(), f = fold(q), l = rows.filter(r => nameHit(r.name, f));
+    $('status').textContent = `S${US} players across ${ds.length} ${ds.length === 1 ? 'battle' : 'battles'}`;
+    const head = `<th class="n">#</th><th>Name</th><th>Alliance</th>${ds.map(d => `<th class="n">${esc(dayName(d))}</th>`).join('')}`;
+    const body = l.map(r => `<tr><td class="n">${r.rank}</td><td>${nameCell(r.name)}</td><td>${esc(r.ally)}</td>${ds.map(d => r.on[d] != null
+      ? `<td class="n">${N(r.on[d])}</td>` : '<td class="n rdim">—</td>').join('')}</tr>`).join('');
+    $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>S${US} individual scores, all battles</b>
+        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="q" type="text" placeholder="Search a name" autocomplete="off" value="${esc(q)}"><button type="button" class="rclear" id="qx" title="Clear the search" aria-label="Clear the search"${q ? '' : ' hidden'}>✕</button></label></div>
+      <div class="rbar"><span class="rcount">${l.length === rows.length ? N(rows.length) : N(l.length) + ' of ' + N(rows.length)} players</span></div>
+      <div class="rbody"><table class="rtable"><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${ds.length + 3}" class="rdim">No player matches.</td></tr>`}</tbody></table></div></div>`;
+    const inp = $('q');
+    inp.oninput = () => { q = inp.value; const at = inp.selectionStart; drawAll(); const k = $('q'); k.focus(); k.setSelectionRange(at, at); };
+    $('qx').onclick = e => { e.preventDefault(); q = ''; drawAll(); $('q').focus(); };
+  }
+
+  // a date: its round's numbers, then every city by level
+  function drawDay() {
+    const D = days[day], S = D.summary, pl = D.players || [], fields = D.cities || {};
+    if (!S) {
+      $('status').textContent = '';
+      $('out').innerHTML = `<div class="empty">No cities read for this battle: only its Points Log (${N(pl.length)} players, on the All tab). The bookmark reads the cities after the battle, until the next round's.</div><div id="bf"></div>`;
+      return drawField();
+    }
+    $('status').textContent = `Round ${S.round}`;
+    const res = Object.fromEntries(S.declared.map(x => [x.n, x.won])), won = S.declared.filter(x => x.won).length;
+    const tile = (v, k) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+    let h = '<div class="tiles">' + tile(S.cities.filter(c => c.own === US).length, `Cities S${US} holds`) +
+      tile(`${won} <small>/ ${S.declared.length}</small>`, 'Battles won') + tile(N(pl.length), 'Players who scored') + tile(N(S.score), 'Season score') + '</div>';
+    const LV = { 1: 'Lv. 1 cities', 2: 'Lv. 2 cities', 3: 'Lv. 3 cities', 4: 'Frost\'s Heart' };
+    for (const lv of [1, 2, 3, 4]) {
+      const cs = S.cities.filter(c => Math.floor(c.n / 1000) === lv).sort((a, b) => a.n - b.n);
+      if (!cs.length) continue;
+      h += `<section class="lv"><h2 class="sec">${LV[lv]}</h2><div class="cities">` + cs.map(c => {
+        const r = res[c.n];
+        return `<div class="city${c.own === US ? ' us' : r === false ? ' lost' : ''}"><h3>City ${c.n}${r === true ? '<span class="tag won">Won</span>' : r === false ? '<span class="tag lost">Lost</span>' : ''}</h3>
+          <div class="own">Held by <b>${c.own ? 'S' + c.own : 'nobody'}</b>${c.fight.length ? ' · ' + c.fight.length + ' servers fought' : ''}</div>
+          ${c.us ? `<div class="usline">S${US}: #${c.us.rank} · ${N(c.us.score)} pts · ${c.us.st} stations, ${c.us.hub} hubs</div>` : ''}
+          ${c.rk.length ? '<ol>' + c.rk.map(s => `<li${s === US ? ' class="me"' : ''}>S${s}</li>`).join('') + '</ol>' : '<div class="own">No battle this round</div>'}
+          ${fields[c.n] ? `<a class="pl" href="#bf" data-bf="${c.n}">${N(fields[c.n].length)} players' points ↓</a>` : ''}</div>`;
+      }).join('') + '</div></section>';
+    }
+    $('out').innerHTML = h + '<div id="bf"></div>';
+    drawField();
+  }
+
+  // the date's battlefields: our players' points in each city we fought in, one city at a time
+  function drawField() {
+    const fields = (days[day] || {}).cities || {}, ns = Object.keys(fields).sort((a, b) => a - b);
+    if (!ns.length || !$('bf')) return;
+    if (!fields[bf]) bf = ns[0];
+    const f = fold(q), all = fields[bf], l = all.map((p, i) => ({ rank: i + 1, name: p[0], score: p[1], ally: p[2] || '' })).filter(r => nameHit(r.name, f));
+    const sum = all.reduce((a, p) => a + p[1], 0);
+    $('bf').innerHTML = `<div class="rapp"><div class="rhead"><b>Points by battlefield</b>
+        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="q" type="text" placeholder="Search a name" autocomplete="off" value="${esc(q)}"><button type="button" class="rclear" id="qx" title="Clear the search" aria-label="Clear the search"${q ? '' : ' hidden'}>✕</button></label></div>
+      <div class="rbar">${ns.map(n => `<button type="button" class="rchip${n === bf ? ' on' : ''}" data-bf="${n}">City ${n}<small>${N(fields[n].length)}</small></button>`).join('')}
+        <span class="rcount">${l.length === all.length ? N(all.length) : N(l.length) + ' of ' + N(all.length)} players · ${N(sum)} pts</span></div>
+      <div class="rbody"><table class="rtable"><thead><tr><th class="n">#</th><th>Name</th><th>Alliance</th><th class="n">Points</th></tr></thead><tbody>
+      ${l.map(r => `<tr><td class="n">${r.rank}</td><td>${nameCell(r.name)}</td><td>${esc(r.ally)}</td><td class="n">${N(r.score)}</td></tr>`).join('') || '<tr><td colspan="4" class="rdim">No player matches.</td></tr>'}
+      </tbody></table></div></div>`;
+    const inp = $('q');
+    inp.oninput = () => { q = inp.value; const at = inp.selectionStart; drawField(); const k = $('q'); k.focus(); k.setSelectionRange(at, at); };
+    $('qx').onclick = e => { e.preventDefault(); q = ''; drawField(); $('q').focus(); };
+  }
+  // a city's chip, or its "players' points" link on its card: that city's list, brought into view from the card
+  $('out').addEventListener('click', e => {
+    const b = e.target.closest('[data-bf]'); if (!b) return;
+    e.preventDefault(); bf = b.dataset.bf; drawField();
+    if (b.tagName === 'A') $('bf').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  $('days').onclick = e => { const b = e.target.closest('[data-day]'); if (b && (b.dataset.day === ALL || days[b.dataset.day])) { day = b.dataset.day; q = ''; bf = ''; draw(); } };
+
+  $('csv').onclick = () => {
+    const cell = v => /[",\n]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : v;
+    let rows, file;
+    if (day === ALL) {
+      const { ds, rows: l } = allRows();
+      rows = [['Rank', 'Name', 'Search name', 'Alliance', ...ds]].concat(l.map(r => [r.rank, r.name, searchOf(r.name), r.ally, ...ds.map(d => r.on[d] != null ? r.on[d] : '')]));
+      file = `neutral-city-s${US}-all.csv`;
+    } else {
+      const S = days[day].summary, fields = days[day].cities || {};
+      if (!S && !Object.keys(fields).length) return;
+      const res = S ? Object.fromEntries(S.declared.map(x => [x.n, x.won ? 'won' : 'lost'])) : {};
+      rows = S ? [['City', 'Held by', 'Our result', 'Our rank', 'Our points', 'Stations', 'Hubs', 'Ranking', 'Servers fought']]
+        .concat(S.cities.slice().sort((a, b) => a.n - b.n).map(c => [c.n, c.own || '', res[c.n] || '', c.us ? c.us.rank : '', c.us ? c.us.score : '',
+          c.us ? c.us.st : '', c.us ? c.us.hub : '', c.rk.join(' '), c.fight.join(' ')])) : [];
+      // then each battlefield's players, below the cities
+      if (Object.keys(fields).length) rows = rows.concat(S ? [[]] : [], [['City', 'Rank', 'Name', 'Search name', 'Alliance', 'Points']],
+        ...Object.keys(fields).sort((a, b) => a - b).map(n => fields[n].map((p, i) => [n, i + 1, p[0], searchOf(p[0]), p[2] || '', p[1]])));
+      file = `neutral-city-${day}.csv`;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['﻿' + rows.map(r => r.map(cell).join(',')).join('\n')], { type: 'text/csv' }));
+    a.download = file; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  load();
+})();
+</script>
+</body>
+</html>

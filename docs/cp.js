@@ -14,7 +14,7 @@ let cpSource = '';
 
 /* views */
 // Views on one page: the home page (the address with no #), Kartz (#kartz), the Alliance roster
-// (#roster), the Whitebeard ranking (#whitebeard), the Snow Train (#snowtrain), the Energy Tower (#energytower), the Mammoth Assault (#mammoth), the Frost Crystal Contest (#frost), the admin page (#admin) and Base CP (#cp, no longer on the home page but still there by its address).
+// (#roster), the Whitebeard ranking (#whitebeard), the Snow Train (#snowtrain), the Energy Tower (#energytower), the Mammoth Assault (#mammoth), the Frost Crystal Contest (#frost), Neutral City (#nc), the admin page (#admin) and Base CP (#cp, no longer on the home page but still there by its address).
 // The address carries the view, so a link, a reload or the phone's back button lands on the right one.
 function showTab(name) {
   $('home').classList.toggle('hide', name !== 'home');
@@ -28,6 +28,8 @@ function showTab(name) {
   $('tab-ma').classList.toggle('hide', name !== 'mammoth');
   $('tab-frost').classList.toggle('hide', name !== 'frost');
   if (name === 'frost') frostFrame();
+  $('tab-nc').classList.toggle('hide', name !== 'nc');
+  if (name === 'nc') frostFrame('ncFrame', 'nc.html');
   $('tab-admin').classList.toggle('hide', name !== 'admin');
   document.documentElement.classList.remove('athome');
   delete document.documentElement.dataset.view;      // index.html's first-paint view, now shown by the classes
@@ -35,19 +37,19 @@ function showTab(name) {
   // every switch, the Home button's too (no hashchange for that one): the banner writes the name in again
   dispatchEvent(new CustomEvent('viewchange', { detail: name }));
 }
-const viewFromAddress = () => ({ '#cp': 'cp', '#kartz': 'kartz', '#roster': 'roster', '#whitebeard': 'whitebeard', '#snowtrain': 'snowtrain', '#energytower': 'energytower', '#mammoth': 'mammoth', '#frost': 'frost', '#admin': 'admin' })[location.hash] || 'home';
+const viewFromAddress = () => ({ '#cp': 'cp', '#kartz': 'kartz', '#roster': 'roster', '#whitebeard': 'whitebeard', '#snowtrain': 'snowtrain', '#energytower': 'energytower', '#mammoth': 'mammoth', '#frost': 'frost', '#nc': 'nc', '#admin': 'admin' })[location.hash] || 'home';
 // the Frost Crystal Contest is its own page (frost.html), shown here in a frame: loaded the first time,
 // and as tall as the page in it, so the browser's own scroll bar scrolls it (frost.html keeps its pop-ups
-// where they can be seen)
-function frostFrame() {
-  const f = $('frostFrame');
+// where they can be seen). Neutral City (nc.html) the same way, in its own frame.
+function frostFrame(id = 'frostFrame', page = 'frost.html') {
+  const f = $(id);
   if (f.src) return;
   f.onload = () => {
     const body = f.contentDocument.body, cs = getComputedStyle(body);
     const fit = () => { f.style.height = Math.ceil(body.offsetHeight + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom)) + 'px'; };
     new f.contentWindow.ResizeObserver(fit).observe(body); fit();   // the frame's own observer: it sees the frame's changes
   };
-  f.src = 'frost.html';
+  f.src = page;
 }
 function goTo(name) {
   if (name === viewFromAddress()) return;

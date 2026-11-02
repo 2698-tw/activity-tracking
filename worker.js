@@ -151,6 +151,8 @@ const SNOW_TRAIN = { id: '1d2jgRQlfhYMufn69YaZ-2ZPQ-lGtfvSiOPDTEplUqGs', gid: 0,
 const ENERGY_TOWER = { id: '', gid: 0, book: 'Energy Tower', points: 'Points' };
 // The Mammoth Assault's View Queues: Date, Name, March CP, Alliance, Garrisoned? (the sheet is set in the admin view)
 const MAMMOTH = { id: '', gid: 0, book: 'Mammoth Assault', flag: 'Garrisoned?', head: ['Date', 'Name', 'March CP', 'Alliance', 'Garrisoned?'] };
+// Neutral City's Points Log (docs/extractor.js, Send to sheet): Date (the battle's), Name, Points, Alliance
+const NEUTRAL = { id: '1NeHELo_UY1KYNMSKzlHo0z0jlMUrtP1gEFZQXYW2h_U', gid: 0, book: 'SS P2 Neutral City', head: ['Date', 'Name', 'Points', 'Alliance'] };
 const RANKING_ORIGIN = 'https://h5.topwargame.com';
 const RANKING_MAX = 3000;
 // The alliances that take part in a Kartz round (api/round-*).
@@ -337,7 +339,7 @@ async function tabTitle(token, target) {
 
 // Where each Send goes: the spreadsheet and tab set in the admin view (Sheets), else the ones above.
 // Columns and checks stay as fixed here.
-const SHEET_BASE = { kartz: TARGETS.kartz, cp: TARGETS.cp, ranking: RANKING, snowtrain: SNOW_TRAIN, energytower: ENERGY_TOWER, mammoth: MAMMOTH };
+const SHEET_BASE = { kartz: TARGETS.kartz, cp: TARGETS.cp, ranking: RANKING, snowtrain: SNOW_TRAIN, energytower: ENERGY_TOWER, mammoth: MAMMOTH, neutral: NEUTRAL };
 async function sheetTarget(env, name) {
   let s = null;
   try {
@@ -464,7 +466,7 @@ export default {
     // the game page may reach the ranking route, the roster's MM/CE list and the settings (which of
     // the bookmark's sections to show), and nothing else
     const rankingCall = origin === RANKING_ORIGIN
-      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points', 'api/et-send', 'api/st-send', 'api/ma-update', 'api/ma-send', 'api/events', 'api/schedule', 'api/frost-read', 'api/frost-battle']
+      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points', 'api/et-send', 'api/st-send', 'api/ma-update', 'api/ma-send', 'api/events', 'api/schedule', 'api/frost-read', 'api/frost-battle', 'api/nc-read', 'api/nc-send']
         .includes(url.pathname.replace(/^\/+/, ''));
     const allowed = knownOrigin || hasPass || rankingCall;
 
@@ -731,6 +733,42 @@ export default {
       if (origin !== RANKING_ORIGIN && !hasPass) return reply({ error: 'The battle is read in the game, with the bookmark.' }, 403);
       try { return rosterCall(env, '/battle-add', checkBattle(b), reply); }
       catch (e) { return reply({ error: String(e.message || e) }, 400); }
+    }
+
+    // The Neutral City page (nc.html): each battle date's individual scores (the game's Points Log) and the
+    // latest round's cities, read in the game by the bookmark (Read Neutral City). An empty body gives every
+    // date, {days: {date: {players, cities, summary}}}; only the bookmark, or the admin password, saves
+    // {days: {date: [[name, score]]}, cities: {date: {city: [[name, score]]}}, summary}, each date's players and
+    // battlefields replacing that date's, the summary its date's.
+    if (url.pathname.replace(/^\/+/, '') === 'api/nc-read') {
+      if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
+      const body = await request.text();
+      if (body.length > 512 * 1024) return reply({ error: 'Request too large.' }, 413);
+      let b;
+      try { b = body ? JSON.parse(body) : {}; } catch { return reply({ error: 'Not JSON.' }, 400); }
+      if (b.days === undefined) return rosterCall(env, '/nc-get', null, reply);
+      if (origin !== RANKING_ORIGIN && !hasPass) return reply({ error: 'Neutral City is read in the game, with the bookmark.' }, 403);
+      try { return rosterCall(env, '/nc-set', checkNeutral(b), reply); }
+      catch (e) { return reply({ error: String(e.message || e) }, 400); }
+    }
+
+    // The bookmark's Neutral City Send: a battle date's Points Log as the page has it (the latest, or the date
+    // sent), Date, Name, Points and Alliance, added below the rows already in the sheet like the other sends.
+    if (url.pathname.replace(/^\/+/, '') === 'api/nc-send') {
+      if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
+      try {
+        const b = JSON.parse((await request.text()) || '{}');
+        const target = await sheetTarget(env, 'neutral');
+        if (!target.id) return reply({ error: `No sheet is set for the ${target.book} yet — add one in the admin view (Sheets).` }, 400);
+        const r = await env.ROSTER.get(env.ROSTER.idFromName('roster')).fetch('https://roster/nc-get', { method: 'POST', body: '{}' });
+        const days = (await r.json()).days || {};
+        const ds = Object.keys(days).filter(d => (days[d].players || []).length).sort();
+        const day = isDay(b.day) ? b.day : ds[ds.length - 1];
+        if (!day || !days[day] || !(days[day].players || []).length) return reply({ error: 'No Neutral City battle read yet — tap Read Neutral City first.' }, 400);
+        return reply(await writeRanking(env, days[day].players.map(p => [p[0], p[1], p[2] || '']), target, day), 200);
+      } catch (e) {
+        return reply({ error: String(e && e.message || e) }, e.status || (e instanceof SyntaxError ? 400 : 502));
+      }
     }
 
     // The home page's upcoming events: each section's stage times for the season, read in the game by the
@@ -1086,10 +1124,11 @@ const DEFAULT_SETTINGS = {
     { id: 'st', title: 'Snow Train', show: true, link: 'https://docs.google.com/spreadsheets/d/1d2jgRQlfhYMufn69YaZ-2ZPQ-lGtfvSiOPDTEplUqGs/edit#gid=0' },
     { id: 'et', title: 'Energy Tower', show: true, link: '' },
     { id: 'ma', title: 'Mammoth Assault', show: true, link: '' },
-    { id: 'frost', title: 'Frost Crystal Contest', show: true, link: '' }] },
+    { id: 'frost', title: 'Frost Crystal Contest', show: true, link: '' },
+    { id: 'nc', title: 'Neutral City', show: true, link: '' }] },
   sheets: Object.fromEntries(Object.entries(SHEET_BASE).map(([k, t]) => [k, { id: t.id, gid: t.gid }])),
   // which sections the bookmark's panel in the game shows
-  bookmark: { members: true, wb: true, st: true, et: true, ma: true, ev: true, frost: true },
+  bookmark: { members: true, wb: true, st: true, et: true, ma: true, ev: true, frost: true, nc: true },
   // the cards' rules (admin → Filters & columns → Rules), checked in order: a player takes the colour and
   // label of the first one they match on a card, and a rule can also be a filter chip there
   rules: [
@@ -1135,6 +1174,40 @@ function checkBattle(b) {
     servers: b.servers.map(x => ({ rank: int(x.rank, 0, 1e4), server: int(x.server, 0, 99999), crystals: int(x.crystals, 0, B) })),
     players: b.players.map(x => ({ rank: int(x.rank, 0, 1e5), server: int(x.server, 0, 99999), masked: !!x.masked, name: nm(x.name), score: int(x.score, 0, B), uid: uid(x.uid) })),
   };
+}
+
+// One Neutral City read from the bookmark, checked: each battle date's players by score from the Points Log
+// (name, score and the UID, only to find each player's alliance in the roster: never kept), and the latest round's summary: its date, the cities (holder, the servers' ranking,
+// the servers that fought, our result there), our declared battles and the season score.
+function checkNeutral(b) {
+  const int = (v, lo, hi) => Number.isFinite(v) && v >= lo && v <= hi ? Math.round(v) : 0;
+  const day = d => /^20\d\d-\d\d-\d\d$/.test(d || '');
+  const sids = v => (Array.isArray(v) ? v : []).slice(0, 40).map(x => int(x, 0, 99999)).filter(Boolean);
+  if (!b.days || typeof b.days !== 'object' || Object.keys(b.days).length > 20 || !Object.keys(b.days).every(day)
+      || !Object.values(b.days).every(l => Array.isArray(l) && l.length <= 2000 && l.every(p => Array.isArray(p) && (p.length === 2 || p.length === 3) && typeof p[0] === 'string')))
+    throw new Error('days must be {date: [[name, score, uid]]}');
+  const list = l => Array.isArray(l) && l.length <= 2000 && l.every(p => Array.isArray(p) && (p.length === 2 || p.length === 3) && typeof p[0] === 'string');
+  const clean = l => l.map(p => [p[0].slice(0, 40), int(p[1], 0, 1e12), /^\d{5,20}$/.test(String(p[2])) ? String(p[2]) : '']);
+  const days = Object.fromEntries(Object.entries(b.days).map(([d, l]) => [d, clean(l)]));
+  // each date's battlefields: the Points Log of each city we fought in, {date: {city number: [[name, score]]}}
+  const bc = b.cities || {};
+  if (typeof bc !== 'object' || !Object.keys(bc).every(d => day(d) && days[d]) || !Object.values(bc).every(o => o && typeof o === 'object'
+      && Object.keys(o).length <= 40 && Object.keys(o).every(k => /^\d{1,5}$/.test(k)) && Object.values(o).every(list)))
+    throw new Error('cities must be {date: {city: [[name, score]]}} for dates read');
+  const cities = Object.fromEntries(Object.entries(bc).map(([d, o]) => [d, Object.fromEntries(Object.entries(o).map(([k, l]) => [k, clean(l)]))]));
+  let summary = null;
+  const s = b.summary;
+  if (s) {
+    if (!day(s.day) || !Array.isArray(s.cities) || !s.cities.length || s.cities.length > 60 || !Array.isArray(s.declared) || s.declared.length > 20)
+      throw new Error('summary must be {day, round, score, cities, declared}');
+    summary = {
+      day: s.day, round: int(s.round, 0, 50), score: int(s.score, 0, 1e9),
+      cities: s.cities.map(c => ({ n: int(c.n, 0, 99999), own: int(c.own, 0, 99999), rk: sids(c.rk), fight: sids(c.fight),
+        us: c.us ? { score: int(c.us.score, 0, 1e12), rank: int(c.us.rank, 0, 1000), st: int(c.us.st, 0, 100), hub: int(c.us.hub, 0, 100) } : null })),
+      declared: s.declared.map(x => ({ n: int(x.n, 0, 99999), won: x.won === true })),
+    };
+  }
+  return { days, cities, summary };
 }
 
 // A player read under a name other than the one they had: a rename in the roster card's Log
@@ -1234,7 +1307,7 @@ async function rosterCall(env, path, body, reply) {
 }
 
 // What a backup holds and a restore may write: the cards' data and the settings, not History
-const DATA_KEY = /^(rows|reads|moves|settings|frost:map|frost:read|frost:day:\d{4}-\d{2}-\d{2}|frost:battle:\d{4}-\d{2}-\d{2}(:\d+)?|events|(wb|st|et|ma):who|(wb|st|et|ma):day:\d{4}-\d{2}-\d{2}|et:pts:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et|ma))$/;
+const DATA_KEY = /^(rows|reads|moves|settings|frost:map|frost:read|frost:day:\d{4}-\d{2}-\d{2}|frost:battle:\d{4}-\d{2}-\d{2}(:\d+)?|nc:day:\d{4}-\d{2}-\d{2}|events|(wb|st|et|ma):who|(wb|st|et|ma):day:\d{4}-\d{2}-\d{2}|et:pts:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et|ma))$/;
 const LOG_MAX = 100;
 const MOVES_MAX = 3000;                       // alliance changes kept on the roster card's Log
 const MOVE_JOIN = 30 * 60 * 1000;             // leaving and joining within this is one change                          // changes kept in History, each with what it replaced
@@ -1603,6 +1676,27 @@ export class RosterStore {
         return Response.json({ day, at: read.at, servers: Object.keys(read.servers).length });
       }
       if (path === '/battle-get') return Response.json(await this.battleDays());
+      if (path === '/nc-get') {
+        const days = {};
+        for (const [k, v] of await this.state.storage.list({ prefix: 'nc:day:' })) days[k.slice(7)] = v;
+        return Response.json({ days });
+      }
+      if (path === '/nc-set') {
+        const { days, cities, summary } = await request.json(), st = this.state.storage, at = Date.now();
+        // each player's alliance from the roster by UID (Left for one who has left), and the UID dropped
+        const roster = await this.load();
+        const ally = uid => { const r = uid && roster[uid]; return r ? (r.status === 'Left' ? 'Left' : r.alliance || '') : ''; };
+        const named = l => l.map(([name, score, uid]) => [name, score, ally(uid)]);
+        const dates = [...new Set(Object.keys(days).concat(summary ? [summary.day] : []))];
+        for (const d of dates) {
+          const v = (await st.get('nc:day:' + d)) || {};
+          if (days[d]) { v.players = named(days[d]); v.at = at; }
+          if (cities[d]) v.cities = Object.fromEntries(Object.entries(cities[d]).map(([n, l]) => [n, named(l)]));
+          if (summary && summary.day === d) { const { day, ...rest } = summary; v.summary = { ...rest, at }; }
+          await st.put('nc:day:' + d, v);
+        }
+        return Response.json({ dates, at });
+      }
       if (path === '/battle-add') return Response.json(await this.battleAdd(await request.json()));
       if (path === '/ev-get') return Response.json((await this.state.storage.get('events')) || null);
       if (path === '/ev-set') {
