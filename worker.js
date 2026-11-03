@@ -1135,7 +1135,7 @@ const DEFAULT_SETTINGS = {
   rules: [
     { id: 'missed', name: 'Missed days', label: 'missed', on: true, color: 'red', chip: false, cards: ['wb', 'st', 'et', 'ma'], all: [{ f: 'missed', op: 'ge', v: 2 }] },
     { id: 'away', name: 'Away', label: 'away', on: true, color: 'amber', chip: true, cards: ['ro'], all: [{ f: 'last', op: 'ge', v: 3 }, { f: 'status', op: 'is', v: 'Active' }] },
-    { id: 'fresh', name: 'New players', label: 'new', on: true, color: 'green', chip: false, cards: ['ro', 'wb', 'st', 'et', 'ma'], all: [{ f: 'seen', op: 'le', v: 7 }] },
+    { id: 'fresh', name: 'New players', label: 'new', on: true, color: 'green', chip: false, cards: ['ro', 'wb', 'st', 'et', 'ma'], all: [{ f: 'seen', op: 'le', v: 14 }] },
   ],
 };
 const HL_COLORS = ['red', 'amber', 'green', 'blue', 'purple'];
@@ -1311,6 +1311,7 @@ async function rosterCall(env, path, body, reply) {
 const DATA_KEY = /^(rows|reads|moves|settings|frost:map|frost:read|frost:day:\d{4}-\d{2}-\d{2}|frost:battle:\d{4}-\d{2}-\d{2}(:\d+)?|nc:day:\d{4}-\d{2}-\d{2}|events|(wb|st|et|ma):who|(wb|st|et|ma):day:\d{4}-\d{2}-\d{2}|et:pts:\d{4}-\d{2}-\d{2}|adm:alias:(wb|st|et|ma))$/;
 const LOG_MAX = 100;
 const MOVES_MAX = 3000;                       // alliance changes kept on the roster card's Log
+const WB_DAY = '2026-11-02';                     // the Whitebeard card's one column, the Practice Round (its first read's date)
 const MOVE_JOIN = 30 * 60 * 1000;             // leaving and joining within this is one change                          // changes kept in History, each with what it replaced
 // where a card keeps its days: the Energy Tower's Rankings points beside its Unit Details days
 const dayPrefixes = ns => ns === 'et' ? ['et:day:', 'et:pts:'] : [ns + ':day:'];
@@ -1797,10 +1798,11 @@ export class RosterStore {
   // bookmark's sheet rows.
   // A player merged into another in the admin view is counted as that one (adm:alias).
   async wbUpdate(read, ns) {
-    // Whitebeard: under the date picked in the bookmark (the event's end date), else today
-    const day = ns === 'wb' && read.day ? read.day : new Date().toISOString().slice(0, 10), keep = ns !== 'wb';
+    // Whitebeard: every read in its one column (the card's Practice Round, WB_DAY), each player's highest level
+    // kept, whatever date the bookmark sends; the others: today's column
+    const day = ns === 'wb' ? WB_DAY : new Date().toISOString().slice(0, 10), keep = ns !== 'wb';
     const before = await this.state.storage.get(ns + ':day:' + day), had = !!before && Object.keys(before).length > 0;
-    const pts = keep && before ? before : {};
+    const pts = before || {};
     const who = (await this.state.storage.get(ns + ':who')) || {};
     const alias = (await this.state.storage.get('adm:alias:' + ns)) || {};
     const garrison = ns === 'et' || ns === 'ma', roster = garrison ? await this.load() : null, allies = [];
@@ -1824,7 +1826,7 @@ export class RosterStore {
       who[key] = { name: r.name, ally: r.ally, type: ty || was.type || '', bests };
     }
     await this.state.storage.put({ [ns + ':day:' + day]: pts, [ns + ':who']: who });
-    return { day, players: read.rows.length, replaced: had, merged: keep && had, ...(garrison ? { allies } : {}) };
+    return { day, players: read.rows.length, replaced: had, merged: had, ...(garrison ? { allies } : {}) };
   }
   // Today's Energy Tower column as sheet rows, the way the card shows it: [name, March CP (79M), alliance,
   // points], one per player on the card, our alliances first. A player not there that day (No on the

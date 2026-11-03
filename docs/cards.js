@@ -135,11 +135,13 @@
       : o.id === 'st' || o.id === 'ma'
       ? { n: 1, val: r => r.pts[d] != null ? 1 : 0, cell: r => r.pts[d] != null ? '<span class="yes">Yes</span>' : '<span class="rdim">No</span>', edit: 'toggle' }
       : { n: 1, val: r => r.pts[d] ?? -1, cell: r => r.pts[d] == null ? dim : fmt(r.pts[d]), edit: 'num' };
+    // a day's column header; Whitebeard has one column for every read, its Practice Round
+    const colHead = d => o.id === 'wb' ? 'Practice Round' : head(d);
     const defOf = k => /^\d{4}-/.test(k) ? dateDef(k) : DEF[k];
     const columns = () => {
       const out = [];
       for (const c of cfg().cols) if (c.show) {
-        if (c.k === '@dates') { if (dated) W.dates.forEach(d => out.push({ k: d, label: head(d), date: 1 })); }
+        if (c.k === '@dates') { if (dated) W.dates.forEach(d => out.push({ k: d, label: colHead(d), date: 1 })); }
         else if (DEF[c.k]) out.push(c);
       }
       return out;
@@ -238,7 +240,7 @@
       if (W.rule && !chipRule) W.rule = '';                        // its rule turned off, or no longer a chip here
       el('Reads').innerHTML = o.id === 'ro'
         ? AL.map(a => `<span><span class="rtag t${esc(a)}">${esc(a)}</span> ${W.reads[a] ? 'read ' + ago(W.reads[a]) : '<span class="rdim">not read yet</span>'}${admin ? ` <button type="button" class="rgo mini" data-reset="${esc(a)}">Reset</button><button type="button" class="rgo mini" data-wipe="${esc(a)}">Wipe</button>` : ''}</span>`).join('')
-        : W.rows ? `${W.rows.length} players · ${W.dates.length} ${W.dates.length === 1 ? 'day' : 'days'}` + (W.dates.length ? ` · last read ${head(W.dates[W.dates.length - 1])}` : '') : '';
+        : W.rows ? `${W.rows.length} players · ${W.dates.length} ${W.dates.length === 1 ? 'day' : 'days'}` + (W.dates.length ? (o.id === 'wb' ? '' : ` · last read ${head(W.dates[W.dates.length - 1])}`) : '') : '';
       if (o.id === 'ro' && W.view !== 'list') return drawMoves(box, q);
       const rows = (W.rows || []).filter(r => (!q || fold(r.name).includes(q) || (r.search && fold(r.search).includes(q)) || (r.names || []).some(n => fold(n).includes(q))) &&
         (!W.ally || (W.ally === 'OTHER' ? !AL.includes(r[allyKey]) : r[allyKey] === W.ally)) &&
