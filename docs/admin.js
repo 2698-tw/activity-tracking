@@ -288,7 +288,7 @@ window.Admin = (function () {
       if (f.kind === 'text') return `<input type="text" ${at} data-rp="v" value="${esc(c.v)}" maxlength="40" class="rlv">`;
       return `<input type="number" ${at} data-rp="v" value="${esc(c.v)}" step="any" class="tiny">` + (c.op === 'bt' ? ` and <input type="number" ${at} data-rp="v2" value="${esc(c.v2 ?? '')}" step="any" class="tiny">` : '');
     };
-    return `<div class="apanel"><h2>Rules</h2><p class="ahint">Checked top to bottom on each card: a player takes the colour and label of the <b>first</b> rule they match (a later rule is the "else"), and a rule ticked as a filter chip is one on its cards. CP is in millions, the best a player has.</p>
+    return `<div class="apanel"><h2>Rules</h2><p class="ahint">Checked on each card: a player gets the label of <b>every</b> rule they match, side by side in this order, and the row takes the colour of the first one; and a rule ticked as a filter chip is one on its cards. CP is in millions, the best a player has.</p>
       ${R.map((r, i) => `<div class="arule ${r.on ? '' : 'off'}">
         <div class="arhead"><span class="arord">${i ? 'ELSE IF' : 'IF'}</span><input type="text" data-rl="${i}" data-rp="name" value="${esc(r.name)}" maxlength="40" aria-label="Rule name" class="arname">
           <label class="acheck"><input type="checkbox" data-rl="${i}" data-rp="on" ${r.on ? 'checked' : ''}> On</label>${arrows('rl', i, R.length)}<button type="button" class="abtn sm" data-rlx="${i}">Delete</button></div>
