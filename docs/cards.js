@@ -144,8 +144,8 @@
 
     /* ---- the rules (admin → Filters & columns → Rules) ---- */
     const DAY = 864e5;
-    // days in a row, up to the latest, a player is missing from (only once they have been on a day)
-    const missedRun = r => { if (!W.dates.some(d => onDay(r, d))) return 0; let n = 0; for (let i = W.dates.length - 1; i >= 0 && !onDay(r, W.dates[i]); i--) n++; return n; };
+    // the card's days a player is missing from, all of them
+    const missedDays = r => W.dates.filter(d => !onDay(r, d)).length;
     // days since a player was first seen; Infinity for one there from the card's start (its first day, or
     // the roster's first read), when everyone was new
     function seenDays(r) {
@@ -160,7 +160,7 @@
     const FV = {
       cp: r => (o.id === 'ro' ? r.power || 0 : o.id === 'st' ? top(r) : DEF.best.val(r)) / 1e6,
       pts: r => Math.max(0, ...Object.values(r.pts || {})),
-      missed: missedRun,
+      missed: missedDays,
       present: r => W.dates.filter(d => onDay(r, d)).length,
       seen: seenDays,
       ally: r => r[allyKey] || '',
@@ -194,7 +194,7 @@
     function badges(r) {
       const x = firstRule(r);
       if (!x) return '';
-      const n = x.all.some(c => c.f === 'missed') ? ' ' + missedRun(r) : '';
+      const n = x.all.some(c => c.f === 'missed') ? ' ' + missedDays(r) : '';
       const why = x.all.map(c => { const v = FV[c.f](r), f = Admin.RULE_FIELDS[c.f];
         return `${f.label}: ${Array.isArray(v) ? v.join(', ') : typeof v === 'number' ? (v === Infinity ? 'from the start' : Math.round(v * 10) / 10) : v}`; }).join(' · ');
       return x.label ? ` <span class="hl hl-${x.color}" title="${esc(x.name + ' — ' + why)}">${esc(x.label + n)}</span>` : '';

@@ -40,7 +40,7 @@ window.Admin = (function () {
   A.RULE_FIELDS = {
     cp: { label: 'CP (M, best)', kind: 'num', cards: ['ro', 'st', 'et', 'ma'] },
     pts: { label: 'Points (best day)', kind: 'num', cards: ['wb'] },
-    missed: { label: 'Days missed in a row', kind: 'num', cards: DATED },
+    missed: { label: 'Days missed', kind: 'num', cards: DATED },
     present: { label: 'Days there', kind: 'num', cards: DATED },
     seen: { label: 'First seen (days ago)', kind: 'num', cards: ALL5 },
     ally: { label: 'Alliance', kind: 'opt', cards: ALL5, opts: () => [...A.settings.alliances, 'OTHER'] },
