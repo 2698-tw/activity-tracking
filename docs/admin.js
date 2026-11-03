@@ -30,7 +30,7 @@ window.Admin = (function () {
     rules: [
       { id: 'missed', name: 'Missed days', label: 'missed', on: true, color: 'red', chip: false, cards: ['wb', 'st', 'et', 'ma'], all: [{ f: 'missed', op: 'ge', v: 2 }] },
       { id: 'away', name: 'Away', label: 'away', on: true, color: 'amber', chip: true, cards: ['ro'], all: [{ f: 'last', op: 'ge', v: 3 }, { f: 'status', op: 'is', v: 'Active' }] },
-      { id: 'fresh', name: 'New players', label: 'new', on: true, color: 'green', chip: false, cards: ['ro', 'wb', 'st', 'et', 'ma'], all: [{ f: 'seen', op: 'le', v: 7 }] },
+      { id: 'fresh', name: 'New players', label: 'new', on: true, color: 'green', chip: false, cards: ['ro', 'wb', 'st', 'et', 'ma'], all: [{ f: 'seen', op: 'le', v: 14 }] },
     ],
   };
   const HL_COLORS = ['red', 'amber', 'green', 'blue', 'purple'];
@@ -42,7 +42,7 @@ window.Admin = (function () {
     pts: { label: 'Points (best day)', kind: 'num', cards: ['wb'] },
     missed: { label: 'Days missed', kind: 'num', cards: DATED },
     present: { label: 'Days there', kind: 'num', cards: DATED },
-    seen: { label: 'First seen (days ago)', kind: 'num', cards: ALL5 },
+    seen: { label: 'Joined the server (days ago)', kind: 'num', cards: ALL5 },
     ally: { label: 'Alliance', kind: 'opt', cards: ALL5, opts: () => [...A.settings.alliances, 'OTHER'] },
     unit: { label: 'Unit type', kind: 'opt', cards: ['st'], opts: () => ['Army', 'Navy', 'Air Force'] },
     name: { label: 'Name', kind: 'text', cards: ALL5 },

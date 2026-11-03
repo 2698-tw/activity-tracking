@@ -48,6 +48,30 @@
   }
   const withAlly = (m, r) => { const a = r.alliance ?? r.ally; return m.get(r.name + '|' + a) || m.get('~' + fold(r.name) + '|' + a); };
   const byName = (m, r) => m.get(r.name) || (fold(r.name) !== '' && m.get('~' + fold(r.name)));
+  // when each player joined the server: their first read on the alliance roster (a New → 698x in its History),
+  // for every card's "First seen" rule. 0 for the players already there at the roster's first read; asked once a while
+  let joins = null, joinsAt = 0;
+  async function joinedAt(rows) {
+    if (!joins || Date.now() - joinsAt > 10 * 60 * 1000) {
+      joinsAt = Date.now();
+      joins = fetch(API_BASE + '/roster', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+        .then(r => r.ok ? r.json() : Promise.reject()).catch(() => { joinsAt = 0; return {}; })
+        .then(j => {
+          const ro = j.rows || [], first = Math.min(...ro.map(x => x.firstAt || Infinity)), m = new Map();
+          for (const x of ro) {
+            const at = x.firstAt && x.firstAt - first > 864e5 / 2 ? x.firstAt : 0;
+            for (const n of [x.name, ...(x.names || [])]) if (n) { m.set(n, at); if (fold(n)) m.set('~' + fold(n), at); }
+          }
+          return m;
+        });
+    }
+    const m = await joins;
+    for (const r of rows) {
+      const at = [r.name, ...(r.names || [])].map(n => m.get(n) ?? m.get('~' + fold(n))).find(v => v !== undefined);
+      r.joinedAt = at || 0;
+    }
+  }
+
   async function searchNames(rows) {
     if (!names || Date.now() - namesAt > 10 * 60 * 1000) {   // the sheet changes; asked again after a while
       namesAt = Date.now();
@@ -130,6 +154,7 @@
         if (!r.ok) throw new Error(j.error || r.status);
         W.rows = j.rows || []; W.dates = j.dates || []; W.reads = j.reads || {}; W.moves = j.moves || []; W.err = '';
         await searchNames(W.rows);                                 // every card: the roster's search names
+        if (o.id !== 'ro') await joinedAt(W.rows);                 // and when each player joined the server
         for (const id of [...sel]) if (!byId(id)) sel.delete(id);
       } catch (e) { W.err = `The ${cfg().title} could not be loaded: ` + (e.message || e); }
       W.loading = false; draw();
@@ -146,15 +171,14 @@
     const DAY = 864e5;
     // the card's days a player is missing from, all of them
     const missedDays = r => W.dates.filter(d => !onDay(r, d)).length;
-    // days since a player was first seen; Infinity for one there from the card's start (its first day, or
-    // the roster's first read), when everyone was new
+    // days since a player joined the server: their first read on the alliance roster; Infinity for one there from
+    // the roster's first read (when everyone was new), and on the other cards for one not on the roster
     function seenDays(r) {
       if (o.id === 'ro') {
         const first = Math.min(...W.rows.map(x => x.firstAt || Infinity));
         return r.firstAt && r.firstAt - first > DAY / 2 ? (Date.now() - r.firstAt) / DAY : Infinity;
       }
-      const ds = W.dates.filter(d => onDay(r, d));
-      return ds.length && ds[0] !== W.dates[0] ? (Date.now() - Date.parse(ds[0] + 'T00:00:00Z')) / DAY : Infinity;
+      return r.joinedAt ? (Date.now() - r.joinedAt) / DAY : Infinity;
     }
     // each field's value on this card (Admin.RULE_FIELDS says which cards have which); CP in millions
     const FV = {
