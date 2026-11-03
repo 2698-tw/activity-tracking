@@ -189,13 +189,15 @@
       x.all.every(c => FV[c.f] && (Admin.RULE_FIELDS[c.f] || { cards: [] }).cards.includes(o.id)));
     const matches = (x, r) => x.all.every(c => test(c, r));
     const firstRule = r => rules().find(x => matches(x, r));
-    // the pill by the name: the first rule's label, its name and what it tested on hover
+    // the pill by the name: the first rule's label, its name and what it tested on hover; a rule on missed days
+    // adds the player's own count to its label ("missed 2")
     function badges(r) {
       const x = firstRule(r);
       if (!x) return '';
+      const n = x.all.some(c => c.f === 'missed') ? ' ' + missedRun(r) : '';
       const why = x.all.map(c => { const v = FV[c.f](r), f = Admin.RULE_FIELDS[c.f];
         return `${f.label}: ${Array.isArray(v) ? v.join(', ') : typeof v === 'number' ? (v === Infinity ? 'from the start' : Math.round(v * 10) / 10) : v}`; }).join(' · ');
-      return x.label ? ` <span class="hl hl-${x.color}" title="${esc(x.name + ' — ' + why)}">${esc(x.label)}</span>` : '';
+      return x.label ? ` <span class="hl hl-${x.color}" title="${esc(x.name + ' — ' + why)}">${esc(x.label + n)}</span>` : '';
     }
 
     function draw() {
