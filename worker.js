@@ -1803,6 +1803,13 @@ export class RosterStore {
     const day = ns === 'wb' ? WB_DAY : new Date().toISOString().slice(0, 10), keep = ns !== 'wb';
     const before = await this.state.storage.get(ns + ':day:' + day), had = !!before && Object.keys(before).length > 0;
     const pts = before || {};
+    // Whitebeard: a column under any other date (an older bookmark's read) is folded into the one
+    const folded = [];
+    if (!keep) for (const [k, v] of await this.state.storage.list({ prefix: ns + ':day:' })) {
+      if (k === ns + ':day:' + day) continue;
+      for (const [p, n] of Object.entries(v)) pts[p] = Math.max(pts[p] ?? -Infinity, n);
+      folded.push(k);
+    }
     const who = (await this.state.storage.get(ns + ':who')) || {};
     const alias = (await this.state.storage.get('adm:alias:' + ns)) || {};
     const garrison = ns === 'et' || ns === 'ma', roster = garrison ? await this.load() : null, allies = [];
@@ -1826,6 +1833,7 @@ export class RosterStore {
       who[key] = { name: r.name, ally: r.ally, type: ty || was.type || '', bests };
     }
     await this.state.storage.put({ [ns + ':day:' + day]: pts, [ns + ':who']: who });
+    if (folded.length) await this.state.storage.delete(folded);
     return { day, players: read.rows.length, replaced: had, merged: had, ...(garrison ? { allies } : {}) };
   }
   // Today's Energy Tower column as sheet rows, the way the card shows it: [name, March CP (79M), alliance,

@@ -155,6 +155,12 @@
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || r.status);
         W.rows = j.rows || []; W.dates = j.dates || []; W.reads = j.reads || {}; W.moves = j.moves || []; W.err = '';
+        // Whitebeard: one column, the Practice Round; a read under another date is folded into it
+        if (o.id === 'wb' && W.dates.length > 1) {
+          const d0 = W.dates[0];
+          for (const r of W.rows) { const v = Object.values(r.pts); r.pts = v.length ? { [d0]: Math.max(...v) } : {}; }
+          W.dates = [d0];
+        }
         await searchNames(W.rows);                                 // every card: the roster's search names
         if (o.id !== 'ro') await joinedAt(W.rows);                 // and when each player joined the server
         for (const id of [...sel]) if (!byId(id)) sel.delete(id);
