@@ -144,6 +144,7 @@ h2.sec:first-child{margin-top:0}
   </div>
   <div id="out"></div>
 </div>
+<script src="last.js?v=1"></script>
 <script>
 // inside the site (index.html#nc) the site's own header has the way back
 if (window.frameElement) document.getElementById('homeLink').remove();
@@ -196,23 +197,26 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   const nameCell = name => { const s = searchOf(name); return esc(name) + (s && s !== name ? ` <span class="rdim">(${esc(s)})</span>` : ''); };
   const nameHit = (name, f) => !f || fold(name).includes(f) || fold(searchOf(name)).includes(f);
 
+  // the last read (this browser's, last.js) at once, then the Worker's when it comes, drawn again only if it changed
+  function show(j, jn) {
+    if (jn) snames = [nameMap(jn.roster), nameMap(jn.raw)];
+    days = (j && j.days) || {};
+    if (day !== ALL && !days[day]) day = ALL;
+    if (!Object.keys(days).length) {
+      $('status').textContent = 'Nothing read yet.';
+      $('out').innerHTML = '<div class="empty">Open the game and tap <b>Read Neutral City</b> in the 2698 Data Extractor bookmark after a battle: it reads the Points Log and the round\'s cities.</div>';
+      return;
+    }
+    $('days').hidden = false; draw(); $('csv').disabled = false;
+  }
   async function load() {
-    $('out').innerHTML = '<div class="skel"></div>';
+    const L = Last.post(API + '/nc-read'), Ln = Last.post(API + '/search-names');
+    if (L.now) show(L.now, Ln.now); else $('out').innerHTML = '<div class="skel"></div>';
     try {
-      const post = path => fetch(API + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
-      const [r, rn] = await Promise.all([post('/nc-read'), post('/search-names').catch(() => null)]);
-      const jn = rn && rn.ok ? await rn.json().catch(() => null) : null;
-      if (jn) snames = [nameMap(jn.roster), nameMap(jn.raw)];
-      const j = await r.json().catch(() => null);
-      if (!r.ok) throw new Error((j && j.error) || 'the read could not be fetched (' + r.status + ')');
-      days = (j && j.days) || {};
-      if (!Object.keys(days).length) {
-        $('status').textContent = 'Nothing read yet.';
-        $('out').innerHTML = '<div class="empty">Open the game and tap <b>Read Neutral City</b> in the 2698 Data Extractor bookmark after a battle: it reads the Points Log and the round\'s cities.</div>';
-        return;
-      }
-      $('days').hidden = false; draw(); $('csv').disabled = false;
+      const [j, jn] = await Promise.all([L.next, Ln.next.catch(() => null)]);
+      if (!L.now || !L.same || (jn && !Ln.same)) show(j, jn || Ln.now);
     } catch (e) {
+      if (L.now) return;                                           // the last read stays
       $('status').className = 'status grow bad'; $('status').textContent = '✗ ' + (e.message || e);
       $('out').innerHTML = '';
     }

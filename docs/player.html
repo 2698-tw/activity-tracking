@@ -82,7 +82,21 @@ button,.btn{font:inherit;font-weight:600;border:1px solid var(--line);background
 @media (max-width:640px){.rapp{border-radius:14px}}
 .rtag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;background:#3a3a3a;color:#ddd}
 .rtag.tLeft{background:transparent;color:#8a8f99;box-shadow:inset 0 0 0 1px #4a4f58}.rtag.t698N{background:#22324f;color:#9ec5ff}.rtag.t698S{background:#3b2340;color:#e9a8ff}.rtag.t698W{background:#203d33;color:#7ee2a8}.rtag.t698C{background:#45321b;color:#ffc078}
-.pick{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 12px}
+/* the name search: the players it matches in a list under the box, picked with a tap or the arrow keys and Enter */
+.rapp{overflow:visible}
+.rsearch{position:relative}
+.drop{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:20;max-height:320px;overflow:auto;margin:0;padding:6px;list-style:none;
+  background:#20212c;border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.45),inset 0 0 0 1px rgba(255,255,255,.08);animation:dropIn .12s ease-out}
+.drop[hidden]{display:none}
+.drop li{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:9px;cursor:pointer;color:#f3f3f7;font-size:14px}
+.drop li .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drop li.on,.drop li:hover{background:rgba(195,20,65,.3)}
+.drop li.none{cursor:default;color:rgba(235,235,245,.55)}
+.drop li.none:hover{background:none}
+.drop .more{font-size:12px;color:rgba(235,235,245,.5);padding:6px 10px 2px;cursor:default}
+.drop .more:hover{background:none}
+@keyframes dropIn{from{opacity:0;transform:translateY(-4px)}}
+@media (prefers-reduced-motion:reduce){.drop{animation:none}}
 .who{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:2px 14px 10px;font-size:15px}
 .who b{font-size:17px}
 .rtable td.no{color:#ff9b9b;font-weight:600}
@@ -100,6 +114,8 @@ button,.btn{font:inherit;font-weight:600;border:1px solid var(--line);background
 <div class="wrap">
   <div id="out"><div class="skel"></div></div>
 </div>
+<div id="room" aria-hidden="true"></div>
+<script src="last.js?v=1"></script>
 <script>
 // inside the site (index.html#player) the site's own header has the way back
 if (window.frameElement) document.getElementById('homeLink').remove();
@@ -150,66 +166,123 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   }
   const seen = (ev, d) => { const r = roundOf(d); if (r != null) (read[ev] = read[ev] || new Set()).add(r); };
 
-  async function load() {
-    try {
-      // the rounds from api/schedule, not api/events: ad blockers stop any address ending in /events
-      const post = path => fetch(API + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then(r => r.ok ? r.json() : null).catch(() => null);
-      const [ev, wb, st, et, ma, fb, nc, sn] = await Promise.all(['/schedule', '/wb', '/st', '/et', '/ma', '/frost-battle', '/nc-read', '/search-names'].map(post));
-      if (sn) snames = [nameMap(sn.roster), nameMap(sn.raw)];
-      rounds = (ev && ev.rounds) || [];
-      if (!rounds.length) throw new Error('the season\'s rounds are not read yet (the bookmark\'s Read events)');
-      // the garrison cards: their rows, each with its value on each date (the Snow Train's, by troop type)
-      const sum = v => v && typeof v === 'object' ? Object.values(v).reduce((a, b) => a + (Number(b) || 0), 0) : v;
-      for (const [id, j, f] of [['wb', wb, r => r.pts], ['st', st, r => r.pts], ['et', et, r => r.score], ['ma', ma, r => r.pts]]) {
-        if (!j) continue;
-        (j.dates || []).forEach(d => seen(id, d));
-        for (const r of j.rows || []) for (const [d, v] of Object.entries(f(r) || {})) put(id, r.name, r.ally, d, sum(v));
-      }
-      for (const [d, b] of Object.entries((fb && fb.days) || {})) {
-        seen('frost', d);
-        for (const p of b.players || []) if (String(p.server) === String(US)) put('frost', p.name, '', d, p.score);
-      }
-      for (const [d, b] of Object.entries((nc && nc.days) || {})) {
-        if (!(b.players || []).length) continue;
-        seen('nc', d);
-        for (const [name, score, ally] of b.players) put('nc', name, ally, d, score);
-      }
-      draw();
-    } catch (e) {
-      $('out').innerHTML = `<div class="empty">✗ ${esc(e.message || e)}</div>`;
+  const LISTS = ['/schedule', '/wb', '/st', '/et', '/ma', '/frost-battle', '/nc-read', '/search-names'];
+  // every list's last answer (this browser's, last.js, the cards' and frames' too) at once, then the Worker's
+  // when they are all in, drawn again only if one changed
+  function take([ev, wb, st, et, ma, fb, nc, sn]) {
+    players = new Map(); read = {};
+    if (sn) snames = [nameMap(sn.roster), nameMap(sn.raw)];
+    rounds = (ev && ev.rounds) || [];
+    if (!rounds.length) throw new Error('the season\'s rounds are not read yet (the bookmark\'s Read events)');
+    // the garrison cards: their rows, each with its value on each date (the Snow Train's, by troop type)
+    const sum = v => v && typeof v === 'object' ? Object.values(v).reduce((a, b) => a + (Number(b) || 0), 0) : v;
+    for (const [id, j, f] of [['wb', wb, r => r.pts], ['st', st, r => r.pts], ['et', et, r => r.score], ['ma', ma, r => r.pts]]) {
+      if (!j) continue;
+      (j.dates || []).forEach(d => seen(id, d));
+      for (const r of j.rows || []) for (const [d, v] of Object.entries(f(r) || {})) put(id, r.name, r.ally, d, sum(v));
     }
+    for (const [d, b] of Object.entries((fb && fb.days) || {})) {
+      seen('frost', d);
+      for (const p of b.players || []) if (String(p.server) === String(US)) put('frost', p.name, '', d, p.score);
+    }
+    for (const [d, b] of Object.entries((nc && nc.days) || {})) {
+      if (!(b.players || []).length) continue;
+      seen('nc', d);
+      for (const [name, score, ally] of b.players) put('nc', name, ally, d, score);
+    }
+  }
+  async function load() {
+    // the rounds from api/schedule, not api/events: ad blockers stop any address ending in /events
+    const L = LISTS.map(path => Last.post(API + path)), had = !!L[0].now;
+    try { if (had) { take(L.map(x => x.now)); draw(); } } catch {}
+    const fresh = await Promise.all(L.map(x => x.next.catch(() => null)));
+    if (had && L.every((x, i) => x.same || !fresh[i])) return;
+    try { take(fresh.map((j, i) => j || L[i].now)); draw(); }
+    catch (e) { $('out').innerHTML = `<div class="empty">✗ ${esc(e.message || e)}</div>`; }
   }
 
   // a player's Whitebeard level (the highest read, or 0); "" when Whitebeard has never been read
   const wbLevel = p => read.wb ? Math.max(0, ...Object.values(p.v.wb || {})) : '';
   const wbTag = p => { const l = wbLevel(p); return l === '' ? '' : `<span class="tag wb">Whitebeard ${l ? 'Lv. ' + N(l) : 'No'}</span>`; };
 
+  // the page: the search box drawn once (it keeps its focus while typing); the player's table under it
   function draw() {
-    const f = fold(q), list = f ? [...players.values()].filter(p => nameHit(p.name, f)).sort((a, b) => a.name.localeCompare(b.name)) : [];
-    if (list.length === 1) who = list[0].name;
-    const p = players.get(who) && (!f || nameHit(who, f)) ? players.get(who) : null;
-    let body;
-    if (p) {
-      const cell = (e, r) => {
-        if (!(read[e.id] && read[e.id].has(r.round))) return '<td class="n rdim">—</td>';
-        const v = p.v[e.id] && p.v[e.id][r.round];
-        return v ? `<td class="n">${e.yes ? 'Yes' : N(v)}</td>` : '<td class="n no">No</td>';
-      };
-      body = `<div class="who"><b>${nameCell(p.name)}</b>${allyTag(p.ally)}${wbTag(p)}</div>
-        <div class="rbody"><table class="rtable wbtable"><thead><tr><th>Event</th>${rounds.map(r => `<th class="n">Round ${r.round}</th>`).join('')}</tr></thead>
-        <tbody>${EVENTS.map(e => `<tr><td>${esc(e.name)}<small>${esc(e.what)}</small></td>${rounds.map(r => cell(e, r)).join('')}</tr>`).join('')}</tbody></table></div>`;
-    } else if (!f) body = '<div class="hint">Search your name to see every event of the season, round by round.</div>';
-    else if (!list.length) body = '<div class="hint">No player matches.</div>';
-    else body = `<div class="pick">${list.slice(0, 40).map(x => `<button type="button" class="rchip" data-who="${esc(x.name)}">${nameCell(x.name)}</button>`).join('')}</div>
-      ${list.length > 40 ? `<div class="hint">${N(list.length)} players match: type more of the name.</div>` : ''}`;
-    $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>Player Summary</b>
-        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="q" type="text" placeholder="Search your name" autocomplete="off" value="${esc(q)}"><button type="button" class="rclear" id="qx" title="Clear the search" aria-label="Clear the search"${q ? '' : ' hidden'}>✕</button></label></div>
-      <div class="rreads">${N(players.size)} players · ${EVENTS.length + 1} events · ${rounds.length} rounds</div>${body}</div>`;
-    const inp = $('q');
-    inp.oninput = () => { q = inp.value; who = ''; const at = inp.selectionStart; draw(); const k = $('q'); k.focus(); k.setSelectionRange(at, at); };
-    $('qx').onclick = e => { e.preventDefault(); q = ''; who = ''; draw(); $('q').focus(); };
+    if (!$('q')) {
+      $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>Player Summary</b>
+          <label class="rsearch"><span aria-hidden="true">🔍</span><input id="q" type="text" placeholder="Search your name" autocomplete="off" spellcheck="false"
+            role="combobox" aria-expanded="false" aria-controls="drop" aria-autocomplete="list"><button type="button" class="rclear" id="qx" title="Clear the search" aria-label="Clear the search" hidden>✕</button>
+            <ul class="drop" id="drop" role="listbox" hidden></ul></label></div>
+        <div class="rreads" id="reads"></div><div id="body"></div></div>`;
+      wire();
+    }
+    $('reads').textContent = `${N(players.size)} players · ${EVENTS.length + 1} events · ${rounds.length} rounds`;
+    const p = players.get(who);
+    if (!p) { $('body').innerHTML = '<div class="hint">Search your name to see every event of the season, round by round.</div>'; return; }
+    const cell = (e, r) => {
+      if (!(read[e.id] && read[e.id].has(r.round))) return '<td class="n rdim">—</td>';
+      const v = p.v[e.id] && p.v[e.id][r.round];
+      return v ? `<td class="n">${e.yes ? 'Yes' : N(v)}</td>` : '<td class="n no">No</td>';
+    };
+    $('body').innerHTML = `<div class="who"><b>${nameCell(p.name)}</b>${allyTag(p.ally)}${wbTag(p)}</div>
+      <div class="rbody"><table class="rtable wbtable"><thead><tr><th>Event</th>${rounds.map(r => `<th class="n">Round ${r.round}</th>`).join('')}</tr></thead>
+      <tbody>${EVENTS.map(e => `<tr><td>${esc(e.name)}<small>${esc(e.what)}</small></td>${rounds.map(r => cell(e, r)).join('')}</tr>`).join('')}</tbody></table></div>`;
   }
-  $('out').addEventListener('click', e => { const b = e.target.closest('[data-who]'); if (b) { who = b.dataset.who; q = who; draw(); } });
+
+  // the list under the search box: the players the typed name matches (their search name too), up to 50
+  const MAX = 50;
+  let hits = [], at = -1;
+  function openList() {
+    const inp = $('q'), drop = $('drop'), f = fold(inp.value);
+    const starts = p => fold(p.name).startsWith(f) || fold(searchOf(p.name)).startsWith(f) ? 0 : 1;   // names that start with it first
+    hits = f ? [...players.values()].filter(p => nameHit(p.name, f)).sort((a, b) => starts(a) - starts(b) || a.name.localeCompare(b.name)) : [];
+    at = hits.length ? 0 : -1;
+    if (!f) return closeList();
+    drop.innerHTML = hits.length
+      ? hits.slice(0, MAX).map((x, i) => `<li role="option" id="opt${i}" data-i="${i}" class="${i === at ? 'on' : ''}"><span class="nm">${nameCell(x.name)}</span>${allyTag(x.ally)}</li>`).join('') +
+        (hits.length > MAX ? `<li class="more">${N(hits.length)} players match: type more of the name.</li>` : '')
+      : '<li class="none">No player matches.</li>';
+    drop.hidden = false; inp.setAttribute('aria-expanded', 'true');
+    room();
+  }
+  function closeList() {
+    $('drop').hidden = true; $('q').setAttribute('aria-expanded', 'false'); at = -1; room();
+  }
+  function mark(i) {
+    const items = $('drop').querySelectorAll('li[data-i]');
+    if (!items.length) return;
+    at = (i + items.length) % items.length;
+    items.forEach((li, k) => li.classList.toggle('on', k === at));
+    items[at].scrollIntoView({ block: 'nearest' });
+    $('q').setAttribute('aria-activedescendant', 'opt' + at);
+  }
+  function pick(i) {
+    const p = hits[i]; if (!p) return;
+    who = p.name; $('q').value = p.name; $('qx').hidden = false; closeList(); draw();
+  }
+  // inside the site the frame is as tall as this page: the open list makes the page that much taller, so it is never cut off
+  function room() {
+    const drop = $('drop'), gap = $('room');
+    gap.style.height = '0';
+    if (drop.hidden) return;
+    const over = drop.getBoundingClientRect().bottom + 16 - document.body.getBoundingClientRect().bottom;
+    if (over > 0) gap.style.height = over + 'px';
+  }
+  function wire() {
+    const inp = $('q');
+    inp.oninput = () => { q = inp.value; $('qx').hidden = !q; openList(); };
+    inp.onfocus = () => { if (inp.value && !players.has(inp.value)) openList(); };
+    inp.onkeydown = e => {
+      const open = !$('drop').hidden;
+      if (e.key === 'ArrowDown') { e.preventDefault(); open ? mark(at + 1) : openList(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); if (open) mark(at - 1); }
+      else if (e.key === 'Enter') { e.preventDefault(); if (open && at >= 0) pick(at); }
+      else if (e.key === 'Escape') closeList();
+    };
+    $('drop').onmousedown = e => e.preventDefault();               // the box keeps its focus
+    $('drop').onclick = e => { const li = e.target.closest('li[data-i]'); if (li) pick(Number(li.dataset.i)); };
+    $('qx').onclick = e => { e.preventDefault(); q = ''; who = ''; inp.value = ''; $('qx').hidden = true; closeList(); draw(); inp.focus(); };
+    document.addEventListener('click', e => { if (!e.target.closest('.rsearch')) closeList(); });
+  }
   load();
 })();
 </script>

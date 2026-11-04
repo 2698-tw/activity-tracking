@@ -185,7 +185,16 @@ html[data-view=cp] #tab-cp,html[data-view=roster] #tab-roster,html[data-view=whi
 html[data-view=energytower] #tab-et,html[data-view=mammoth] #tab-ma,html[data-view=frost] #tab-frost,html[data-view=nc] #tab-nc,html[data-view=player] #tab-player,html[data-view=admin] #tab-admin{display:block}
 /* the Frost Crystal Contest (#frost): frost.html in a frame the height of the window, the page wider for its tables */
 html[data-view=frost] #app,body:has(#tab-frost:not(.hide)) #app,html[data-view=nc] #app,body:has(#tab-nc:not(.hide)) #app{max-width:1320px}
-.frostframe{display:block;width:100%;height:80vh;border:0;border-radius:12px;background:var(--panel)}
+.frostframe{display:block;width:100%;height:80vh;border:0;border-radius:12px;background:var(--panel);opacity:0;transition:opacity .2s ease}
+.frostframe.in{opacity:1}
+/* a view switch: the view that comes in fades up (cp.js adds .viewin) */
+.viewin{animation:viewIn .18s ease-out}
+@keyframes viewIn{from{opacity:0;transform:translateY(4px)}}
+/* a card's first list on its way: rows the shape of the table (cards.js) */
+.rskel{display:grid;gap:6px;padding:10px 0}
+.rskel i{display:block;height:36px;border-radius:8px;background:linear-gradient(90deg,rgba(255,255,255,.04),rgba(255,255,255,.09),rgba(255,255,255,.04));background-size:200% 100%;animation:rsk 1.4s linear infinite}
+@keyframes rsk{to{background-position:-200% 0}}
+@media (prefers-reduced-motion:reduce){.viewin,.rskel i{animation:none}.frostframe{transition:none}}
 .homeband{position:relative;overflow:hidden;height:140px;display:flex;align-items:center;
   background:linear-gradient(180deg,#3a1d2c,#6e2c3a 55%,#b9524a)}
 .homeband .themebtn{position:absolute;top:14px;right:max(16px, env(safe-area-inset-right));z-index:2;color:#fff;border-color:rgba(255,255,255,.35)}
@@ -3016,10 +3025,12 @@ $('toBottom').onclick = () => scrollTo({ top: document.documentElement.scrollHei
 
 loadSetup();
 </script>
-<script src="cp.js?v=10"></script>
+<!-- the last answer to each of the Worker's lists, kept in this browser (cards and frames show it at once) -->
+<script src="last.js?v=1"></script>
+<script src="cp.js?v=11"></script>
 <!-- the admin pill and page, then the Alliance roster, Whitebeard and Snow Train cards -->
 <script src="admin.js?v=9"></script>
-<script src="cards.js?v=17"></script>
+<script src="cards.js?v=18"></script>
 <!-- Kartz: decoding the recording, then packing and reading it -->
 <script src="decode.js?v=4"></script>
 <script src="kartz.js?v=5"></script>

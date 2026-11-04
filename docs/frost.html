@@ -197,6 +197,7 @@ td.cp{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
   </div>
   <div id="out"></div>
 </div>
+<script src="last.js?v=1"></script>
 <script>
 // inside the site (index.html#frost) the site's own header has the way back
 if (window.frameElement) document.getElementById('homeLink').remove();
@@ -260,28 +261,31 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   // the view last picked, on this device
   let view = 'sum';
   try { const v = localStorage.getItem('frost.view'); if (v === 'pl' || v === 'bt' || v === 'rk') view = v; } catch {}
-  async function load() {
-    $('out').innerHTML = '<div class="map">' + '<div class="skel bf"></div>'.repeat(3) + '</div>';
-    try {
-      const post = path => fetch(API + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
-      const [r, rb, rn] = await Promise.all([post('/frost-read'), post('/frost-battle').catch(() => null), post('/search-names').catch(() => null)]);
-      const jn = rn && rn.ok ? await rn.json().catch(() => null) : null;
-      if (jn) snames = [nameMap(jn.roster), nameMap(jn.raw)];
-      if (jn) for (const [name, ally] of jn.roster || []) for (const k of [name, '~' + fold(name)]) if (ally && !allies.has(k)) allies.set(k, ally);
-      const j = await r.json().catch(() => null);
-      if (!r.ok) throw new Error((j && j.error) || 'the read could not be fetched (' + r.status + ')');
-      days = (j && j.days) || {};
-      const jb = rb && rb.ok ? await rb.json().catch(() => null) : null;
-      bdays = (jb && jb.days) || {};
-      const dates = [...new Set([...Object.keys(days), ...Object.keys(bdays)])].sort();
-      if (!dates.length) {
-        $('status').textContent = 'Nothing read yet.';
-        $('out').innerHTML = '<div class="empty">Open the game and tap <b>Read battlefields</b> in the 2698 Data Extractor bookmark: it reads the contest\'s map and the top 20 of every server on it.</div>';
-        return;
-      }
+  // the last reads (this browser's, last.js) at once, then the Worker's when they come, drawn again only if one changed
+  function show(j, jb, jn, first) {
+    if (jn) snames = [nameMap(jn.roster), nameMap(jn.raw)];
+    if (jn) for (const [name, ally] of jn.roster || []) for (const k of [name, '~' + fold(name)]) if (ally && !allies.has(k)) allies.set(k, ally);
+    days = (j && j.days) || {};
+    bdays = (jb && jb.days) || {};
+    const dates = [...new Set([...Object.keys(days), ...Object.keys(bdays)])].sort();
+    if (!dates.length) {
+      $('status').textContent = 'Nothing read yet.';
+      $('out').innerHTML = '<div class="empty">Open the game and tap <b>Read battlefields</b> in the 2698 Data Extractor bookmark: it reads the contest\'s map and the top 20 of every server on it.</div>';
+      return;
+    }
+    if (first || !(day === ALL ? Object.keys(bdays).length : dates.includes(day)))
       day = Object.keys(bdays).length ? ALL : dates[dates.length - 1];   // All first, else the latest contest
-      $('days').hidden = false; read = days[day] || null; draw(); $('csv').disabled = false;
+    $('days').hidden = false; read = days[day] || null; draw(); $('csv').disabled = false;
+  }
+  async function load() {
+    const L = Last.post(API + '/frost-read'), Lb = Last.post(API + '/frost-battle'), Ln = Last.post(API + '/search-names');
+    if (L.now) show(L.now, Lb.now, Ln.now, true);
+    else $('out').innerHTML = '<div class="map">' + '<div class="skel bf"></div>'.repeat(3) + '</div>';
+    try {
+      const [j, jb, jn] = await Promise.all([L.next, Lb.next.catch(() => null), Ln.next.catch(() => null)]);
+      if (!L.now || !L.same || (jb && !Lb.same) || (jn && !Ln.same)) show(j, jb || Lb.now, jn || Ln.now, !L.now);
     } catch (e) {
+      if (L.now) return;                                           // the last reads stay
       $('status').className = 'status grow bad'; $('status').textContent = '✗ ' + (e.message || e);
       $('out').innerHTML = '';
     }

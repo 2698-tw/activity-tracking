@@ -29,6 +29,8 @@
   const allyTag = a => a ? `<span class="rtag t${esc(a)}">${esc(a)}</span>` : '<span class="rdim">—</span>';
   const unitTag = t => t ? `<span class="unit u${t.replace(' ', '')}">${esc(t)}</span>` : '';
   const dim = '<span class="rdim">—</span>';
+  // while a card's first list comes: rows the shape of the table, so the page does not jump when it arrives
+  const SKELETON = '<div class="rskel" aria-label="Loading">' + '<i></i>'.repeat(12) + '</div>';
 
   // Every card: each player's search name, looked up by the in-game name the bookmark read: first in the
   // Alliance Rosters tab, then in the Base CP sends (RawData-CP), which are updated more often. Both tabs
@@ -50,36 +52,49 @@
   const byName = (m, r) => m.get(r.name) || (fold(r.name) !== '' && m.get('~' + fold(r.name)));
   // when each player joined the server: their first read on the alliance roster (a New → 698x in its History),
   // for every card's "First seen" rule. 0 for the players already there at the roster's first read; asked once a while
-  let joins = null, joinsAt = 0;
-  async function joinedAt(rows) {
-    if (!joins || Date.now() - joinsAt > 10 * 60 * 1000) {
-      joinsAt = Date.now();
-      joins = fetch(API_BASE + '/roster', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
-        .then(r => r.ok ? r.json() : Promise.reject()).catch(() => { joinsAt = 0; return {}; })
-        .then(j => {
-          const ro = j.rows || [], first = Math.min(...ro.map(x => x.firstAt || Infinity)), m = new Map();
-          for (const x of ro) {
-            const at = x.firstAt && x.firstAt - first > 864e5 / 2 ? x.firstAt : 0;
-            for (const n of [x.name, ...(x.names || [])]) if (n) { m.set(n, at); if (fold(n)) m.set('~' + fold(n), at); }
-          }
-          return m;
-        });
+  // Both lists are asked for once a while, at the same time as a card's own list; each card uses the
+  // last answer at once (kept in this browser, last.js) and the fresh one when it comes.
+  const every10 = (get, at) => !get || Date.now() - at > 10 * 60 * 1000;
+  let joins = null, joinsAt = 0, joinsMap = null;
+  const joinsOf = j => {
+    const ro = (j && j.rows) || [], first = Math.min(...ro.map(x => x.firstAt || Infinity)), m = new Map();
+    for (const x of ro) {
+      const at = x.firstAt && x.firstAt - first > 864e5 / 2 ? x.firstAt : 0;
+      for (const n of [x.name, ...(x.names || [])]) if (n) { m.set(n, at); if (fold(n)) m.set('~' + fold(n), at); }
     }
-    const m = await joins;
+    return m;
+  };
+  function askJoins() {
+    if (every10(joins, joinsAt)) {
+      joinsAt = Date.now();
+      const L = Last.post(API_BASE + '/roster');
+      if (L.now && !joinsMap) joinsMap = joinsOf(L.now);
+      joins = L.next.then(j => { joinsMap = joinsOf(j); return !L.same; }).catch(() => { joinsAt = 0; return false; });
+    }
+    return joins;                                                  // true once a changed list has come
+  }
+  function joinedAt(rows) {
+    const m = joinsMap || new Map();
     for (const r of rows) {
       const at = [r.name, ...(r.names || [])].map(n => m.get(n) ?? m.get('~' + fold(n))).find(v => v !== undefined);
       r.joinedAt = at || 0;
     }
   }
 
-  async function searchNames(rows) {
-    if (!names || Date.now() - namesAt > 10 * 60 * 1000) {   // the sheet changes; asked again after a while
+  let namesMap = null;
+  const namesOf = j => [nameMap(j && j.roster), nameMap(j && j.raw)];
+  function askNames() {                                            // the sheet changes; asked again after a while
+    if (every10(names, namesAt)) {
       namesAt = Date.now();
-      names = fetch(API_BASE + '/search-names', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
-        .then(r => r.ok ? r.json() : Promise.reject()).catch(() => { namesAt = 0; return {}; })   // asked again next time
-        .then(j => [nameMap(j.roster), nameMap(j.raw)]);
+      const L = Last.post(API_BASE + '/search-names');
+      if (L.now && !namesMap) namesMap = namesOf(L.now);
+      names = L.next.then(j => { namesMap = namesOf(j); return !L.same; }).catch(() => { namesAt = 0; return false; });
     }
-    const [roster, raw] = await names;
+    return names;
+  }
+  function searchNames(rows) {
+    if (!namesMap) return;
+    const [roster, raw] = namesMap;
     for (const r of rows) {
       const s = withAlly(roster, r) || withAlly(raw, r) || byName(roster, r) || byName(raw, r);
       if (s) r.search = s;
@@ -147,26 +162,37 @@
       return out;
     };
 
-    async function load() {
+    // The card's list, the search names and the roster asked for at once. The last of each (this browser's)
+    // is drawn at once, the fresh ones once they are all in, and only when one of them changed.
+    function take(j) {
+      W.rows = j.rows || []; W.dates = j.dates || []; W.reads = j.reads || {}; W.moves = j.moves || []; W.err = '';
+      // Whitebeard: one column, the Practice Round; a read under another date is folded into it
+      if (o.id === 'wb' && W.dates.length > 1) {
+        const d0 = W.dates[0];
+        for (const r of W.rows) { const v = Object.values(r.pts); r.pts = v.length ? { [d0]: Math.max(...v) } : {}; }
+        W.dates = [d0];
+      }
+      searchNames(W.rows);                                         // every card: the roster's search names
+      if (o.id !== 'ro') joinedAt(W.rows);                         // and when each player joined the server
+      for (const id of [...sel]) if (!byId(id)) sel.delete(id);
+    }
+    let lastJ = null;
+    async function load(manual) {
       if (W.loading) return;
-      W.loading = true; draw();
+      W.loading = true;
+      const L = Last.post(API_BASE + o.api), first = !W.rows;
+      const side = [askNames(), o.id !== 'ro' ? askJoins() : false];
+      if (first && L.now) { lastJ = L.now; take(L.now); draw(); if (dated) el('View').scrollLeft = 1e6; }
+      else if (first) draw();
       try {
-        const [r] = await Promise.all([fetch(API_BASE + o.api, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }), Admin.ready]);
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(j.error || r.status);
-        W.rows = j.rows || []; W.dates = j.dates || []; W.reads = j.reads || {}; W.moves = j.moves || []; W.err = '';
-        // Whitebeard: one column, the Practice Round; a read under another date is folded into it
-        if (o.id === 'wb' && W.dates.length > 1) {
-          const d0 = W.dates[0];
-          for (const r of W.rows) { const v = Object.values(r.pts); r.pts = v.length ? { [d0]: Math.max(...v) } : {}; }
-          W.dates = [d0];
-        }
-        await searchNames(W.rows);                                 // every card: the roster's search names
-        if (o.id !== 'ro') await joinedAt(W.rows);                 // and when each player joined the server
-        for (const id of [...sel]) if (!byId(id)) sel.delete(id);
-      } catch (e) { W.err = `The ${cfg().title} could not be loaded: ` + (e.message || e); }
-      W.loading = false; draw();
-      if (dated && !W.flash) el('View').scrollLeft = 1e6;          // the latest day in view
+        const [j, , n, r] = await Promise.all([L.next, Admin.ready, ...side]);
+        if (manual === true && L.same && !n && !r && !W.err) Admin.toast('Up to date');
+        if (!W.rows || !L.same || n || r || W.err) { lastJ = j; take(j); W.loading = false; draw(); if (first && dated && !W.flash) el('View').scrollLeft = 1e6; }
+      } catch (e) {
+        if (W.rows && lastJ) Admin.toast(`✗ The ${cfg().title} could not be refreshed: ` + (e.message || e));
+        else { W.err = `The ${cfg().title} could not be loaded: ` + (e.message || e); draw(); }
+      }
+      W.loading = false;
     }
     // the card's defaults from the settings, until a chip or a header is clicked
     function defaults() {
@@ -260,7 +286,7 @@
       if (o.id === 'ro') el('Chips').insertAdjacentHTML('afterbegin', views());
       drawBulk();
       if (W.err) { box.innerHTML = `<p class="rnote">${esc(W.err)}</p>`; return; }
-      if (!W.rows) { box.innerHTML = '<p class="rnote">Loading…</p>'; return; }
+      if (!W.rows) { box.innerHTML = SKELETON; return; }
       if (!W.rows.length && !admin) { box.innerHTML = `<p class="rnote">${o.empty}</p>`; return; }
       const cols = columns(), k = W.sort, dir = W.asc ? 1 : -1, d = defOf(k) || DEF.name;
       rows.sort((a, b) => (d.text ? String(d.val(a) ?? '').localeCompare(String(d.val(b) ?? '')) : d.val(a) - d.val(b)) * dir || (o.id === 'st' ? top(b) - top(a) : o.id === 'et' || o.id === 'ma' ? DEF.best.val(b) - DEF.best.val(a) : 0));
@@ -296,7 +322,7 @@
         (W.rows ? `<span class="rcount">${n} ${what}</span>` : '');
       if (bulk) { bulk.classList.remove('on'); bulk.innerHTML = ''; }
       if (W.err) { box.innerHTML = `<p class="rnote">${esc(W.err)}</p>`; return; }
-      if (!W.rows) { box.innerHTML = '<p class="rnote">Loading…</p>'; return; }
+      if (!W.rows) { box.innerHTML = SKELETON; return; }
       if (!mine.length) {
         box.innerHTML = names ? '<p class="rnote">No name changes yet. Any read, of an alliance or an event, notes a player it knows under a new name here.</p>'
           : '<p class="rnote">No alliance changes yet. Each read of an alliance adds who joined, moved or left since the last one.</p>';
@@ -790,9 +816,11 @@
     const q = el('Q'), clear = document.createElement('button');
     clear.type = 'button'; clear.className = 'rclear'; clear.textContent = '✕'; clear.title = 'Clear the search'; clear.setAttribute('aria-label', 'Clear the search'); clear.hidden = true;
     q.after(clear);
-    q.oninput = () => { clear.hidden = !q.value; draw(); };
-    clear.onclick = e => { e.preventDefault(); q.value = ''; clear.hidden = true; draw(); q.focus(); };
-    el('Reload').onclick = load;
+    // the table is drawn again once typing pauses, not on every key (hundreds of rows each time)
+    let typing = 0;
+    q.oninput = () => { clear.hidden = !q.value; clearTimeout(typing); typing = setTimeout(draw, 120); };
+    clear.onclick = e => { e.preventDefault(); clearTimeout(typing); q.value = ''; clear.hidden = true; draw(); q.focus(); };
+    el('Reload').onclick = () => load(true);
     const visible = () => location.hash === o.hash;
     Admin.subscribe(kind => {
       if (kind === 'settings') { W.sort = null; W.ally = null; }
