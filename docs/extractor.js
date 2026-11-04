@@ -175,9 +175,11 @@
       progress(list.length, want);
       await wait(Math.random() < 0.12 ? between(1000, 2000) : between(250, 900));
     }
-    // only this warzone's players, in case a World or Sector list is showing after all
+    // only this warzone's players, in case a World or Sector list is showing after all: those are mostly
+    // other warzones. A few are expected here: a player who moved away keeps the score earned in this one.
     var dc = req('DataCenter'), me = dc && dc.DATA && dc.DATA.UserData, sid = me && me.OriginServerId;
-    if (sid != null && list.some(function (e) { return e.sid != null && Number(e.sid) !== Number(sid); }))
+    var away = sid == null ? 0 : list.filter(function (e) { return e.sid != null && Number(e.sid) !== Number(sid); }).length;
+    if (away > list.length * 0.1)
       throw new Error('the ranking shows other warzones too — pick Warzone Ranking in the window and tap Read again');
     var rows = list.map(function (e) {
       var p = parse(e.playerInfo);
