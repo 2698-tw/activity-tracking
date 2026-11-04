@@ -16,6 +16,7 @@ let cpSource = '';
 // Views on one page: the home page (the address with no #), Kartz (#kartz), the Alliance roster
 // (#roster), the Whitebeard ranking (#whitebeard), the Snow Train (#snowtrain), the Energy Tower (#energytower), the Mammoth Assault (#mammoth), the Frost Crystal Contest (#frost), Neutral City (#nc), the Player Summary (#player), the admin page (#admin) and Base CP (#cp, no longer on the home page but still there by its address).
 // The address carries the view, so a link, a reload or the phone's back button lands on the right one.
+let shownView = '';
 function showTab(name) {
   $('home').classList.toggle('hide', name !== 'home');
   $('app').classList.toggle('hide', name === 'home');
@@ -33,6 +34,10 @@ function showTab(name) {
   $('tab-player').classList.toggle('hide', name !== 'player');
   if (name === 'player') frostFrame('playerFrame', 'player.html');
   $('tab-admin').classList.toggle('hide', name !== 'admin');
+  // the view that comes in fades up; not on the first paint, and not when it is already the one shown
+  const shown = { home: 'home', kartz: 'tab-kartz', cp: 'tab-cp', roster: 'tab-roster', whitebeard: 'tab-wb', snowtrain: 'tab-st', energytower: 'tab-et', mammoth: 'tab-ma', frost: 'tab-frost', nc: 'tab-nc', player: 'tab-player', admin: 'tab-admin' }[name];
+  if (shownView && shownView !== name && $(shown)) { const v = $(shown); v.classList.remove('viewin'); void v.offsetWidth; v.classList.add('viewin'); }
+  shownView = name;
   document.documentElement.classList.remove('athome');
   delete document.documentElement.dataset.view;      // index.html's first-paint view, now shown by the classes
   closeMenu();
@@ -43,13 +48,22 @@ const viewFromAddress = () => ({ '#cp': 'cp', '#kartz': 'kartz', '#roster': 'ros
 // the Frost Crystal Contest is its own page (frost.html), shown here in a frame: loaded the first time,
 // and as tall as the page in it, so the browser's own scroll bar scrolls it (frost.html keeps its pop-ups
 // where they can be seen). Neutral City (nc.html) and the Player Summary (player.html) the same way, each in its own frame.
+// It starts at the height it had last time (so the page does not jump while it loads) and fades in once loaded.
 function frostFrame(id = 'frostFrame', page = 'frost.html') {
   const f = $(id);
   if (f.src) return;
+  const h = Last.num.get('h:' + id);
+  if (h) f.style.height = h + 'px';
   f.onload = () => {
     const body = f.contentDocument.body, cs = getComputedStyle(body);
-    const fit = () => { f.style.height = Math.ceil(body.offsetHeight + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom)) + 'px'; };
+    let keep = 0;
+    const fit = () => {
+      const px = Math.ceil(body.offsetHeight + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom));
+      f.style.height = px + 'px';
+      clearTimeout(keep); keep = setTimeout(() => Last.num.set('h:' + id, px), 1500);   // once it has settled
+    };
     new f.contentWindow.ResizeObserver(fit).observe(body); fit();   // the frame's own observer: it sees the frame's changes
+    f.classList.add('in');
   };
   f.src = page;
 }
