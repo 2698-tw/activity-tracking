@@ -233,10 +233,11 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   // as the site's cards: each alliance as its coloured label; the chips Everyone, the site's alliances (as the admin
   // view sets them, kept by the site on this device) and Other; a header sorts by its column, again the other way
   const AL = (() => { try { const a = JSON.parse(localStorage.getItem('site.settings')).alliances; if (Array.isArray(a) && a.length) return a; } catch {} return ['698N', '698S', '698W', '698C']; })();
-  let al = '';
+  let al = '', mk = false;                        // the alliance chip; the Masked chip (masked players only)
   const allyTag = a => a ? `<span class="rtag t${esc(a)}">${esc(a)}</span>` : '<span class="rdim">—</span>';
   const inAl = ally => !al || (al === 'OTHER' ? !AL.includes(ally) : ally === al);
-  const chips = () => ['', ...AL, 'OTHER'].map(a => `<button type="button" class="rchip${al === a ? ' on' : ''}" data-al="${esc(a)}">${a === 'OTHER' ? 'Other' : esc(a) || 'Everyone'}</button>`).join('');
+  const chips = () => ['', ...AL, 'OTHER'].map(a => `<button type="button" class="rchip${al === a ? ' on' : ''}" data-al="${esc(a)}">${a === 'OTHER' ? 'Other' : esc(a) || 'Everyone'}</button>`).join('')
+    + `<button type="button" class="rchip${mk ? ' on' : ''}" data-mk title="Only the players masked as Master Thief">🎭 Masked</button>`;
   const sorts = {};                                // each table's sort, {k, asc}
   function sorted(id, rows, val, def) {
     const s = sorts[id] || (sorts[id] = { k: def, asc: false }), v = val[s.k] || val[def], dir = s.asc ? 1 : -1;
@@ -358,13 +359,14 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     const held = {}; let mines = 0;
     for (const f of sn.status) for (const m of f.mines) { if (!m.spot && !m.server) continue; mines++; if (m.server) held[m.server] = (held[m.server] || 0) + 1; }
     const heldList = Object.entries(held).map(([sv, n]) => [+sv, n]).sort((a, b) => b[1] - a[1]);
-    const ourPlayers = sn.status.reduce((a, f) => a + f.us.players, 0), ourMasked = sn.status.reduce((a, f) => a + f.us.masked, 0);
+    // our players: everyone of ours in the battle's Individual Ranking (all who scored), not who was still out at the end
+    const scored = (sn.players || []).filter(p => String(p.server) === US), ourPlayers = scored.length, ourMasked = scored.filter(p => p.masked).length;
     const best = sn.status.map((f, i) => [i, f.us.crystals]).sort((a, b) => b[1] - a[1])[0] || [0, 0];
     const leadS = lead ? sn.servers.find(x => x.server === lead) : null;
     const tiles = `<div class="tiles">
       <div class="tile"><div class="k">S${US} result</div><div class="v">#${me.rank || '—'}</div><div class="s">${N(me.crystals)} crystals${leadS ? ` · S${leadS.server} ${N(leadS.crystals)}` : ''}</div></div>
       <div class="tile"><div class="k">Mines we held</div><div class="v">${held[US] || 0}<small> / ${mines}</small></div><div class="s">at the end${lead ? ` · S${lead} held ${held[lead] || 0}` : ''}</div></div>
-      <div class="tile"><div class="k">Our players out</div><div class="v">${N(ourPlayers)}</div><div class="s">${N(ourMasked)} masked, across ${sn.status.filter(f => f.us.players).length} battlefields</div></div>
+      <div class="tile"><div class="k">Our players who scored</div><div class="v">${N(ourPlayers)}</div><div class="s">${N(ourMasked)} masked</div></div>
       <div class="tile"><div class="k">Best battlefield</div><div class="v">#${best[0] + 1}</div><div class="s">${N(best[1])} of our crystals</div></div></div>`;
     const maxH = Math.max(...heldList.map(x => x[1]), 1), maxC = Math.max(...sn.status.map(f => f.us.crystals), 1);
     const holders = `<div class="panel"><h3>Mines held at the end</h3>${heldList.map(([sv, n]) =>
@@ -412,7 +414,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
       head = th('rks', 'server', 'Server') + th('rks', 'crystals', 'Crystals', 1);
       rows = l.map(x => `<tr class="${String(x.server) === US ? 'us' : ''}"><td>S${esc(x.server)}</td><td class="n">${N(x.crystals)}</td></tr>`);
     } else {
-      const l = sorted('rkp', sn.players.filter(p => inAl(allyOf(p.name)) && nameHit(p.name, fold(rkQ))),
+      const l = sorted('rkp', sn.players.filter(p => inAl(allyOf(p.name)) && (!mk || p.masked) && nameHit(p.name, fold(rkQ))),
         { name: p => p.name, ally: p => allyOf(p.name), score: p => p.score }, 'score');
       n = l.length; total = sn.players.length; cols = 3;
       head = th('rkp', 'name', 'Name') + th('rkp', 'ally', 'Alliance') + th('rkp', 'score', 'Score', 1);
@@ -451,7 +453,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   function drawAll() {
     const { ds, rows } = allRows(), q = fold(rkQ);
     const val = { name: r => r.name, ally: r => r.ally, total: r => r.total, ...Object.fromEntries(ds.flatMap(d => [[d, r => r.on[d] && r.on[d].score], ['m' + d, r => r.on[d] && r.on[d].masked ? 1 : 0]])) };
-    const l = sorted('all', rows.filter(r => inAl(r.ally) && (nameHit(r.name, q) || [...r.was].some(n => fold(n).includes(q)))), val, 'total');
+    const l = sorted('all', rows.filter(r => inAl(r.ally) && (!mk || r.masked) && (nameHit(r.name, q) || [...r.was].some(n => fold(n).includes(q)))), val, 'total');
     const head = th('all', 'name', 'Name') + th('all', 'ally', 'Alliance') + ds.map(d => th('all', d, esc(dayName(d)), 1) + th('all', 'm' + d, 'Masked')).join('');
     // each date: the player's points, then Masked (Yes when they were masked in that contest)
     const was = r => [...r.was].filter(n => n !== r.name);
@@ -470,7 +472,8 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     if (e.target.closest('[data-csv]')) return $('csv').click();
     if (sortClick(e, redraw)) return;
     const c = e.target.closest('[data-al]'); if (c) { al = c.dataset.al; return redraw(); }
-    const r = e.target.closest('[data-rk]'); if (r) { rkWhat = r.dataset.rk; rkQ = ''; al = ''; drawRanking(); }
+    if (e.target.closest('[data-mk]')) { mk = !mk; return redraw(); }
+    const r = e.target.closest('[data-rk]'); if (r) { rkWhat = r.dataset.rk; rkQ = ''; al = ''; mk = false; drawRanking(); }
   });
   const pick = v => { view = v; try { localStorage.setItem('frost.view', v); } catch {} draw(); };
   $('days').onclick = e => { const b = e.target.closest('[data-day]'); if (b && (b.dataset.day === ALL || days[b.dataset.day] || bdays[b.dataset.day])) { day = b.dataset.day; read = days[day] || null; draw(); } };
