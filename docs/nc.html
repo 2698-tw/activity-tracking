@@ -145,7 +145,7 @@ h2.sec:first-child{margin-top:0}
   <div id="out"></div>
 </div>
 <script src="last.js?v=1"></script>
-<script src="who.js?v=2"></script>
+<script src="who.js?v=3"></script>
 <script>
 // inside the site (index.html#nc) the site's own header has the way back
 if (window.frameElement) document.getElementById('homeLink').remove();
@@ -240,7 +240,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     const ds = dates().filter(d => (days[d].players || []).length), by = new Map();
     for (const d of ds) for (const [name, score, ally, pid] of days[d].players) {
       if (!name) continue;
-      const k = who.key(name, pid), ro = who.row(k);
+      const k = who.key(name, pid, ally), ro = who.row(k);
       const r = by.get(k) || { key: k, name: ro ? ro.name : name, ally: '', on: {}, sum: 0, was: new Set() };
       if (!ro) r.name = name;
       r.was.add(name);

@@ -4,7 +4,7 @@
 // (pid: the same in every event, made from the UID, never the UID). A row read before there were ids is matched
 // by name to the roster (api/roster), its past names included (every card's reads note a new name). A name two
 // roster players share, and a player the roster has never seen, stay as the name they were read under.
-// Who(roster, sheet) → { key(name, pid), row(key), search(key) }: a key for the player, their roster row (name now,
+// Who(roster, sheet) → { key(name, pid, ally), row(key), search(key) }: a key for the player, their roster row (name now,
 // alliance) if any, and their search name where a look-up by in-game name could pick the wrong one. sheet: the roster
 // sheet's search names (api/search-names .roster, [in-game name, alliance, search name]). search(key) is
 //  - the sheet's, when one row of the player's alliance has their in-game name (Killua: 698W's and 698C's);
@@ -22,10 +22,18 @@ window.Who = function (ro, sheet) {
     for (const n of [x.name, ...(x.names || [])]) if (n) { add(n, keyOf(x)); if (fold(n)) add('~' + fold(n), keyOf(x)); }
   }
   for (const n of two) byName.delete(n);
+  // a name two roster players share, read before the reads had ids: the read's alliance tells them apart when only one
+  // of them is in it (NC's reads carry the alliance; Skadi 698N and Skadi 698C)
+  const byAlly = new Map(), twoA = new Set();
+  for (const x of (ro && ro.rows) || []) for (const n of [x.name, ...(x.names || [])]) if (n && x.alliance) {
+    const k = n + '|' + x.alliance; if (byAlly.has(k) && byAlly.get(k) !== keyOf(x)) twoA.add(k); else byAlly.set(k, keyOf(x));
+  }
+  for (const k of twoA) byAlly.delete(k);
   const bySheet = new Map();                       // in-game name|alliance → the sheet's search names for it
   for (const [n, a, s] of sheet || []) if (n && s) { const k = n + '|' + a; if (!bySheet.has(k)) bySheet.set(k, new Set()); bySheet.get(k).add(s); }
   return {
-    key: (name, pid) => pid ? 'p:' + pid : byName.get(name) || (fold(name) !== '' && byName.get('~' + fold(name))) || 'n:' + name,
+    key: (name, pid, ally) => pid ? 'p:' + pid : byName.get(name) || (fold(name) !== '' && byName.get('~' + fold(name)))
+      || (ally && byAlly.get(name + '|' + ally)) || 'n:' + name,
     row: k => byKey.get(k) || null,
     search: k => {
       const x = byKey.get(k);
