@@ -198,6 +198,7 @@ td.cp{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
   <div id="out"></div>
 </div>
 <script src="last.js?v=1"></script>
+<script src="who.js?v=1"></script>
 <script>
 // inside the site (index.html#frost) the site's own header has the way back
 if (window.frameElement) document.getElementById('homeLink').remove();
@@ -262,7 +263,9 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   let view = 'sum';
   try { const v = localStorage.getItem('frost.view'); if (v === 'pl' || v === 'bt' || v === 'rk') view = v; } catch {}
   // the last reads (this browser's, last.js) at once, then the Worker's when they come, drawn again only if one changed
-  function show(j, jb, jn, first) {
+  let who = Who(null);                             // who a read is, through name changes (who.js)
+  function show(j, jb, jn, first, jr) {
+    if (jr) who = Who(jr);
     if (jn) snames = [nameMap(jn.roster), nameMap(jn.raw)];
     if (jn) for (const [name, ally] of jn.roster || []) for (const k of [name, '~' + fold(name)]) if (ally && !allies.has(k)) allies.set(k, ally);
     days = (j && j.days) || {};
@@ -278,12 +281,12 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     $('days').hidden = false; read = days[day] || null; draw(); $('csv').disabled = false;
   }
   async function load() {
-    const L = Last.post(API + '/frost-read'), Lb = Last.post(API + '/frost-battle'), Ln = Last.post(API + '/search-names');
-    if (L.now) show(L.now, Lb.now, Ln.now, true);
+    const L = Last.post(API + '/frost-read'), Lb = Last.post(API + '/frost-battle'), Ln = Last.post(API + '/search-names'), Lr = Last.post(API + '/roster');
+    if (L.now) show(L.now, Lb.now, Ln.now, true, Lr.now);
     else $('out').innerHTML = '<div class="map">' + '<div class="skel bf"></div>'.repeat(3) + '</div>';
     try {
-      const [j, jb, jn] = await Promise.all([L.next, Lb.next.catch(() => null), Ln.next.catch(() => null)]);
-      if (!L.now || !L.same || (jb && !Lb.same) || (jn && !Ln.same)) show(j, jb || Lb.now, jn || Ln.now, !L.now);
+      const [j, jb, jn, jr] = await Promise.all([L.next, Lb.next.catch(() => null), Ln.next.catch(() => null), Lr.next.catch(() => null)]);
+      if (!L.now || !L.same || (jb && !Lb.same) || (jn && !Ln.same) || (jr && !Lr.same)) show(j, jb || Lb.now, jn || Ln.now, !L.now, jr || Lr.now);
     } catch (e) {
       if (L.now) return;                                           // the last reads stay
       $('status').className = 'status grow bad'; $('status').textContent = '✗ ' + (e.message || e);
@@ -430,23 +433,29 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     inp.oninput = () => { rkQ = inp.value; const at = inp.selectionStart; redraw(); const k = $('rkQ'); k.focus(); k.setSelectionRange(at, at); };
     $('rkX').onclick = e => { e.preventDefault(); rkQ = ''; redraw(); $('rkQ').focus(); };
   }
-  // All dates: every S2698 player of the battles' Individual Rankings, their rank and score on each date
+  // All dates: every S2698 player of the battles' Individual Rankings, their rank and score on each date. A player
+  // who changed names is one row, under their name now (the roster's, else the latest contest's), with its alliance
   function allRows() {
     const ds = Object.keys(bdays).sort(), by = new Map();
     for (const d of ds) for (const p of bdays[d].players || []) {
       if (String(p.server) !== US || !p.name) continue;
-      const r = by.get(p.name) || { name: p.name, masked: false, on: {}, total: 0 };
-      r.on[d] = p; r.total += p.score || 0; r.masked = r.masked || p.masked; by.set(p.name, r);
+      const k = who.key(p.name, p.pid), ro = who.row(k);
+      const r = by.get(k) || { name: ro ? ro.name : p.name, masked: false, on: {}, total: 0, was: new Set() };
+      if (!ro) r.name = p.name;
+      r.ally = ro ? (ro.status === 'Left' ? 'Left' : ro.alliance || '') : allyOf(r.name);
+      r.was.add(p.name);
+      r.on[d] = p; r.total += p.score || 0; r.masked = r.masked || p.masked; by.set(k, r);
     }
     return { ds, rows: [...by.values()].sort((a, b) => b.total - a.total) };
   }
   function drawAll() {
     const { ds, rows } = allRows(), q = fold(rkQ);
-    const val = { name: r => r.name, ally: r => allyOf(r.name), total: r => r.total, ...Object.fromEntries(ds.flatMap(d => [[d, r => r.on[d] && r.on[d].score], ['m' + d, r => r.on[d] && r.on[d].masked ? 1 : 0]])) };
-    const l = sorted('all', rows.filter(r => inAl(allyOf(r.name)) && nameHit(r.name, q)), val, 'total');
+    const val = { name: r => r.name, ally: r => r.ally, total: r => r.total, ...Object.fromEntries(ds.flatMap(d => [[d, r => r.on[d] && r.on[d].score], ['m' + d, r => r.on[d] && r.on[d].masked ? 1 : 0]])) };
+    const l = sorted('all', rows.filter(r => inAl(r.ally) && (nameHit(r.name, q) || [...r.was].some(n => fold(n).includes(q)))), val, 'total');
     const head = th('all', 'name', 'Name') + th('all', 'ally', 'Alliance') + ds.map(d => th('all', d, esc(dayName(d)), 1) + th('all', 'm' + d, 'Masked')).join('');
     // each date: the player's points, then Masked (Yes when they were masked in that contest)
-    const body = l.map(r => `<tr><td>${nameCell(r.name)}</td><td>${allyTag(allyOf(r.name))}</td>${ds.map(d => (r.on[d]
+    const was = r => [...r.was].filter(n => n !== r.name);
+    const body = l.map(r => `<tr><td>${nameCell(r.name)}${was(r).length ? ` <span class="rdim" title="Read before as">was ${was(r).map(esc).join(', ')}</span>` : ''}</td><td>${allyTag(r.ally)}</td>${ds.map(d => (r.on[d]
       ? `<td class="n">${N(r.on[d].score)}</td>` : '<td class="n rdim">—</td>') + `<td>${r.on[d] && r.on[d].masked ? 'Yes' : ''}</td>`).join('')}</tr>`).join('');
     $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>Frost Crystal Contest</b>
         <label class="rsearch"><span aria-hidden="true">🔍</span><input id="rkQ" type="text" placeholder="Search a name" autocomplete="off" value="${esc(rkQ)}"><button type="button" class="rclear" id="rkX" title="Clear the search" aria-label="Clear the search"${rkQ ? '' : ' hidden'}>✕</button></label>
@@ -476,7 +485,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     if (day === ALL) {
       const { ds, rows: l } = allRows();
       const rows = [['Name', 'Search name', 'Alliance', ...ds.flatMap(d => [d, 'Masked ' + d])]]
-        .concat(l.map(r => [r.name, searchOf(r.name), allyOf(r.name), ...ds.flatMap(d => [r.on[d] ? r.on[d].score : '', r.on[d] && r.on[d].masked ? 'Yes' : ''])]));
+        .concat(l.map(r => [r.name, searchOf(r.name), r.ally, ...ds.flatMap(d => [r.on[d] ? r.on[d].score : '', r.on[d] && r.on[d].masked ? 'Yes' : ''])]));
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob(['\ufeff' + rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' }));
       a.download = `frost-s${US}-all-dates.csv`;

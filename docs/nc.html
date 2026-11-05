@@ -145,6 +145,7 @@ h2.sec:first-child{margin-top:0}
   <div id="out"></div>
 </div>
 <script src="last.js?v=1"></script>
+<script src="who.js?v=1"></script>
 <script>
 // inside the site (index.html#nc) the site's own header has the way back
 if (window.frameElement) document.getElementById('homeLink').remove();
@@ -198,8 +199,10 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   const nameHit = (name, f) => !f || fold(name).includes(f) || fold(searchOf(name)).includes(f);
 
   // the last read (this browser's, last.js) at once, then the Worker's when it comes, drawn again only if it changed
-  function show(j, jn) {
+  let who = Who(null);                             // who a read is, through name changes (who.js)
+  function show(j, jn, jr) {
     if (jn) snames = [nameMap(jn.roster), nameMap(jn.raw)];
+    if (jr) who = Who(jr);
     days = (j && j.days) || {};
     if (day !== ALL && !days[day]) day = ALL;
     if (!Object.keys(days).length) {
@@ -210,11 +213,11 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     $('days').hidden = false; draw(); $('csv').disabled = false;
   }
   async function load() {
-    const L = Last.post(API + '/nc-read'), Ln = Last.post(API + '/search-names');
-    if (L.now) show(L.now, Ln.now); else $('out').innerHTML = '<div class="skel"></div>';
+    const L = Last.post(API + '/nc-read'), Ln = Last.post(API + '/search-names'), Lr = Last.post(API + '/roster');
+    if (L.now) show(L.now, Ln.now, Lr.now); else $('out').innerHTML = '<div class="skel"></div>';
     try {
-      const [j, jn] = await Promise.all([L.next, Ln.next.catch(() => null)]);
-      if (!L.now || !L.same || (jn && !Ln.same)) show(j, jn || Ln.now);
+      const [j, jn, jr] = await Promise.all([L.next, Ln.next.catch(() => null), Lr.next.catch(() => null)]);
+      if (!L.now || !L.same || (jn && !Ln.same) || (jr && !Lr.same)) show(j, jn || Ln.now, jr || Lr.now);
     } catch (e) {
       if (L.now) return;                                           // the last read stays
       $('status').className = 'status grow bad'; $('status').textContent = '✗ ' + (e.message || e);
@@ -231,22 +234,27 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     day === ALL ? drawAll() : drawDay();
   }
 
-  // All: every player of the Points Logs, ranked by their scores on every date together, one column per date
+  // All: every player of the Points Logs, ranked by their scores on every date together, one column per date.
+  // A player who changed names is one row, under their name now (the roster's, else the latest battle's)
   function allRows() {
     const ds = dates().filter(d => (days[d].players || []).length), by = new Map();
-    for (const d of ds) for (const [name, score, ally] of days[d].players) {
+    for (const d of ds) for (const [name, score, ally, pid] of days[d].players) {
       if (!name) continue;
-      const r = by.get(name) || { name, ally: '', on: {}, sum: 0 };
-      r.on[d] = score; r.sum += score; r.ally = ally || r.ally; by.set(name, r);    // the latest battle's alliance
+      const k = who.key(name, pid), ro = who.row(k);
+      const r = by.get(k) || { name: ro ? ro.name : name, ally: '', on: {}, sum: 0, was: new Set() };
+      if (!ro) r.name = name;
+      r.was.add(name);
+      r.on[d] = (r.on[d] || 0) + score; r.sum += score; r.ally = ally || r.ally; by.set(k, r);    // the latest battle's alliance
     }
     return { ds, rows: [...by.values()].sort((a, b) => b.sum - a.sum).map((r, i) => ({ ...r, rank: i + 1 })) };
   }
   function drawAll() {
     const { ds, rows } = allRows(), f = fold(q);
     const val = { name: r => r.name, ally: r => r.ally, sum: r => r.sum, ...Object.fromEntries(ds.map(d => [d, r => r.on[d]])) };
-    const l = sorted('all', rows.filter(r => inAl(r.ally) && nameHit(r.name, f)), val, 'sum');
+    const l = sorted('all', rows.filter(r => inAl(r.ally) && (nameHit(r.name, f) || [...r.was].some(n => fold(n).includes(f)))), val, 'sum');
     const head = th('all', 'name', 'Name') + th('all', 'ally', 'Alliance') + ds.map(d => th('all', d, esc(dayName(d)), 1)).join('');
-    const body = l.map(r => `<tr><td>${nameCell(r.name)}</td><td>${allyTag(r.ally)}</td>${ds.map(d => r.on[d] != null
+    const was = r => [...r.was].filter(n => n !== r.name);
+    const body = l.map(r => `<tr><td>${nameCell(r.name)}${was(r).length ? ` <span class="rdim" title="Read before as">was ${was(r).map(esc).join(', ')}</span>` : ''}</td><td>${allyTag(r.ally)}</td>${ds.map(d => r.on[d] != null
       ? `<td class="n">${N(r.on[d])}</td>` : '<td class="n rdim">—</td>').join('')}</tr>`).join('');
     $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>Neutral City</b>
         <label class="rsearch"><span aria-hidden="true">🔍</span><input id="q" type="text" placeholder="Search a name" autocomplete="off" value="${esc(q)}"><button type="button" class="rclear" id="qx" title="Clear the search" aria-label="Clear the search"${q ? '' : ' hidden'}>✕</button></label>

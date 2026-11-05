@@ -1629,11 +1629,12 @@ export class RosterStore {
   // Individual Ranking: ours are named from the roster by UID. No UID is kept.
   async battleAdd(b) {
     const roster = await this.load(), named = uid => (uid && roster[uid] && roster[uid].name) || '';
+    const pids = await this.pids(b.players.map(p => p.uid).filter(Boolean));
     const snap = {
       at: Date.now(),
       status: b.status.map(f => ({ ...f, mines: f.mines.map(({ uid, ...m }) => ({ ...m, name: m.name || named(uid) })) })),
       servers: b.servers,
-      players: b.players.map(({ uid, ...p }) => ({ ...p, name: p.name || named(uid) })),
+      players: b.players.map(({ uid, ...p }) => ({ ...p, name: p.name || named(uid), ...(pids[uid] ? { pid: pids[uid] } : {}) })),
     };
     const st = this.state.storage, key = 'frost:battle:' + b.day;
     const old = [...(await st.list({ prefix: key })).keys()].filter(k => k !== key);
@@ -1688,7 +1689,9 @@ export class RosterStore {
         // each player's alliance from the roster by UID (Left for one who has left), and the UID dropped
         const roster = await this.load();
         const ally = uid => { const r = uid && roster[uid]; return r ? (r.status === 'Left' ? 'Left' : r.alliance || '') : ''; };
-        const named = l => l.map(([name, score, uid]) => [name, score, ally(uid)]);
+        // and each player's id across events (pids), for the Player Summary
+        const pid = await this.pids([...new Set([...Object.values(days), ...Object.values(cities).flatMap(Object.values)].flat().map(p => p[2]).filter(Boolean))]);
+        const named = l => l.map(([name, score, uid]) => pid[uid] ? [name, score, ally(uid), pid[uid]] : [name, score, ally(uid)]);
         const dates = [...new Set(Object.keys(days).concat(summary ? [summary.day] : []))];
         for (const d of dates) {
           const v = (await st.get('nc:day:' + d)) || {};
@@ -1723,6 +1726,14 @@ export class RosterStore {
     if (!salt) { salt = crypto.randomUUID(); await st.put('salt', salt); }
     const out = {};
     for (const k of keys) out[k] = toHex(await crypto.subtle.digest('SHA-256', te.encode(salt + '|' + ns + '|' + k))).slice(0, 16);
+    return out;
+  }
+  // A player's id across every event (cards, Frost Crystal, Neutral City and the roster), so the Player
+  // Summary can put a renamed player's events together: made from the UID with the same salt, never the UID.
+  // Only players read with a UID have one (not a player added by hand, nor one read by name alone).
+  async pids(uids) {
+    const all = await this.ids('player', uids.filter(u => /^\d{5,20}$/.test(String(u))).map(String)), out = {};
+    for (const u of uids) out[u] = all[String(u)] || '';
     return out;
   }
   async keysOf(ns, ids, map) {
@@ -1780,8 +1791,8 @@ export class RosterStore {
   // '' for none; to: '' for none)
   async list() {
     const rows = await this.load(), reads = (await this.state.storage.get('reads')) || {}, moves = (await this.state.storage.get('moves')) || [];
-    const ok = new Set([...ROSTER_ALLIANCES, ...await this.alliances()]), ids = await this.ids('ro', Object.keys(rows));
-    return { reads, rows: Object.entries(rows).filter(([, r]) => ok.has(r.alliance)).map(([k, { uid, pin, ...r }]) => ({ id: ids[k], ...r })),
+    const ok = new Set([...ROSTER_ALLIANCES, ...await this.alliances()]), ids = await this.ids('ro', Object.keys(rows)), pids = await this.pids(Object.keys(rows));
+    return { reads, rows: Object.entries(rows).filter(([, r]) => ok.has(r.alliance)).map(([k, { uid, pin, ...r }]) => ({ id: ids[k], ...(pids[k] ? { pid: pids[k] } : {}), ...r })),
              moves: moves.slice().reverse().map(x => ({ m: x.m, name: (rows[x.k] && rows[x.k].name) || x.name, from: x.from, to: x.to, at: x.at,
                ...(x.kind === 'name' ? { kind: 'name', ally: x.ally || (rows[x.k] && rows[x.k].alliance) || '' } : {}) })) };
   }
@@ -1967,13 +1978,13 @@ export class RosterStore {
     const who = (await this.state.storage.get(ns + ':who')) || {}, roster = await this.load();
     const days = await this.state.storage.list({ prefix: ns + ':day:' });
     const dates = [...days.keys()].map(k => k.slice(ns.length + 5)).sort();
-    const ids = await this.ids(ns, Object.keys(who));
+    const ids = await this.ids(ns, Object.keys(who)), pids = await this.pids(Object.keys(who));
     const scores = ns === 'et' ? await this.state.storage.list({ prefix: 'et:pts:' }) : new Map();
     const rows = Object.entries(who).map(([key, w]) => {
       const p = {}, sc = {};
       for (const d of dates) { const v = days.get(ns + ':day:' + d)[key]; if (v != null) p[d] = v; }
       for (const [k, s] of scores) if (s[key] != null) sc[k.slice(7)] = s[key];
-      const ro = roster[key], ally = ro ? (ro.status === 'Left' ? 'Left' : ro.alliance) : w.ally, link = ro ? { roster: 1, ...(ro.status === 'Left' ? { left: 1 } : {}) } : {};
+      const ro = roster[key], ally = ro ? (ro.status === 'Left' ? 'Left' : ro.alliance) : w.ally, link = { ...(ro ? { roster: 1, ...(ro.status === 'Left' ? { left: 1 } : {}) } : {}), ...(pids[key] ? { pid: pids[key] } : {}) };
       return ns === 'st' ? { id: ids[key], name: w.name, ally, ...link, type: w.type || '', bests: bestsOf(w), pts: p }
                          : { id: ids[key], name: w.name, ally, ...link, pts: p, ...(ns === 'et' ? { score: sc } : {}) };
     });

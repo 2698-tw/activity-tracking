@@ -116,6 +116,7 @@ button,.btn{font:inherit;font-weight:600;border:1px solid var(--line);background
 </div>
 <div id="room" aria-hidden="true"></div>
 <script src="last.js?v=1"></script>
+<script src="who.js?v=1"></script>
 <script>
 // inside the site (index.html#player) the site's own header has the way back
 if (window.frameElement) document.getElementById('homeLink').remove();
@@ -151,26 +152,33 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     { id: 'frost', name: 'Frost Crystal Contest', what: 'individual points' },
     { id: 'nc', name: 'Neutral City', what: 'individual points' },
   ];
-  let rounds = [], players = new Map(), read = {}, q = '', who = '';   // the season's rounds; name → {ally, v: {event: {round: value}}}; event → rounds read
+  let rounds = [], players = new Map(), read = {}, q = '', who = '';   // the season's rounds; a player's key → {name, ally, v: {event: {round: value}}}; event → rounds read; the player shown (key)
 
   // a date's round: the round running at noon (UTC) that day; dates before the season count as round 1
   const roundOf = d => { const t = Date.parse(d + 'T12:00:00Z') / 1000, r = rounds.find(x => x.st <= t && t < x.et); return r ? r.round : t < rounds[0].st ? rounds[0].round : null; };
-  // one value for a player on a date; a round read more than once keeps its latest date
-  function put(ev, name, ally, d, v) {
-    const r = roundOf(d); if (!name || r == null) return;
-    const p = players.get(name) || { name, ally: '', v: {}, at: {} };
-    if (ally) p.ally = ally;
+  // who a read is: one player through their name changes (who.js)
+  let who_ = Who(null);
+  // one value for a player on a date; a round read more than once keeps its latest date. The player's name: the
+  // roster's (their name now), else the one they were last read under
+  function put(ev, name0, ally, d, v, pid) {
+    const r = roundOf(d); if (!name0 || r == null) return;
+    const key = who_.key(name0, pid), ro = who_.row(key);
+    const p = players.get(key) || { key, name: ro ? ro.name : name0, ally: ro ? ro.alliance || '' : '', v: {}, at: {}, was: new Set(), seen: '' };
+    p.was.add(name0);
+    if (!ro && d >= p.seen) { p.name = name0; p.seen = d; }
+    if (ally && (!ro || !p.ally)) p.ally = ally;
     const k = ev + ':' + r;
     if (!(k in p.at) || d >= p.at[k]) { (p.v[ev] = p.v[ev] || {})[r] = Number(v) || 0; p.at[k] = d; }
-    players.set(name, p);
+    players.set(key, p);
   }
+  const wasNames = p => [...p.was].filter(n => n !== p.name);
   const seen = (ev, d) => { const r = roundOf(d); if (r != null) (read[ev] = read[ev] || new Set()).add(r); };
 
-  const LISTS = ['/schedule', '/wb', '/st', '/et', '/ma', '/frost-battle', '/nc-read', '/search-names'];
+  const LISTS = ['/schedule', '/wb', '/st', '/et', '/ma', '/frost-battle', '/nc-read', '/search-names', '/roster'];
   // every list's last answer (this browser's, last.js, the cards' and frames' too) at once, then the Worker's
   // when they are all in, drawn again only if one changed
-  function take([ev, wb, st, et, ma, fb, nc, sn]) {
-    players = new Map(); read = {};
+  function take([ev, wb, st, et, ma, fb, nc, sn, ro]) {
+    players = new Map(); read = {}; who_ = Who(ro);
     if (sn) snames = [nameMap(sn.roster), nameMap(sn.raw)];
     rounds = (ev && ev.rounds) || [];
     if (!rounds.length) throw new Error('the season\'s rounds are not read yet (the bookmark\'s Read events)');
@@ -179,16 +187,16 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     for (const [id, j, f] of [['wb', wb, r => r.pts], ['st', st, r => r.pts], ['et', et, r => r.score], ['ma', ma, r => r.pts]]) {
       if (!j) continue;
       (j.dates || []).forEach(d => seen(id, d));
-      for (const r of j.rows || []) for (const [d, v] of Object.entries(f(r) || {})) put(id, r.name, r.ally, d, sum(v));
+      for (const r of j.rows || []) for (const [d, v] of Object.entries(f(r) || {})) put(id, r.name, r.ally, d, sum(v), r.pid);
     }
     for (const [d, b] of Object.entries((fb && fb.days) || {})) {
       seen('frost', d);
-      for (const p of b.players || []) if (String(p.server) === String(US)) put('frost', p.name, '', d, p.score);
+      for (const p of b.players || []) if (String(p.server) === String(US)) put('frost', p.name, '', d, p.score, p.pid);
     }
     for (const [d, b] of Object.entries((nc && nc.days) || {})) {
       if (!(b.players || []).length) continue;
       seen('nc', d);
-      for (const [name, score, ally] of b.players) put('nc', name, ally, d, score);
+      for (const [name, score, ally, pid] of b.players) put('nc', name, ally, d, score, pid);
     }
   }
   async function load() {
@@ -223,7 +231,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
       const v = p.v[e.id] && p.v[e.id][r.round];
       return v ? `<td class="n">${e.yes ? 'Yes' : N(v)}</td>` : '<td class="n no">No</td>';
     };
-    $('body').innerHTML = `<div class="who"><b>${nameCell(p.name)}</b>${allyTag(p.ally)}${wbTag(p)}</div>
+    $('body').innerHTML = `<div class="who"><b>${nameCell(p.name)}</b>${allyTag(p.ally)}${wbTag(p)}${wasNames(p).length ? `<span class="rdim">was ${wasNames(p).map(esc).join(', ')}</span>` : ''}</div>
       <div class="rbody"><table class="rtable wbtable"><thead><tr><th>Event</th>${rounds.map(r => `<th class="n">Round ${r.round}</th>`).join('')}</tr></thead>
       <tbody>${EVENTS.map(e => `<tr><td>${esc(e.name)}<small>${esc(e.what)}</small></td>${rounds.map(r => cell(e, r)).join('')}</tr>`).join('')}</tbody></table></div>`;
   }
@@ -233,8 +241,8 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   let hits = [], at = -1;
   function openList() {
     const inp = $('q'), drop = $('drop'), f = fold(inp.value);
-    const starts = p => fold(p.name).startsWith(f) || fold(searchOf(p.name)).startsWith(f) ? 0 : 1;   // names that start with it first
-    hits = f ? [...players.values()].filter(p => nameHit(p.name, f)).sort((a, b) => starts(a) - starts(b) || a.name.localeCompare(b.name)) : [];
+    const starts = p => [p.name, searchOf(p.name), ...p.was].some(n => fold(n).startsWith(f)) ? 0 : 1;   // names that start with it first
+    hits = f ? [...players.values()].filter(p => nameHit(p.name, f) || [...p.was].some(n => fold(n).includes(f))).sort((a, b) => starts(a) - starts(b) || a.name.localeCompare(b.name)) : [];
     at = hits.length ? 0 : -1;
     if (!f) return closeList();
     drop.innerHTML = hits.length
@@ -257,7 +265,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   }
   function pick(i) {
     const p = hits[i]; if (!p) return;
-    who = p.name; $('q').value = p.name; $('qx').hidden = false; closeList(); draw();
+    who = p.key; $('q').value = p.name; $('qx').hidden = false; closeList(); draw();
   }
   // inside the site the frame is as tall as this page: the open list makes the page that much taller, so it is never cut off
   function room() {
@@ -270,7 +278,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   function wire() {
     const inp = $('q');
     inp.oninput = () => { q = inp.value; $('qx').hidden = !q; openList(); };
-    inp.onfocus = () => { if (inp.value && !players.has(inp.value)) openList(); };
+    inp.onfocus = () => { if (inp.value && !(players.get(who) && players.get(who).name === inp.value)) openList(); };
     inp.onkeydown = e => {
       const open = !$('drop').hidden;
       if (e.key === 'ArrowDown') { e.preventDefault(); open ? mark(at + 1) : openList(); }
