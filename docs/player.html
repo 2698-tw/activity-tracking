@@ -116,7 +116,7 @@ button,.btn{font:inherit;font-weight:600;border:1px solid var(--line);background
 </div>
 <div id="room" aria-hidden="true"></div>
 <script src="last.js?v=1"></script>
-<script src="who.js?v=3"></script>
+<script src="who.js?v=4"></script>
 <script>
 // inside the site (index.html#player) the site's own header has the way back
 if (window.frameElement) document.getElementById('homeLink').remove();
@@ -162,7 +162,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   // roster's (their name now), else the one they were last read under
   function put(ev, name0, ally, d, v, pid) {
     const r = roundOf(d); if (!name0 || r == null) return;
-    const key = who_.key(name0, pid, ally), ro = who_.row(key);
+    const key = who_.key(name0, pid, ally, d), ro = who_.row(key);
     const p = players.get(key) || { key, name: ro ? ro.name : name0, ally: ro ? ro.alliance || '' : '', v: {}, at: {}, was: new Set(), seen: '' };
     p.was.add(name0);
     if (!ro && d >= p.seen) { p.name = name0; p.seen = d; }

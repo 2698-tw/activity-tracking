@@ -198,7 +198,7 @@ td.cp{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
   <div id="out"></div>
 </div>
 <script src="last.js?v=1"></script>
-<script src="who.js?v=3"></script>
+<script src="who.js?v=4"></script>
 <script>
 // inside the site (index.html#frost) the site's own header has the way back
 if (window.frameElement) document.getElementById('homeLink').remove();
@@ -255,6 +255,8 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   // each player's alliance, from the roster workbook's Alliance Rosters tab by name (the contest has no alliance)
   let allies = new Map();
   const allyOf = name => allies.get(name) || allies.get('~' + fold(name)) || '';
+  // a ranking row's alliance: its roster player's (matched by id, or by name and the alliances' word), else by name
+  const allyAt = p => { const ro = p.name ? who.row(who.key(p.name, p.pid, '', day)) : null; return ro ? (ro.status === 'Left' ? 'Left' : ro.alliance || '') : allyOf(p.name); };
   const nameHit = (name, q, key) => !q || fold(name).includes(q) || fold(searchOf(name, key)).includes(q);
 
   const top = (s, n = TOP) => ((read.servers || {})[s] || []).slice(0, n);
@@ -414,11 +416,11 @@ if (window.frameElement) document.getElementById('homeLink').remove();
       head = th('rks', 'server', 'Server') + th('rks', 'crystals', 'Crystals', 1);
       rows = l.map(x => `<tr class="${String(x.server) === US ? 'us' : ''}"><td>S${esc(x.server)}</td><td class="n">${N(x.crystals)}</td></tr>`);
     } else {
-      const l = sorted('rkp', sn.players.filter(p => inAl(allyOf(p.name)) && (!mk || p.masked) && nameHit(p.name, fold(rkQ), who.key(p.name, p.pid))),
-        { name: p => p.name, ally: p => allyOf(p.name), score: p => p.score }, 'score');
+      const l = sorted('rkp', sn.players.filter(p => inAl(allyAt(p)) && (!mk || p.masked) && nameHit(p.name, fold(rkQ), who.key(p.name, p.pid, '', day))),
+        { name: p => p.name, ally: p => allyAt(p), score: p => p.score }, 'score');
       n = l.length; total = sn.players.length; cols = 3;
       head = th('rkp', 'name', 'Name') + th('rkp', 'ally', 'Alliance') + th('rkp', 'score', 'Score', 1);
-      rows = l.map(p => `<tr><td>${p.name ? nameCell(p.name, who.key(p.name, p.pid)) : 'Master Thief'}${p.masked ? maskIcon : ''}</td><td>${allyTag(allyOf(p.name))}</td><td class="n">${N(p.score)}</td></tr>`);
+      rows = l.map(p => `<tr><td>${p.name ? nameCell(p.name, who.key(p.name, p.pid, '', day)) : 'Master Thief'}${p.masked ? maskIcon : ''}</td><td>${allyTag(allyAt(p))}</td><td class="n">${N(p.score)}</td></tr>`);
     }
     $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>Frost Crystal ranking</b>
         <label class="rsearch"><span aria-hidden="true">🔍</span><input id="rkQ" type="text" placeholder="${rkWhat === 'servers' ? 'Search a server or name' : 'Search a name'}" autocomplete="off" value="${esc(rkQ)}"><button type="button" class="rclear" id="rkX" title="Clear the search" aria-label="Clear the search"${rkQ ? '' : ' hidden'}>✕</button></label>
@@ -441,7 +443,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     const ds = Object.keys(bdays).sort(), by = new Map();
     for (const d of ds) for (const p of bdays[d].players || []) {
       if (String(p.server) !== US || !p.name) continue;
-      const k = who.key(p.name, p.pid), ro = who.row(k);
+      const k = who.key(p.name, p.pid, '', d), ro = who.row(k);
       const r = by.get(k) || { key: k, name: ro ? ro.name : p.name, masked: false, on: {}, total: 0, was: new Set() };
       if (!ro) r.name = p.name;
       r.ally = ro ? (ro.status === 'Left' ? 'Left' : ro.alliance || '') : allyOf(r.name);
@@ -499,7 +501,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
       const sn = battle();
       if (!sn) return;
       const rows = [['Kind', 'Rank', 'Server', 'Name', 'Search name', 'Alliance', 'Crystals / score', 'Masked']]
-        .concat(sn.servers.map(x => ['Server', x.rank, x.server, '', '', '', x.crystals, '']), sn.players.map(p => ['Player', p.rank, p.server, p.name, searchOf(p.name, who.key(p.name, p.pid)), allyOf(p.name), p.score, p.masked ? 'yes' : '']));
+        .concat(sn.servers.map(x => ['Server', x.rank, x.server, '', '', '', x.crystals, '']), sn.players.map(p => ['Player', p.rank, p.server, p.name, searchOf(p.name, who.key(p.name, p.pid, '', day)), allyAt(p), p.score, p.masked ? 'yes' : '']));
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob(['\ufeff' + rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv' }));
       a.download = `frost-battle-${day}.csv`;

@@ -12,6 +12,10 @@
 //  - '' (none) for an old read, from before the reads had ids, of a name two roster players share: whose it was is
 //    not known;
 //  - undefined otherwise: the page looks it up by name, as before.
+// Reads with no alliance and no id whose player the alliances confirmed: contest date|name → alliance
+const READ_ALLY = {
+  '2026-11-01|Killua': '698C',     // Frost Crystal Contest, Nov 1: 111,168, masked; Killua Central (698C)
+};
 window.Who = function (ro, sheet) {
   const fold = s => String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, '');
   const keyOf = x => x.pid ? 'p:' + x.pid : 'r:' + x.name;
@@ -32,8 +36,12 @@ window.Who = function (ro, sheet) {
   const bySheet = new Map();                       // in-game name|alliance → the sheet's search names for it
   for (const [n, a, s] of sheet || []) if (n && s) { const k = n + '|' + a; if (!bySheet.has(k)) bySheet.set(k, new Set()); bySheet.get(k).add(s); }
   return {
-    key: (name, pid, ally) => pid ? 'p:' + pid : byName.get(name) || (fold(name) !== '' && byName.get('~' + fold(name)))
-      || (ally && byAlly.get(name + '|' + ally)) || 'n:' + name,
+    // day: the read's date, for a read the alliances placed by hand (READ_ALLY)
+    key: (name, pid, ally, day) => {
+      if (pid) return 'p:' + pid;
+      const a = ally || (day && READ_ALLY[day + '|' + name]);
+      return byName.get(name) || (fold(name) !== '' && byName.get('~' + fold(name))) || (a && byAlly.get(name + '|' + a)) || 'n:' + name;
+    },
     row: k => byKey.get(k) || null,
     search: k => {
       const x = byKey.get(k);
