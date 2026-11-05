@@ -58,6 +58,7 @@
   let joins = null, joinsAt = 0, joinsMap = null;
   const joinsOf = j => {
     const ro = (j && j.rows) || [], first = Math.min(...ro.map(x => x.firstAt || Infinity)), m = new Map();
+    twins = twinsOf(ro);
     for (const x of ro) {
       const at = x.firstAt && x.firstAt - first > 864e5 / 2 ? x.firstAt : 0;
       for (const n of [x.name, ...(x.names || [])]) if (n) { m.set(n, at); if (fold(n)) m.set('~' + fold(n), at); }
@@ -82,7 +83,11 @@
   }
 
   let namesMap = null;
-  const namesOf = j => [nameMap(j && j.roster), nameMap(j && j.raw)];
+  const namesOf = j => {
+    const seen = new Map(); sheetTwins = new Set();
+    for (const [n, a, s] of (j && j.roster) || []) { const k = n + '|' + a; if (seen.has(k) && seen.get(k) !== s) sheetTwins.add(k); seen.set(k, s); }
+    return [nameMap(j && j.roster), nameMap(j && j.raw)];
+  };
   function askNames() {                                            // the sheet changes; asked again after a while
     if (every10(names, namesAt)) {
       namesAt = Date.now();
@@ -92,11 +97,24 @@
     }
     return names;
   }
-  function searchNames(rows) {
+  // the roster's own search name for an account (by its id), for where a look-up by in-game name could pick the
+  // wrong one: two rows of the sheet with the same in-game name and alliance (Gikey and Gikey Alt; the bookmark told
+  // them apart by Base CP), or an in-game name two roster players share
+  const twinsOf = ro => {
+    const n = new Map(), m = new Map();
+    for (const x of ro || []) n.set(x.name, (n.get(x.name) || 0) + 1);
+    for (const x of ro || []) if (x.pid && x.search) m.set(x.pid, { search: x.search, shared: n.get(x.name) > 1 });
+    return m;
+  };
+  let twins = new Map(), sheetTwins = new Set();   // in-game name|alliance that two of the sheet's rows have
+  function searchNames(rows, roster0) {
+    if (roster0) twins = twinsOf(roster0);
     if (!namesMap) return;
     const [roster, raw] = namesMap;
     for (const r of rows) {
-      const s = withAlly(roster, r) || withAlly(raw, r) || byName(roster, r) || byName(raw, r);
+      const t = r.pid && twins.get(r.pid);
+      const s = (t && sheetTwins.has(r.name + '|' + (r.alliance ?? r.ally)) && t.search) || withAlly(roster, r) || (t && t.shared && t.search)
+        || withAlly(raw, r) || byName(roster, r) || byName(raw, r);
       if (s) r.search = s;
     }
   }
@@ -172,7 +190,7 @@
         for (const r of W.rows) { const v = Object.values(r.pts); r.pts = v.length ? { [d0]: Math.max(...v) } : {}; }
         W.dates = [d0];
       }
-      searchNames(W.rows);                                         // every card: the roster's search names
+      searchNames(W.rows, o.id === 'ro' ? W.rows : null);          // every card: the roster's search names
       if (o.id !== 'ro') joinedAt(W.rows);                         // and when each player joined the server
       for (const id of [...sel]) if (!byId(id)) sel.delete(id);
     }

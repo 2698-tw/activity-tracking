@@ -145,7 +145,7 @@ h2.sec:first-child{margin-top:0}
   <div id="out"></div>
 </div>
 <script src="last.js?v=1"></script>
-<script src="who.js?v=1"></script>
+<script src="who.js?v=2"></script>
 <script>
 // inside the site (index.html#nc) the site's own header has the way back
 if (window.frameElement) document.getElementById('homeLink').remove();
@@ -194,15 +194,15 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     }
     return m;
   }
-  const searchOf = name => { for (const m of snames) { const s = m.get(name) || (fold(name) !== '' && m.get('~' + fold(name))); if (s) return s; } return ''; };
-  const nameCell = name => { const s = searchOf(name); return esc(name) + (s && s !== name ? ` <span class="rdim">(${esc(s)})</span>` : ''); };
-  const nameHit = (name, f) => !f || fold(name).includes(f) || fold(searchOf(name)).includes(f);
+  const searchOf = (name, key) => { if (key) { const s = who.search(key); if (s !== undefined) return s; } for (const m of snames) { const s = m.get(name) || (fold(name) !== '' && m.get('~' + fold(name))); if (s) return s; } return ''; };
+  const nameCell = (name, key) => { const s = searchOf(name, key); return esc(name) + (s && s !== name ? ` <span class="rdim">(${esc(s)})</span>` : ''); };
+  const nameHit = (name, f, key) => !f || fold(name).includes(f) || fold(searchOf(name, key)).includes(f);
 
   // the last read (this browser's, last.js) at once, then the Worker's when it comes, drawn again only if it changed
   let who = Who(null);                             // who a read is, through name changes (who.js)
   function show(j, jn, jr) {
     if (jn) snames = [nameMap(jn.roster), nameMap(jn.raw)];
-    if (jr) who = Who(jr);
+    if (jr) who = Who(jr, jn && jn.roster);
     days = (j && j.days) || {};
     if (day !== ALL && !days[day]) day = ALL;
     if (!Object.keys(days).length) {
@@ -241,7 +241,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     for (const d of ds) for (const [name, score, ally, pid] of days[d].players) {
       if (!name) continue;
       const k = who.key(name, pid), ro = who.row(k);
-      const r = by.get(k) || { name: ro ? ro.name : name, ally: '', on: {}, sum: 0, was: new Set() };
+      const r = by.get(k) || { key: k, name: ro ? ro.name : name, ally: '', on: {}, sum: 0, was: new Set() };
       if (!ro) r.name = name;
       r.was.add(name);
       r.on[d] = (r.on[d] || 0) + score; r.sum += score; r.ally = ally || r.ally; by.set(k, r);    // the latest battle's alliance
@@ -251,10 +251,10 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   function drawAll() {
     const { ds, rows } = allRows(), f = fold(q);
     const val = { name: r => r.name, ally: r => r.ally, sum: r => r.sum, ...Object.fromEntries(ds.map(d => [d, r => r.on[d]])) };
-    const l = sorted('all', rows.filter(r => inAl(r.ally) && (nameHit(r.name, f) || [...r.was].some(n => fold(n).includes(f)))), val, 'sum');
+    const l = sorted('all', rows.filter(r => inAl(r.ally) && (nameHit(r.name, f, r.key) || [...r.was].some(n => fold(n).includes(f)))), val, 'sum');
     const head = th('all', 'name', 'Name') + th('all', 'ally', 'Alliance') + ds.map(d => th('all', d, esc(dayName(d)), 1)).join('');
     const was = r => [...r.was].filter(n => n !== r.name);
-    const body = l.map(r => `<tr><td>${nameCell(r.name)}${was(r).length ? ` <span class="rdim" title="Read before as">was ${was(r).map(esc).join(', ')}</span>` : ''}</td><td>${allyTag(r.ally)}</td>${ds.map(d => r.on[d] != null
+    const body = l.map(r => `<tr><td>${nameCell(r.name, r.key)}${was(r).length ? ` <span class="rdim" title="Read before as">was ${was(r).map(esc).join(', ')}</span>` : ''}</td><td>${allyTag(r.ally)}</td>${ds.map(d => r.on[d] != null
       ? `<td class="n">${N(r.on[d])}</td>` : '<td class="n rdim">—</td>').join('')}</tr>`).join('');
     $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>Neutral City</b>
         <label class="rsearch"><span aria-hidden="true">🔍</span><input id="q" type="text" placeholder="Search a name" autocomplete="off" value="${esc(q)}"><button type="button" class="rclear" id="qx" title="Clear the search" aria-label="Clear the search"${q ? '' : ' hidden'}>✕</button></label>
@@ -336,7 +336,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     let rows, file;
     if (day === ALL) {
       const { ds, rows: l } = allRows();
-      rows = [['Rank', 'Name', 'Search name', 'Alliance', ...ds]].concat(l.map(r => [r.rank, r.name, searchOf(r.name), r.ally, ...ds.map(d => r.on[d] != null ? r.on[d] : '')]));
+      rows = [['Rank', 'Name', 'Search name', 'Alliance', ...ds]].concat(l.map(r => [r.rank, r.name, searchOf(r.name, r.key), r.ally, ...ds.map(d => r.on[d] != null ? r.on[d] : '')]));
       file = `neutral-city-s${US}-all.csv`;
     } else {
       const S = days[day].summary, fields = days[day].cities || {};

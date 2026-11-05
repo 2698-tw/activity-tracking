@@ -116,7 +116,7 @@ button,.btn{font:inherit;font-weight:600;border:1px solid var(--line);background
 </div>
 <div id="room" aria-hidden="true"></div>
 <script src="last.js?v=1"></script>
-<script src="who.js?v=1"></script>
+<script src="who.js?v=2"></script>
 <script>
 // inside the site (index.html#player) the site's own header has the way back
 if (window.frameElement) document.getElementById('homeLink').remove();
@@ -139,9 +139,9 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     }
     return m;
   }
-  const searchOf = name => { for (const m of snames) { const s = m.get(name) || (fold(name) !== '' && m.get('~' + fold(name))); if (s) return s; } return ''; };
-  const nameCell = name => { const s = searchOf(name); return esc(name) + (s && s !== name ? ` <span class="rdim">(${esc(s)})</span>` : ''); };
-  const nameHit = (name, f) => !f || fold(name).includes(f) || fold(searchOf(name)).includes(f);
+  const searchOf = (name, key) => { if (key) { const s = who_.search(key); if (s !== undefined) return s; } for (const m of snames) { const s = m.get(name) || (fold(name) !== '' && m.get('~' + fold(name))); if (s) return s; } return ''; };
+  const nameCell = (name, key) => { const s = searchOf(name, key); return esc(name) + (s && s !== name ? ` <span class="rdim">(${esc(s)})</span>` : ''); };
+  const nameHit = (name, f, key) => !f || fold(name).includes(f) || fold(searchOf(name, key)).includes(f);
 
   // the events, as the rows: each from its card's own data, one value per player per date (the garrison events: Yes or No).
   // Whitebeard is shown on its own, next to the name: the highest level beaten, which carries over from round to round
@@ -178,7 +178,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   // every list's last answer (this browser's, last.js, the cards' and frames' too) at once, then the Worker's
   // when they are all in, drawn again only if one changed
   function take([ev, wb, st, et, ma, fb, nc, sn, ro]) {
-    players = new Map(); read = {}; who_ = Who(ro);
+    players = new Map(); read = {}; who_ = Who(ro, sn && sn.roster);
     if (sn) snames = [nameMap(sn.roster), nameMap(sn.raw)];
     rounds = (ev && ev.rounds) || [];
     if (!rounds.length) throw new Error('the season\'s rounds are not read yet (the bookmark\'s Read events)');
@@ -231,7 +231,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
       const v = p.v[e.id] && p.v[e.id][r.round];
       return v ? `<td class="n">${e.yes ? 'Yes' : N(v)}</td>` : '<td class="n no">No</td>';
     };
-    $('body').innerHTML = `<div class="who"><b>${nameCell(p.name)}</b>${allyTag(p.ally)}${wbTag(p)}${wasNames(p).length ? `<span class="rdim">was ${wasNames(p).map(esc).join(', ')}</span>` : ''}</div>
+    $('body').innerHTML = `<div class="who"><b>${nameCell(p.name, p.key)}</b>${allyTag(p.ally)}${wbTag(p)}${wasNames(p).length ? `<span class="rdim">was ${wasNames(p).map(esc).join(', ')}</span>` : ''}</div>
       <div class="rbody"><table class="rtable wbtable"><thead><tr><th>Event</th>${rounds.map(r => `<th class="n">Round ${r.round}</th>`).join('')}</tr></thead>
       <tbody>${EVENTS.map(e => `<tr><td>${esc(e.name)}<small>${esc(e.what)}</small></td>${rounds.map(r => cell(e, r)).join('')}</tr>`).join('')}</tbody></table></div>`;
   }
@@ -241,12 +241,12 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   let hits = [], at = -1;
   function openList() {
     const inp = $('q'), drop = $('drop'), f = fold(inp.value);
-    const starts = p => [p.name, searchOf(p.name), ...p.was].some(n => fold(n).startsWith(f)) ? 0 : 1;   // names that start with it first
-    hits = f ? [...players.values()].filter(p => nameHit(p.name, f) || [...p.was].some(n => fold(n).includes(f))).sort((a, b) => starts(a) - starts(b) || a.name.localeCompare(b.name)) : [];
+    const starts = p => [p.name, searchOf(p.name, p.key), ...p.was].some(n => fold(n).startsWith(f)) ? 0 : 1;   // names that start with it first
+    hits = f ? [...players.values()].filter(p => nameHit(p.name, f, p.key) || [...p.was].some(n => fold(n).includes(f))).sort((a, b) => starts(a) - starts(b) || a.name.localeCompare(b.name)) : [];
     at = hits.length ? 0 : -1;
     if (!f) return closeList();
     drop.innerHTML = hits.length
-      ? hits.slice(0, MAX).map((x, i) => `<li role="option" id="opt${i}" data-i="${i}" class="${i === at ? 'on' : ''}"><span class="nm">${nameCell(x.name)}</span>${allyTag(x.ally)}</li>`).join('') +
+      ? hits.slice(0, MAX).map((x, i) => `<li role="option" id="opt${i}" data-i="${i}" class="${i === at ? 'on' : ''}"><span class="nm">${nameCell(x.name, x.key)}</span>${allyTag(x.ally)}</li>`).join('') +
         (hits.length > MAX ? `<li class="more">${N(hits.length)} players match: type more of the name.</li>` : '')
       : '<li class="none">No player matches.</li>';
     drop.hidden = false; inp.setAttribute('aria-expanded', 'true');
