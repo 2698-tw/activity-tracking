@@ -712,6 +712,11 @@
   // search name in it, then either name anywhere, then a looser match that ignores fancy letters.
   // Where one step still finds several players, the one whose Base CP is nearest the power wins.
   var CLASS = null;
+  // The roster sheet's in-game names carry a tag where two players share a name, for the sheets' look-ups:
+  // "Killua.C", "Gikey 2", "Skadi2". untag gives the name as the game has it ("Killua", "Gikey", "Skadi"), or ''.
+  // A tagged row is found under the name without its tag too, next to the rows with that name exactly, but only where its
+  // Base CP is near the player's power ("Thor3" is a player of its own, not a tagged Thor); the Base CP then picks.
+  function untag(n) { var m = /^(.*\D)\s?[2-9]$/.exec(n || '') || /^(.+)\.[A-Za-z]$/.exec(n || ''); return m ? m[1].trim() : ''; }
   function loadClasses() {
     return fetch(API + '/roster-class', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('roster ' + r.status)); })
@@ -722,6 +727,7 @@
         (j.rows || []).forEach(function (r) {
           var row = { cls: r[3], cp: Number(r[4]) || 0, search: r[0] || r[1] };
           add('ia|' + r[2] + '|' + r[1], row); add('sa|' + r[2] + '|' + r[0], row); add('i|' + r[1], row); add('s|' + r[0], row);
+          var bare = untag(r[1]); if (bare) { add('ba|' + r[2] + '|' + bare, row); add('b|' + bare, row); }
           var seenF = {};
           [r[1], r[0]].forEach(function (n) { var f = fold(n); if (f && !seenF[f]) { seenF[f] = 1; add('fa|' + r[2] + '|' + f, row); add('f|' + f, row); } });
         });
@@ -732,9 +738,11 @@
     if (!CLASS) return null;
     var k = CLASS.keys, f = fold(name), cp = (power || 0) / 1e6;
     var order = ['ia|' + ally + '|' + name, 'sa|' + ally + '|' + name, 'i|' + name, 's|' + name].concat(f ? ['fa|' + ally + '|' + f, 'f|' + f] : []);
+    var near = function (row) { return cp > 0 && row.cp > 0 && Math.abs(row.cp - cp) <= 0.25 * cp; };
+    var bare = { 0: 'ba|' + ally + '|' + name, 2: 'b|' + name };    // the tagged rows, with the in-game name steps
     for (var i = 0; i < order.length; i++) {
-      var c = k[order[i]];
-      if (!c) continue;
+      var c = (k[order[i]] || []).concat(bare[i] ? (k[bare[i]] || []).filter(near) : []);
+      if (!c.length) continue;
       return c.length === 1 ? c[0] : c.slice().sort(function (a, b) { return Math.abs(a.cp - cp) - Math.abs(b.cp - cp); })[0];
     }
     return null;

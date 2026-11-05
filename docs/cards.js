@@ -40,12 +40,19 @@
   let names = null, namesAt = 0;
   // [in-game name, alliance, search name, weak], oldest first: the newest wins, and an unmatched send
   // ("No Name Match", weak) never replaces a real search name
+  // The roster sheet's in-game names carry a tag where two players share a name, for the sheets' look-ups:
+  // "Killua.C", "Gikey 2", "Skadi2". untag gives the name as the game has it, or ''.
+  const untag = n => { const x = /^(.*\D)\s?[2-9]$/.exec(n || '') || /^(.+)\.[A-Za-z]$/.exec(n || ''); return x ? x[1].trim() : ''; };
   function nameMap(list) {
     const m = new Map(), weakKeys = new Set();
     for (const [name, ally, search, weak] of list || []) for (const k of [name + '|' + ally, name, '~' + fold(name) + '|' + ally, '~' + fold(name)]) {
       if (weak && m.has(k) && !weakKeys.has(k)) continue;
       m.set(k, search); weak ? weakKeys.add(k) : weakKeys.delete(k);
     }
+    // a tagged name under the game's name too (in its alliance, then anywhere): [search name, the tagged name], where one
+    // row only has it that way; two players of one name in one alliance (Gikey 2) are left to the roster (by Base CP)
+    m.bare = new Map();
+    for (const [name, ally, search] of list || []) { const b = untag(name); if (b) for (const k of [b + '|' + ally, b]) m.bare.set(k, m.bare.has(k) && m.bare.get(k)[0] !== search ? [null] : [search, name]); }
     return m;
   }
   const withAlly = (m, r) => { const a = r.alliance ?? r.ally; return m.get(r.name + '|' + a) || m.get('~' + fold(r.name) + '|' + a); };
@@ -85,7 +92,8 @@
   let namesMap = null;
   const namesOf = j => {
     const seen = new Map(); sheetTwins = new Set();
-    for (const [n, a, s] of (j && j.roster) || []) { const k = n + '|' + a; if (seen.has(k) && seen.get(k) !== s) sheetTwins.add(k); seen.set(k, s); }
+    // the sheet's rows under one in-game name in one alliance, plain or tagged (Gikey and Gikey 2)
+    for (const [n, a, s] of (j && j.roster) || []) for (const x of new Set([n, untag(n) || n])) { const k = x + '|' + a; if (seen.has(k) && seen.get(k) !== s) sheetTwins.add(k); seen.set(k, s); }
     return [nameMap(j && j.roster), nameMap(j && j.raw)];
   };
   function askNames() {                                            // the sheet changes; asked again after a while
@@ -103,18 +111,21 @@
   const twinsOf = ro => {
     const n = new Map(), m = new Map();
     for (const x of ro || []) n.set(x.name, (n.get(x.name) || 0) + 1);
-    for (const x of ro || []) if (x.pid && x.search) m.set(x.pid, { search: x.search, shared: n.get(x.name) > 1 });
+    for (const x of ro || []) if (x.pid && x.search) m.set(x.pid, { search: x.search, shared: n.get(x.name) > 1, own: x.search !== x.name });
+    realNames = new Set(n.keys());
     return m;
   };
-  let twins = new Map(), sheetTwins = new Set();   // in-game name|alliance that two of the sheet's rows have
+  // a tagged row of the sheet for the row's name, unless a roster player has the tagged name itself ("Thor3" is a player)
+  const bareOf = (m, r) => { for (const k of [r.name + '|' + (r.alliance ?? r.ally), r.name]) { const v = m.bare && m.bare.get(k); if (v) return v[0] && !realNames.has(v[1]) ? v[0] : ''; } return ''; };
+  let twins = new Map(), sheetTwins = new Set(), realNames = new Set();   // in-game name|alliance that two of the sheet's rows have
   function searchNames(rows, roster0) {
     if (roster0) twins = twinsOf(roster0);
     if (!namesMap) return;
     const [roster, raw] = namesMap;
     for (const r of rows) {
       const t = r.pid && twins.get(r.pid);
-      const s = (t && sheetTwins.has(r.name + '|' + (r.alliance ?? r.ally)) && t.search) || withAlly(roster, r) || (t && t.shared && t.search)
-        || withAlly(raw, r) || byName(roster, r) || byName(raw, r);
+      const s = (t && (t.shared || sheetTwins.has(r.name + '|' + (r.alliance ?? r.ally))) && t.search) || withAlly(roster, r) || (t && t.own && t.search)
+        || bareOf(roster, r) || withAlly(raw, r) || byName(roster, r) || byName(raw, r);
       if (s) r.search = s;
     }
   }

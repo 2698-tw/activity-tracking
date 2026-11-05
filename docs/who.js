@@ -16,6 +16,9 @@
 const READ_ALLY = {
   '2026-11-01|Killua': '698C',     // Frost Crystal Contest, Nov 1: 111,168, masked; Killua Central (698C)
 };
+// The roster sheet's in-game names carry a tag where two players share a name, for the sheets' look-ups:
+// "Killua.C", "Gikey 2", "Skadi2". untag gives the name as the game has it ("Killua", "Gikey", "Skadi"), or ''.
+const untag = n => { const m = /^(.*\D)\s?[2-9]$/.exec(n || '') || /^(.+)\.[A-Za-z]$/.exec(n || ''); return m ? m[1].trim() : ''; };
 window.Who = function (ro, sheet) {
   const fold = s => String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, '');
   const keyOf = x => x.pid ? 'p:' + x.pid : 'r:' + x.name;
@@ -34,7 +37,9 @@ window.Who = function (ro, sheet) {
   }
   for (const k of twoA) byAlly.delete(k);
   const bySheet = new Map();                       // in-game name|alliance → the sheet's search names for it
-  for (const [n, a, s] of sheet || []) if (n && s) { const k = n + '|' + a; if (!bySheet.has(k)) bySheet.set(k, new Set()); bySheet.get(k).add(s); }
+  const bySheetBare = new Map();                   // the same under a tagged name's untagged form ("Killua.C" → Killua)
+  const put = (m, k, s) => { if (!m.has(k)) m.set(k, new Set()); m.get(k).add(s); };
+  for (const [n, a, s] of sheet || []) if (n && s) { put(bySheet, n + '|' + a, s); const b = untag(n); if (b) put(bySheetBare, b + '|' + a, s); }
   return {
     // day: the read's date, for a read the alliances placed by hand (READ_ALLY)
     key: (name, pid, ally, day) => {
@@ -43,13 +48,20 @@ window.Who = function (ro, sheet) {
       return byName.get(name) || (fold(name) !== '' && byName.get('~' + fold(name))) || (a && byAlly.get(name + '|' + a)) || 'n:' + name;
     },
     row: k => byKey.get(k) || null,
+    untag,
     search: k => {
       const x = byKey.get(k);
       if (!x) return k.startsWith('n:') && nameN.get(k.slice(2)) > 1 ? '' : undefined;
-      const s = bySheet.get(x.name + '|' + (x.alliance || ''));
+      const ka = x.name + '|' + (x.alliance || '');
+      // a name two roster players share: the sheet's rows of the player's alliance under it, plain or tagged
+      // (Killua.C, Skadi2; Gikey and Gikey 2), as one list
+      const s = nameN.get(x.name) > 1 && bySheetBare.has(ka) ? new Set([...(bySheet.get(ka) || []), ...bySheetBare.get(ka)]) : bySheet.get(ka);
       if (s && s.size === 1) return [...s][0];
       if (x.search && ((s && s.size > 1) || nameN.get(x.name) > 1)) return x.search;
+      // not in the sheet under their name (tagged there: Freeguy.N): the one the bookmark matched by alliance and Base CP
+      if (!s && x.search && x.search !== x.name) return x.search;
       return undefined;
     },
   };
 };
+window.Who.untag = untag;

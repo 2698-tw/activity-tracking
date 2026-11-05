@@ -116,7 +116,7 @@ button,.btn{font:inherit;font-weight:600;border:1px solid var(--line);background
 </div>
 <div id="room" aria-hidden="true"></div>
 <script src="last.js?v=1"></script>
-<script src="who.js?v=4"></script>
+<script src="who.js?v=7"></script>
 <script>
 // inside the site (index.html#player) the site's own header has the way back
 if (window.frameElement) document.getElementById('homeLink').remove();
@@ -137,6 +137,10 @@ if (window.frameElement) document.getElementById('homeLink').remove();
       if (weak && m.has(k) && !weakKeys.has(k)) continue;
       m.set(k, search); weak ? weakKeys.add(k) : weakKeys.delete(k);
     }
+    // a tagged name ("Killua.C") under the game's name too, where only one row is tagged that way and none has it plain
+    const bare = new Map();
+    for (const [name, , search] of list || []) { const b = Who.untag(name); if (b) bare.set(b, bare.has(b) && bare.get(b) !== search ? null : search); }
+    for (const [b, s] of bare) if (s && !m.has(b)) { m.set(b, s); if (!m.has('~' + fold(b))) m.set('~' + fold(b), s); }
     return m;
   }
   const searchOf = (name, key) => { if (key) { const s = who_.search(key); if (s !== undefined) return s; } for (const m of snames) { const s = m.get(name) || (fold(name) !== '' && m.get('~' + fold(name))); if (s) return s; } return ''; };
