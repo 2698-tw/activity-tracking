@@ -160,8 +160,12 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   let who_ = Who(null);
   // one value for a player on a date; a round read more than once keeps its latest date. The player's name: the
   // roster's (their name now), else the one they were last read under
+  // the ids other reads gave a name (the garrison cards' rows, the newer contests'): an old read (no id) of a player
+  // not on the roster takes theirs when only one player was read under that name
+  let pidOf = new Map();
   function put(ev, name0, ally, d, v, pid) {
     const r = roundOf(d); if (!name0 || r == null) return;
+    if (!pid && who_.key(name0, '', ally, d).startsWith('n:')) { const s = pidOf.get(name0); if (s && s.size === 1) pid = [...s][0]; }
     const key = who_.key(name0, pid, ally, d), ro = who_.row(key);
     const p = players.get(key) || { key, name: ro ? ro.name : name0, ally: ro ? ro.alliance || '' : '', v: {}, at: {}, was: new Set(), seen: '' };
     p.was.add(name0);
@@ -183,6 +187,11 @@ if (window.frameElement) document.getElementById('homeLink').remove();
     rounds = (ev && ev.rounds) || [];
     if (!rounds.length) throw new Error('the season\'s rounds are not read yet (the bookmark\'s Read events)');
     // the garrison cards: their rows, each with its value on each date (the Snow Train's, by troop type)
+    pidOf = new Map();
+    const saw = (n, pid) => { if (n && pid) { if (!pidOf.has(n)) pidOf.set(n, new Set()); pidOf.get(n).add(pid); } };
+    for (const j of [wb, st, et, ma]) for (const r of (j && j.rows) || []) saw(r.name, r.pid);
+    for (const b of Object.values((fb && fb.days) || {})) for (const p of b.players || []) if (String(p.server) === String(US)) saw(p.name, p.pid);
+    for (const b of Object.values((nc && nc.days) || {})) for (const p of b.players || []) saw(p[0], p[3]);
     const sum = v => v && typeof v === 'object' ? Object.values(v).reduce((a, b) => a + (Number(b) || 0), 0) : v;
     for (const [id, j, f] of [['wb', wb, r => r.pts], ['st', st, r => r.pts], ['et', et, r => r.score], ['ma', ma, r => r.pts]]) {
       if (!j) continue;
