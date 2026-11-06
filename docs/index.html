@@ -303,6 +303,7 @@ a.ev:hover{background:var(--line)}
   background:rgba(255,255,255,.12)}
 .rsheet:hover{background:rgba(255,255,255,.2)}
 .rsheet[hidden]{display:none}
+html:not(.isadmin) .rsheet{display:none!important}
 .rsheet svg{width:15px;height:15px}
 .viewtools{display:flex;justify-content:flex-end;margin:0 0 10px}
 .viewtools .rsheet{color:var(--ink);background:var(--panel);border:1px solid var(--line)}
@@ -3032,8 +3033,8 @@ loadSetup();
 <script src="last.js?v=1"></script>
 <script src="cp.js?v=11"></script>
 <!-- the admin pill and page, then the Alliance roster, Whitebeard and Snow Train cards -->
-<script src="admin.js?v=12"></script>
-<script src="cards.js?v=24"></script>
+<script src="admin.js?v=13"></script>
+<script src="cards.js?v=25"></script>
 <!-- Kartz: decoding the recording, then packing and reading it -->
 <script src="decode.js?v=4"></script>
 <script src="kartz.js?v=5"></script>

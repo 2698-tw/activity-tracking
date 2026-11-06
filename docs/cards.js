@@ -149,6 +149,8 @@
     const dayTypes = (r, d) => asTypes(r.pts[d], r.type);
 
     // Each column: its value for sorting (and CSV), its cell, and how admin mode edits it
+    // days since a player was last online (0 while online, Infinity if never seen)
+    const awayDays = r => r.online ? 0 : r.last ? (Date.now() / 1000 - r.last) / 86400 : Infinity;
     const DEF = {
       name: { text: 1, val: r => r.name, edit: 'text',
               cell: r => esc(r.name) + (r.search && r.search !== r.name ? ` <span class="rdim">(${esc(r.search)})</span>` : '') +
@@ -160,7 +162,10 @@
       power: { n: 1, val: r => r.power || 0, cell: r => r.power ? fmt(r.power) : '', edit: 'big' },
       cls: { text: 1, val: r => r.cls || '', cell: r => r.cls || '—', cls: r => r.cls || 'rdim', edit: 'cls' },
       join: { hs: 1, val: r => r.join || 0, cell: r => day(r.join), edit: 'date' },
-      last: { val: r => r.online ? Infinity : r.last || 0, cell: r => r.online ? '<span class="rdot"></span>now' : ago(r.last * 1000), edit: 'date' },
+      // Last online: for visitors, only for a player away 3 days or more (blank, and sorted with the online, for the rest);
+      // admin mode shows everyone's
+      last: { val: r => r.online || (!Admin.on && awayDays(r) < 3) ? Infinity : r.last || 0,
+              cell: r => !Admin.on && awayDays(r) < 3 ? '' : r.online ? '<span class="rdot"></span>now' : ago(r.last * 1000), edit: 'date' },
       status: { text: 1, hs: 1, val: r => r.status, cell: r => r.status === 'Left' ? `Left ${day(r.leftAt / 1000)}` : 'Active', edit: 'status' },
       // Energy Tower and Mammoth Assault: the highest March CP over the days there are (edited through the days)
       best: { n: 1, val: r => Math.max(0, ...Object.values(r.pts || {})), cell: r => { const b = Math.max(0, ...Object.values(r.pts || {})); return b ? fmt(b) : dim; } },

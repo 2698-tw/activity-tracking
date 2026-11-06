@@ -195,7 +195,7 @@ window.Admin = (function () {
   }
   function setOn(on) {
     if (A.on === on) return;
-    A.on = on; drawPills(); drawPage(); emit('admin');
+    A.on = on; document.documentElement.classList.toggle('isadmin', on); drawPills(); drawPage(); emit('admin');
   }
   function lock() { store.set('adminPass', null); setOn(false); }
   A.lock = lock;
@@ -221,6 +221,8 @@ window.Admin = (function () {
   A.unlock = unlock;
   // still unlocked from before (the Worker checks the password again with each change)
   if (store.get('adminPass')) A.on = true;
+  // the cards' Sheet ↗ links only in admin mode (index.html, html.isadmin): visitors have no access to the sheets
+  document.documentElement.classList.toggle('isadmin', !!A.on);
   store.set('cardPass', null);                // the date ✎'s old saved password, now part of admin mode
   drawPills();
 
