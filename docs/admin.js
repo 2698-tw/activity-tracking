@@ -26,6 +26,8 @@ window.Admin = (function () {
     },
     home: { title: '2698 Data Extractor', banner: '2698', cards: [] },
     sheets: {},
+    rounds: { 2: '', 3: '', 4: '' },
+    dayRound: {},
     bookmark: { members: true, wb: true, st: true, et: true, ma: true, ev: true, frost: true, nc: true },
     rules: [
       { id: 'missed', name: 'Missed days', label: 'missed', on: true, color: 'red', chip: false, cards: ['wb', 'st', 'et', 'ma'], all: [{ f: 'missed', op: 'ge', v: 2 }] },
@@ -53,7 +55,7 @@ window.Admin = (function () {
     status: { label: 'Status', kind: 'opt', cards: ['ro'], opts: () => ['Active', 'Left'] },
   };
   const RULE_OPS = { num: [['ge', 'at least'], ['le', 'at most'], ['eq', 'exactly'], ['bt', 'between']], opt: [['is', 'is'], ['not', 'is not']], text: [['has', 'contains'], ['is', 'is']] };
-  const SHEET_NAMES = { kartz: 'Kartz ranking (Send on the Kartz page)', cp: 'Base CP (Alliance Rosters, RawData-CP)', ranking: 'Whitebeard ranking (bookmark Send)', snowtrain: 'Snow Train (bookmark Send)', energytower: 'Energy Tower (bookmark Send)', mammoth: 'Mammoth Assault (bookmark Send)', neutral: 'Neutral City (bookmark Send)', crystal: 'Frost Crystal (bookmark Send, Round sheet\'s Crystal tab)', roster: 'Roster (bookmark Roster to sheet, Round sheet\'s Input-Roster tab)', summary: 'Round Summary (sorted by SCORE TOTAL after each send)' };
+  const SHEET_NAMES = { kartz: 'Kartz ranking (Send on the Kartz page)', cp: 'Base CP (Alliance Rosters, RawData-CP)', ranking: 'Whitebeard ranking (bookmark Send)', snowtrain: 'Snow Train (bookmark Send)', energytower: 'Energy Tower (bookmark Send)', mammoth: 'Mammoth Assault (bookmark Send)', neutral: 'Neutral City (bookmark Send)' };
   const HOME_NAMES = { kartz: 'Kartz ranking', cp: 'Alliance roster', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault', frost: 'Frost Crystal Contest', nc: 'Neutral City', player: 'Player Summary' };
   const BOOKMARK_NAMES = { members: 'Alliance members', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault', ev: 'Events (home page)', frost: 'Frost Crystal Contest', nc: 'Neutral City' };
   const CARD_NAMES = { wb: 'Whitebeard', st: 'Snow Train', ro: 'Alliance roster', et: 'Energy Tower', ma: 'Mammoth Assault' };
@@ -454,10 +456,45 @@ window.Admin = (function () {
     };
   }
 
+  // The Practice Round sheets: one spreadsheet each (2 to 4), its tabs found by name; every send also goes to the
+  // round sheet its date is set to here (a date not set goes to the round the season's schedule has running that day)
+  const ROUND_NS = [2, 3, 4], ROUND_TAB_LIST = n => ['Train', 'ET', 'Mammoth', 'Crystal', 'NC', 'Input-Roster', `Round ${n} Summary`];
+  const DAY_EVENTS = [['/st', 'Snow Train'], ['/et', 'Energy Tower'], ['/ma', 'Mammoth'], ['/frost-battle', 'Frost Crystal'], ['/nc-read', 'Neutral City']];
+  async function roundDates() {
+    const lists = await Promise.all([...DAY_EVENTS.map(([p]) => post(p).catch(() => null)), post('/schedule').catch(() => null)]);
+    const days = new Map();
+    DAY_EVENTS.forEach(([p, name], i) => {
+      const j = lists[i]; if (!j) return;
+      const ds = j.dates || Object.keys(j.days || {}).filter(d => p !== '/nc-read' || ((j.days[d] || {}).players || []).length);
+      for (const d of ds) { if (!days.has(d)) days.set(d, new Set()); days.get(d).add(name); }
+    });
+    const rounds = ((lists[DAY_EVENTS.length] || {}).rounds) || [];
+    const fromSchedule = d => { const t = Date.parse(d + 'T12:00:00Z') / 1000, r = rounds.find(x => x.st <= t && t < x.et); return r && ROUND_NS.includes(r.round) ? r.round : 0; };
+    return [...days.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([d, ev]) => ({ d, events: [...ev], sched: fromSchedule(d) }));
+  }
+  function datesPanel(el) {
+    el.innerHTML = '<p class="ahint">Reading the dates…</p>';
+    roundDates().then(list => {
+      const pick = A.settings.dayRound || {}, nm = n => n ? `Practice Round ${n}` : 'None';
+      if (!list.length) { el.innerHTML = '<p class="ahint">No reads yet.</p>'; return; }
+      el.innerHTML = `<table class="atable"><thead><tr><th>Date</th><th>Read that day</th><th>Goes to</th></tr></thead><tbody>${list.map(x => `<tr>
+        <td>${esc(x.d)}</td><td>${x.events.map(esc).join(', ')}</td>
+        <td><select data-dr="${esc(x.d)}"><option value=""${pick[x.d] == null ? ' selected' : ''}>${esc(nm(x.sched))} (schedule)</option>${[...ROUND_NS, 0].map(n => `<option value="${n}"${pick[x.d] === n ? ' selected' : ''}>${esc(nm(n))}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table>`;
+    }).catch(e => { el.innerHTML = `<p class="aerr">✗ ${esc(e.message || e)}</p>`; });
+  }
   function sheetsPage() {
-    const T = A.settings.sheets;
+    const T = A.settings.sheets, R = A.settings.rounds || {};
     const link = t => t.id ? `https://docs.google.com/spreadsheets/d/${t.id}/edit#gid=${t.gid}` : '';
-    view.innerHTML = `<div class="apanel"><h2>Where each Send goes</h2>
+    const book = id => id ? `https://docs.google.com/spreadsheets/d/${id}/edit` : '';
+    view.innerHTML = `<div class="apanel"><h2>Practice rounds</h2>
+      <p class="ahint">Every send also goes to a Practice Round sheet: the one its date is set to below. Paste the round's spreadsheet link. It needs the tabs Train, ET, Mammoth, Crystal, NC, Input-Roster and Round <i>N</i> Summary, and must be shared with the service account as Editor. Sending a date again replaces that date's rows in the round sheet, and its Summary is sorted by SCORE TOTAL after every send.</p>
+      <div class="alist">${ROUND_NS.map(n => `<div class="asheet"><b>Practice Round ${n}</b>
+        <div class="ali"><input type="url" data-rl="${n}" value="${esc(book(R[n]))}" placeholder="No sheet yet — paste the spreadsheet's link" class="long"><button type="button" class="abtn sm pri" data-rs="${n}">Save</button>${R[n] ? `<a class="abtn sm" href="${esc(book(R[n]))}" target="_blank" rel="noopener">Open ↗</a>` : ''}</div>
+        <p class="aerr" data-re="${n}"></p></div>`).join('')}</div></div>
+      <div class="apanel"><h2>Which round each date goes to</h2>
+      <p class="ahint">Every date with a read. A date left on <i>(schedule)</i> goes to the round the season's schedule has running that day. A change applies to the next send: rows already sent stay where they are.</p>
+      <div data-dates></div></div>
+      <div class="apanel"><h2>Original sheets</h2>
       <p class="ahint">Paste the link of the tab to send to (it carries the spreadsheet and the tab). The Worker tries it before saving: the spreadsheet must be shared with its service account as Editor. The columns written stay the same. Rows already in a sheet are changed in Google Sheets itself.</p>
       <div class="alist">${Object.keys(SHEET_NAMES).filter(k => T[k]).map(k => `<div class="asheet">
         <b>${SHEET_NAMES[k]}</b>
@@ -465,8 +502,28 @@ window.Admin = (function () {
         <p class="aerr" data-se="${k}"></p></div>`).join('')}</div></div>
       <div class="apanel"><h2>Backup</h2><p class="ahint">Every card's data and every setting in one file. Restoring puts all of it back as it was in the file (History can undo that too).</p>
         <div class="ali"><button type="button" class="abtn pri" data-bk>Download backup</button><label class="abtn">Restore from a backup…<input type="file" accept=".json,application/json" data-rs hidden></label></div></div>`;
+    datesPanel(view.querySelector('[data-dates]'));
+    view.oninput = null;
+    view.addEventListener('change', e => {
+      const sel = e.target.closest('[data-dr]'); if (!sel) return;
+      const d = sel.dataset.dr, was = (A.settings.dayRound || {})[d], v = sel.value === '' ? null : +sel.value;
+      const nm = n => n == null ? 'schedule' : n ? `Practice Round ${n}` : 'none';
+      save(n => { n.dayRound = n.dayRound || {}; if (v == null) delete n.dayRound[d]; else n.dayRound[d] = v; }, { what: `Sheets · ${d}`, from: nm(was), to: nm(v) });
+    });
     view.onclick = async e => {
       const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.rs) {
+        const n = +b.dataset.rs, raw = view.querySelector(`[data-rl="${n}"]`).value.trim(), err = view.querySelector(`[data-re="${n}"]`);
+        const id = raw ? (raw.match(/\/d\/([\w-]{20,})/) || [, /^[\w-]{20,}$/.test(raw) ? raw : ''])[1] : '';
+        if (raw && !id) { err.textContent = 'That is not a Google Sheets link.'; return; }
+        if (id === (R[n] || '')) { err.textContent = id ? 'That is the sheet already.' : ''; return; }
+        err.textContent = id ? 'Trying the sheet…' : '';
+        try {
+          await A.busy(b, () => A.saveSettings(s => { s.rounds = s.rounds || {}; s.rounds[n] = id; },
+            { what: `Sheets · Practice Round ${n}`, from: R[n] ? `${R[n].slice(0, 10)}…` : 'none', to: id ? `${id.slice(0, 10)}…` : 'none' }));
+        } catch (x) { err.textContent = '✗ ' + x.message; }
+        return;
+      }
       if (b.dataset.ss) {
         const k = b.dataset.ss, raw = view.querySelector(`[data-sl="${k}"]`).value.trim(), err = view.querySelector(`[data-se="${k}"]`);
         const id = (raw.match(/\/d\/([\w-]{20,})/) || [, /^[\w-]{20,}$/.test(raw) ? raw : ''])[1], gm = raw.match(/[#&?]gid=(\d+)/);

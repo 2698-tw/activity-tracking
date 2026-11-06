@@ -651,16 +651,18 @@
     const ours = r => Admin.settings.alliances.includes(r[allyKey]);
     const allyOrder = r => { const i = Admin.settings.alliances.indexOf(r[allyKey]); return i < 0 ? 99 : i; };
     const inGroup = who => r => who === 'all' || (who === 'ours') === ours(r);
+    // {rows, ids}: each row's player id beside it, for the Practice Round sheet
     function dayRows(d, who) {
       const pts = r => o.id === 'st' ? Math.max(0, ...Object.values(dayTypes(r, d))) : r.pts[d];
       const M = v => Math.round(v / 1e6) + 'M', nm = r => r.name.slice(0, 80), al = r => String(r.ally || '').slice(0, 20);
-      return W.rows.filter(r => o.id !== 'wb' || r.pts[d] != null).filter(inGroup(who))   // Energy Tower and Snow Train: everyone, No as 0 / No
+      const pairs = W.rows.filter(r => o.id !== 'wb' || r.pts[d] != null).filter(inGroup(who))   // Energy Tower and Snow Train: everyone, No as 0 / No
         .sort((a, b) => allyOrder(a) - allyOrder(b) || String(a.ally).localeCompare(String(b.ally)) || (pts(b) || 0) - (pts(a) || 0) || (sc(b, d) || 0) - (sc(a, d) || 0))
-        .flatMap(r => o.id === 'wb' ? [[nm(r), r.pts[d], al(r)]]
+        .flatMap(r => (o.id === 'wb' ? [[nm(r), r.pts[d], al(r)]]
           : o.id === 'et' ? [[nm(r), r.pts[d] != null ? M(r.pts[d]) : '', al(r), sc(r, d) ?? (r.pts[d] != null ? '' : 0)]]
           : o.id === 'ma' ? [r.pts[d] != null ? [nm(r), M(r.pts[d]), al(r), 'Yes'] : [nm(r), '', al(r), 'No']]
           : r.pts[d] == null ? [[nm(r), '', al(r), TYPES.includes(r.type) ? r.type : '', 'No']]
-          : Object.entries(dayTypes(r, d)).map(([t, v]) => [nm(r), M(v), al(r), TYPES.includes(t) ? t : '', 'Yes']));
+          : Object.entries(dayTypes(r, d)).map(([t, v]) => [nm(r), M(v), al(r), TYPES.includes(t) ? t : '', 'Yes'])).map(x => [x, r.pid || '']));
+      return { rows: pairs.map(p => p[0]), ids: pairs.map(p => p[1]) };
     }
     // a send from a dialog: its button busy while it goes, then what was written and a link to it
     async function sendRows(m, path, body, title) {
@@ -671,26 +673,40 @@
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error((j.error && j.error.message) || j.error || 'the sheet did not accept it (' + r.status + ')');
         const link = j.link || `https://docs.google.com/spreadsheets/d/${j.id}/edit#gid=${j.gid}`;
-        m.innerHTML = `<h3>Sent</h3><p>${Number(j.rows).toLocaleString()} ${Number(j.rows) === 1 ? 'row' : 'rows'} added to the ${esc(title)} sheet${j.date ? `, dated ${esc(j.date)}` : ''}.</p>
-          <div class="arow"><a class="abtn" href="${esc(link)}" target="_blank" rel="noopener">Open in Sheets ↗</a><button type="button" class="abtn pri" data-x>Done</button></div>`;
+        const each = (j.sent || [{ to: title + ' sheet', rows: j.rows, link }]).map(x => `<li>${esc(x.to)}: ${Number(x.rows).toLocaleString()} ${Number(x.rows) === 1 ? 'row' : 'rows'}${x.replaced ? ` (in place of ${Number(x.replaced).toLocaleString()} sent before for that date)` : ''} · <a href="${esc(x.link)}" target="_blank" rel="noopener">Open ↗</a>${x.summaryError ? ` · <span class="aerr">Summary not sorted: ${esc(x.summaryError)}</span>` : ''}</li>`).join('');
+        const not = [...(j.skipped || []), ...(j.errors || [])].map(x => `<li class="aerr">${esc(x)}</li>`).join('');
+        m.innerHTML = `<h3>Sent</h3><p>Dated ${esc(j.date || '')}:</p><ul>${each}${not}</ul>
+          <div class="arow"><button type="button" class="abtn pri" data-x>Done</button></div>`;
         m.querySelector('[data-x]').onclick = m.close;
       } catch (e) { err.textContent = "✗ Couldn't send: " + (e.message || e); y.disabled = false; y.textContent = 'Send to sheet'; }
     }
+    // where a date goes: its original sheet (rows added below the ones there) and, for the Snow Train, Energy Tower and
+    // Mammoth Assault, the Practice Round sheet the date is set to (Admin → Sheets & backup; that date's rows replaced)
     function sendDay(d) {
-      const [path, sheet] = SEND[o.id], title = cfg().title, t = Admin.settings.sheets[sheet];
-      if (!t || !t.id) return Admin.toast(`No sheet is set for the ${title} yet — add one in Admin → Sheets & backup.`);
+      const [path, sheet] = SEND[o.id], title = cfg().title, t = Admin.settings.sheets[sheet], orig = !!(t && t.id), roundable = o.id !== 'wb';
       const have = W.rows.filter(r => r.pts[d] != null), n = who => (o.id === 'wb' ? have : W.rows).filter(inGroup(who)).length;   // the players the send has, No included
       if (!have.length) return Admin.toast(`Nobody in ${head(d)}`);
-      const m = Admin.modal(`<h3>Send ${head(d)} to the sheet</h3>
-        <p>Adds that day's rows below the ones already in the ${esc(title)} sheet, dated ${d}. Rows sent before stay as they are, so check the day isn't there already.</p>
+      const m = Admin.modal(`<h3>Send ${head(d)} to the sheets</h3>
+        <label class="acheck"><input type="checkbox" data-to="original"${orig ? ' checked' : ' disabled'}> ${esc(title)} sheet ${orig ? '<small>adds the rows below the ones there: check the day isn\'t there already</small>' : '<small>no sheet set (Admin → Sheets & backup)</small>'}</label>
+        ${roundable ? '<label class="acheck"><input type="checkbox" data-to="round" disabled> <span data-rn>Practice Round sheet: checking…</span></label>' : ''}
         <label>Players<select>${[['ours', 'Our alliances'], ['other', 'Everyone else'], ['all', 'Everyone']].map(([v, l]) => `<option value="${v}">${l} (${n(v)})</option>`).join('')}</select></label>
         <p class="aerr" data-e></p>
-        <div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Send to sheet</button></div>`);
+        <div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Send</button></div>`);
       m.querySelector('[data-x]').onclick = m.close;
+      if (roundable) fetch(API_BASE + '/round-of', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ day: d }) })
+        .then(r => r.json()).then(j => {
+          const box = m.querySelector('[data-to="round"]'), lab = m.querySelector('[data-rn]'); if (!box) return;
+          if (!j.round) { lab.innerHTML = 'Practice Round sheet <small>this date goes to none (Admin → Sheets & backup)</small>'; return; }
+          if (!j.sheet) { lab.innerHTML = `Practice Round ${j.round} <small>no sheet set for it (Admin → Sheets & backup)</small>`; return; }
+          box.disabled = false; box.checked = true;
+          lab.innerHTML = `Practice Round ${j.round} <small>${j.set ? 'as set for this date' : 'from the schedule'}; replaces any rows sent before for ${esc(d)}</small>`;
+        }).catch(() => { const lab = m.querySelector('[data-rn]'); if (lab) lab.textContent = 'Practice Round sheet: could not be checked'; });
       m.querySelector('[data-y]').onclick = () => {
-        const rows = dayRows(d, m.querySelector('select').value);
+        const to = { original: !!m.querySelector('[data-to="original"]:checked'), round: !!m.querySelector('[data-to="round"]:checked') };
+        if (!to.original && !to.round) { m.querySelector('[data-e]').textContent = 'Tick a sheet to send to.'; return; }
+        const { rows, ids } = dayRows(d, m.querySelector('select').value);
         if (!rows.length) { m.querySelector('[data-e]').textContent = 'Nobody to send in that group.'; return; }
-        sendRows(m, path, { rows, date: d }, title);
+        sendRows(m, path, { rows, ids, date: d, to }, title);
       };
     }
     // the roster card has no days: every Active player's Base CP now, as the bookmark's Send makes it

@@ -155,14 +155,18 @@ const MAMMOTH = { id: '', gid: 0, book: 'Mammoth Assault', flag: 'Garrisoned?', 
 const NEUTRAL = { id: '1NeHELo_UY1KYNMSKzlHo0z0jlMUrtP1gEFZQXYW2h_U', gid: 0, book: 'SS P2 Neutral City', head: ['Date', 'Name', 'Points', 'Alliance'] };
 // The Round sheet's Crystal tab (bookmark Send on Frost Crystal): Date, Name, Points, Alliance, Masked, Player ID — every
 // player of ours in a contest's Individual Ranking, masked ones under their real names. Set in the admin view (Sheets).
-const CRYSTAL = { id: '', gid: 0, book: 'Frost Crystal', head: ['Date', 'Name', 'Points', 'Alliance', 'Masked', 'Player ID'] };
+const CRYSTAL = { id: '', gid: 0, book: 'Crystal', head: ['Date', 'Name', 'Points', 'Alliance', 'Masked', 'Player ID'] };
 // The Round sheet's Input-Roster tab (bookmark Roster to sheet): Search Name, In Game Name, Alliance, Base CP (millions),
 // Player ID — everyone in 698N, S, W and C, each player keeping their row (writeRosterTab). Set in the admin view (Sheets).
 const ROSTER_TAB = { id: '', gid: 0, book: 'Input-Roster', head: ['Search Name', 'In Game Name', 'Alliance', 'Base CP', 'Player ID'] };
-// The Round sheet's Summary tab (the Round 2 Summary layout): sorted by SCORE TOTAL (G), then CP (E), highest first, after
-// every send to the Round sheet; each row is one player, found by the Player ID in its column U (a value, never a
-// formula), so a row's typed Tier, passed out and Notes move with it. Set in the admin view (Sheets).
-const SUMMARY_TAB = { id: '', gid: 0, book: 'Round Summary' };
+// A Practice Round sheet (admin view, Sheets → Practice rounds: one spreadsheet per round, 2 to 4): its tabs, found by
+// name. Every send also goes to the round sheet its date is set to (Sheets → Which round each date goes to), each row
+// ending with the player's id; a date sent again replaces that date's rows there. Its "Round N Summary" tab is sorted
+// by SCORE TOTAL (G), then CP (E), highest first, after each send; each row is one player, found by the Player ID in
+// its column U (a value, never a formula), so a row's typed Tier, passed out and Notes move with it.
+const ROUNDS = [2, 3, 4];
+const ROUND_TABS = { snowtrain: 'Train', energytower: 'ET', mammoth: 'Mammoth', neutral: 'NC', crystal: 'Crystal', roster: 'Input-Roster' };
+const roundName = n => `Practice Round ${n}`, summaryTab = n => `Round ${n} Summary`;
 const SUMMARY = { score: 6, cp: 4, id: 20, cols: 21 };   // columns, from A = 0: SCORE TOTAL, CP, Player ID; A to U sorted
 // The sends to a Round sheet end each row with the player's id (the site's, made from the UID and never the UID), so
 // the sheet can look players up by it, through name changes and names two players share.
@@ -263,6 +267,22 @@ async function appendRows(env, values, name = 'kartz') {
            book: target.book, tab: title, id: target.id, gid: target.gid };
 }
 
+// a send's rows checked against the sheet's columns (the Whitebeard ranking, Snow Train, Energy Tower, Mammoth Assault,
+// Neutral City): [name, points, alliance, (unit type | Rankings points), (Yes | No)]; the number of cells in each
+function checkRankingRows(rows, target) {
+  if (!Array.isArray(rows) || !rows.length)
+    throw Object.assign(new Error('No rows to send.'), { status: 400 });
+  if (rows.length > RANKING_MAX)
+    throw Object.assign(new Error(`At most ${RANKING_MAX} rows at a time.`), { status: 400 });
+  const flag = !!target.flag, pts = !!target.points, mid = !!(target.extra || pts), n = 3 + mid + flag;
+  if (!rows.every(r => Array.isArray(r) && r.length === n && typeof r[0] === 'string' && r[0].length <= 80
+                       && (Number.isFinite(r[1]) || /^\d{1,6}M$/.test(r[1]) || ((pts || flag) && r[1] === '')) && typeof r[2] === 'string' && r[2].length <= 20
+                       && (!mid || (pts ? r[3] === '' || (Number.isFinite(r[3]) && r[3] >= 0) : /^(Army|Navy|Air Force|)$/.test(r[3])))
+                       && (!flag || /^(Yes|No)$/.test(r[n - 1]))))
+    throw Object.assign(new Error(`Every row must be [name, points, alliance${mid ? pts ? ', Rankings points' : ', unit type' : ''}${flag ? ', Yes or No' : ''}].`), { status: 400 });
+  return n;
+}
+
 async function writeRanking(env, rows, target = RANKING, day, ids) {
   if (!Array.isArray(rows) || !rows.length)
     throw Object.assign(new Error('No rows to send.'), { status: 400 });
@@ -272,12 +292,7 @@ async function writeRanking(env, rows, target = RANKING, day, ids) {
   // (the Energy Tower: March CP empty for a player only in its Rankings, points empty for one not in them;
   // the Snow Train and Mammoth Assault: Yes or No last, for whether they were there that day, March CP
   // empty for a No)
-  const flag = !!target.flag, pts = !!target.points, mid = !!(target.extra || pts), n = 3 + mid + flag;
-  if (!rows.every(r => Array.isArray(r) && r.length === n && typeof r[0] === 'string' && r[0].length <= 80
-                       && (Number.isFinite(r[1]) || /^\d{1,6}M$/.test(r[1]) || ((pts || flag) && r[1] === '')) && typeof r[2] === 'string' && r[2].length <= 20
-                       && (!mid || (pts ? r[3] === '' || (Number.isFinite(r[3]) && r[3] >= 0) : /^(Army|Navy|Air Force|)$/.test(r[3])))
-                       && (!flag || /^(Yes|No)$/.test(r[n - 1]))))
-    throw Object.assign(new Error(`Every row must be [name, points, alliance${mid ? pts ? ', Rankings points' : ', unit type' : ''}${flag ? ', Yes or No' : ''}].`), { status: 400 });
+  const n = checkRankingRows(rows, target), flag = !!target.flag;
   const end = 'DEF'[n - 3];
   // the player ids (ids[i] for rows[i]), in the column after the row's last: G for the Snow Train, F for the Energy
   // Tower and Mammoth Assault, E for Neutral City
@@ -331,33 +346,6 @@ async function writeRanking(env, rows, target = RANKING, day, ids) {
            link: `https://docs.google.com/spreadsheets/d/${target.id}/edit#gid=${target.gid}&range=A${first}` };
 }
 
-// A Round sheet's own tab (Crystal, Input-Roster): its header row (target.head) in row 1, then the rows, added below the
-// last row with anything in it, or (replace) in place of every row below the header.
-async function writeTable(env, target, rows, { replace = false } = {}) {
-  const cols = target.head.length, end = String.fromCharCode(64 + cols);
-  if (!rows.length || rows.length > RANKING_MAX || !rows.every(r => Array.isArray(r) && r.length === cols))
-    throw Object.assign(new Error(`Every row must be ${cols} cells, at most ${RANKING_MAX} rows.`), { status: 400 });
-  const token = await googleToken(env);
-  const tab = `'${(await tabTitle(token, target)).replace(/'/g, "''")}'`;
-  const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(`${tab}!A:${end}`)}?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE`, null, target);
-  const seen = got.values || [];
-  let filled = seen.length;
-  while (filled > 0 && !(seen[filled - 1] || []).some(v => v !== '' && v != null)) filled--;
-  if (JSON.stringify((seen[0] || []).slice(0, cols)) !== JSON.stringify(target.head)) {
-    const head = `${tab}!A1:${end}1`;
-    await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(head)}?valueInputOption=RAW`, { range: head, values: [target.head] }, target);
-  }
-  if (replace && filled > 1) {
-    const old = `${tab}!A2:${end}${filled}`;
-    await sheetsCall(token, 'POST', `/values/${encodeURIComponent(old)}:clear`, {}, target);
-  }
-  const first = replace ? 2 : Math.max(filled, 1) + 1, range = `${tab}!A${first}:${end}${first + rows.length - 1}`;
-  const out = await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
-    { range, majorDimension: 'ROWS', values: rows.map(r => r.map(v => typeof v === 'string' ? asCell(v) : v)) }, target);
-  return { rows: out.updatedRows || rows.length, range: out.updatedRange || range,
-           link: `https://docs.google.com/spreadsheets/d/${target.id}/edit#gid=${target.gid}&range=A${first}` };
-}
-
 // The Round sheet's Input-Roster, updated in place: the Summary reads it row by row and its typed columns (Tier, passed
 // out, Notes) sit beside those rows, so no player's row ever moves. A player already there (by Player ID, column E)
 // keeps their row, with their name, search name, alliance and CP brought up to date; a new player is added at the end;
@@ -389,18 +377,107 @@ async function writeRosterTab(env, target, rows, now) {
   }
   const range = `${tab}!A2:${end}${all.length + 1}`;
   await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
-    { range, majorDimension: 'ROWS', values: all.map(r => r.map(v => typeof v === 'string' ? asCell(v) : v)) }, target);
+    { range, majorDimension: 'ROWS', values: all.map(r => r.map((v, i) => i === cols - 1 ? (v ? "'" + v : '') : typeof v === 'string' ? asCell(v) : v)) }, target);
   return { rows: all.length, updated, added: added.length, left, range,
            link: `https://docs.google.com/spreadsheets/d/${target.id}/edit#gid=${target.gid}&range=A${old.length + 2}` };
+}
+
+// The Durable Object's answer to a path (the settings, the schedule, the cards' days)
+const store = (env, path, body) => env.ROSTER.get(env.ROSTER.idFromName('roster')).fetch('https://roster' + path, { method: 'POST', body: JSON.stringify(body || {}) }).then(r => r.json());
+// The round a date goes to: the admin view's pick for it (0: none), else the season round running at noon (UTC) that
+// day, if it is 2 to 4. {round, id, set}: id is the round sheet's spreadsheet ('' when none is set); null for none.
+async function roundOfDay(env, day) {
+  const [set, ev] = await Promise.all([store(env, '/settings'), store(env, '/ev-get').catch(() => null)]);
+  const pick = set.dayRound && set.dayRound[day];
+  if (pick === 0) return null;
+  let round = pick;
+  if (!round) {
+    const t = Date.parse(day + 'T12:00:00Z') / 1000, r = ((ev && ev.rounds) || []).find(x => x.st <= t && t < x.et);
+    round = r && r.round;
+  }
+  if (!ROUNDS.includes(round)) return null;
+  return { round, id: (set.rounds && set.rounds[round]) || '', set: !!pick };
+}
+// a round sheet's tab by its name, as a target
+const roundTabs = new Map();
+async function roundTab(env, id, title) {
+  const token = await googleToken(env);
+  let tabs = roundTabs.get(id);
+  if (!tabs || tabs.at < Date.now() - 60_000) {
+    const out = await sheetsCall(token, 'GET', '?fields=sheets.properties(sheetId,title)', null, { id });
+    tabs = { at: Date.now(), list: (out.sheets || []).map(t => t.properties) };
+    roundTabs.set(id, tabs);
+  }
+  const t = tabs.list.find(x => x.title === title);
+  if (!t) throw new Error(`The round sheet has no tab called "${title}".`);
+  return { id, gid: t.sheetId, book: title };
+}
+// One date's rows in a round sheet's tab, in place of any rows already there with that date (column A); the other rows
+// stay, in their order. head: the tab's header row; rows: each [date, …, Player ID].
+async function replaceDay(env, target, head, day, rows) {
+  const cols = head.length, end = String.fromCharCode(64 + cols);
+  const token = await googleToken(env);
+  const tab = `'${(await tabTitle(token, target)).replace(/'/g, "''")}'`;
+  const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(`${tab}!A:${end}`)}?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE`, null, target);
+  const seen = got.values || [], serial = (Date.parse(day + 'T00:00:00Z') - Date.UTC(1899, 11, 30)) / 864e5;
+  const asDay = v => typeof v === 'number' ? new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 864e5).toISOString().slice(0, 10) : v;
+  const old = seen.slice(1).filter(r => (r || []).some(v => v !== '' && v != null));
+  const keep = old.filter(r => !(r[0] === serial || String(r[0]).slice(0, 10) === day)).map(r => Array.from({ length: cols }, (_, i) => i === 0 ? asDay(r[0]) : r[i] ?? ''));
+  const all = keep.concat(rows), id = cols - 1;
+  const cell = (v, i) => i === id ? (v ? "'" + v : '') : typeof v === 'string' ? asCell(v) : v;
+  if (JSON.stringify((seen[0] || []).slice(0, cols)) !== JSON.stringify(head)) {
+    const h = `${tab}!A1:${end}1`;
+    await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(h)}?valueInputOption=RAW`, { range: h, values: [head] }, target);
+  }
+  if (all.length) {
+    const range = `${tab}!A2:${end}${all.length + 1}`;
+    await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, { range, majorDimension: 'ROWS', values: all.map(r => r.map(cell)) }, target);
+  }
+  if (old.length > all.length) {
+    const rest = `${tab}!A${all.length + 2}:${end}${old.length + 1}`;
+    await sheetsCall(token, 'POST', `/values/${encodeURIComponent(rest)}:clear`, {}, target);
+  }
+  return { rows: rows.length, replaced: old.length - keep.length, date: day,
+           link: `https://docs.google.com/spreadsheets/d/${target.id}/edit#gid=${target.gid}&range=A${keep.length + 2}` };
+}
+// A send's rows as a round sheet's tab has them: the date first, the Player ID last
+const ROUND_HEAD = { snowtrain: ['Date', 'Name', 'March CP', 'Unit Type', 'Alliance', 'Garrisoned?', ID_HEAD], energytower: ['Date', 'Name', 'March CP', 'Alliance', 'Points', ID_HEAD],
+  mammoth: ['Date', 'Name', 'March CP', 'Alliance', 'Garrisoned?', ID_HEAD], neutral: ['Date', 'Name', 'Points', 'Alliance', ID_HEAD] };
+const roundRows = (kind, day, rows, ids) => rows.map(([name, points, ally, ...more], i) => kind === 'snowtrain'
+  ? [day, name, points, more[0], ally, more[1], ids[i] || ''] : [day, name, points, ally, ...more, ids[i] || '']);
+// A send to everywhere it goes: the original sheet (if any, as before) and the round sheet for its date (if one is set),
+// whose Summary is then sorted. Each part's result or error is kept; the reply leads with the first that was written.
+async function sendAll(env, day, parts) {
+  const sent = [], skipped = [], errors = [];
+  for (const p of parts) {
+    if (p.skip) { skipped.push(p.skip); continue; }
+    try { sent.push({ to: p.to, ...(await p.write()) }); }
+    catch (e) { errors.push(`${p.to}: ${String(e && e.message || e)}`); }
+  }
+  if (!sent.length) throw Object.assign(new Error(errors.join(' · ') || skipped.join(' · ') || 'Nowhere to send it.'), { status: errors.length ? 502 : 400 });
+  return { ...sent[0], date: sent[0].date || day, sent, skipped, errors };
+}
+// the round-sheet part of a send (null when the date goes to no round sheet)
+async function roundPart(env, day, kind, rows, ids, sortIds) {
+  const r = await roundOfDay(env, day);
+  if (!r) return { skip: `${day} goes to no Practice Round sheet` };
+  if (!r.id) return { skip: `no sheet is set for ${roundName(r.round)}` };
+  return { to: roundName(r.round), write: async () => {
+    const tab = await roundTab(env, r.id, ROUND_TABS[kind]);
+    const out = kind === 'roster' ? await writeRosterTab(env, tab, rows, ids)
+      : kind === 'crystal' ? await replaceDay(env, tab, CRYSTAL.head, day, rows)
+      : await replaceDay(env, tab, ROUND_HEAD[kind], day, roundRows(kind, day, rows, ids));
+    try { const st = await sortSummary(env, await roundTab(env, r.id, summaryTab(r.round)), sortIds || []); if (st) out.summary = st; }
+    catch (e) { out.summaryError = String(e && e.message || e); }
+    return out;
+  } };
 }
 
 // After a send to the Round sheet: the players in Input-Roster that the Summary has no row for yet get one (their Player
 // ID written into the first empty rows of column U, as a value; the row's formulas fill in the rest), then the Summary's
 // rows are sorted by SCORE TOTAL, then CP. Nothing happens until a Summary tab is set in the admin view. ids: the
 // players to make sure have a row (the roster send's), else none.
-async function sortSummary(env, ids = []) {
-  const target = await sheetTarget(env, 'summary');
-  if (!target.id) return null;
+async function sortSummary(env, target, ids = []) {
   const token = await googleToken(env);
   const tab = `'${(await tabTitle(token, target)).replace(/'/g, "''")}'`;
   const col = String.fromCharCode(65 + SUMMARY.id);
@@ -419,11 +496,6 @@ async function sortSummary(env, ids = []) {
     range: { sheetId: target.gid, startRowIndex: 1, endRowIndex: n + 1, startColumnIndex: 0, endColumnIndex: SUMMARY.cols },
     sortSpecs: [{ dimensionIndex: SUMMARY.score, sortOrder: 'DESCENDING' }, { dimensionIndex: SUMMARY.cp, sortOrder: 'DESCENDING' }] } }] }, target);
   return { rows: n, added: add.length };
-}
-// a send's reply, with the Summary sorted after it (a failure there is reported, the send itself having worked)
-async function andSort(env, out, ids) {
-  try { const s = await sortSummary(env, ids); return s ? { ...out, summary: s } : out; }
-  catch (e) { return { ...out, summaryError: String(e && e.message || e) }; }
 }
 
 async function sheetsCall(token, method, path, body, target) {
@@ -456,7 +528,7 @@ async function tabTitle(token, target) {
 
 // Where each Send goes: the spreadsheet and tab set in the admin view (Sheets), else the ones above.
 // Columns and checks stay as fixed here.
-const SHEET_BASE = { kartz: TARGETS.kartz, cp: TARGETS.cp, ranking: RANKING, snowtrain: SNOW_TRAIN, energytower: ENERGY_TOWER, mammoth: MAMMOTH, neutral: NEUTRAL, crystal: CRYSTAL, roster: ROSTER_TAB, summary: SUMMARY_TAB };
+const SHEET_BASE = { kartz: TARGETS.kartz, cp: TARGETS.cp, ranking: RANKING, snowtrain: SNOW_TRAIN, energytower: ENERGY_TOWER, mammoth: MAMMOTH, neutral: NEUTRAL };
 async function sheetTarget(env, name) {
   let s = null;
   try {
@@ -777,9 +849,18 @@ export default {
       if (body.length > 512 * 1024) return reply({ error: 'Request too large.' }, 413);
       try {
         const target = await sheetTarget(env, rankingRoute);
-        if (!target.id) return reply({ error: `No sheet is set for the ${target.book} yet — add one in the admin view (Sheets).` }, 400);
-        const b = JSON.parse(body);
-        return reply(await writeRanking(env, b.rows, target, b.date), 200);
+        const b = JSON.parse(body), to = b.to || {}, day = dayAhead(b.date) ? b.date : new Date().toISOString().slice(0, 10);
+        // the site's ✎ date → Send to sheet: the original sheet unless unticked, and the round sheet for the date when
+        // ticked (the Snow Train, Energy Tower and Mammoth Assault; the rows carry each player's id)
+        const parts = [to.original === false ? { skip: 'the original sheet was not ticked' }
+          : !target.id ? { skip: `no sheet is set for the ${target.book}` }
+          : { to: target.book, write: () => writeRanking(env, b.rows, target, day) }];
+        if (to.round && ROUND_TABS[rankingRoute] && rankingRoute !== 'crystal') {
+          if (!Array.isArray(b.ids) || b.ids.length !== (b.rows || []).length) throw Object.assign(new Error('ids must be one per row'), { status: 400 });
+          checkRankingRows(b.rows, target);
+          parts.push(await roundPart(env, day, rankingRoute, b.rows, b.ids.map(v => /^[0-9a-f]{16}$/.test(v) ? v : '')));
+        }
+        return reply(await sendAll(env, day, parts), 200);
       } catch (e) {
         const status = e.status || (e instanceof SyntaxError ? 400 : 502);
         return reply({ error: String(e && e.message || e) }, status);
@@ -797,12 +878,13 @@ export default {
       const [sheet, path, title, how] = daySend;
       try {
         const target = await sheetTarget(env, sheet);
-        if (!target.id) return reply({ error: `No sheet is set for the ${target.book} yet — add one in the admin view (Sheets).` }, 400);
         const r = await env.ROSTER.get(env.ROSTER.idFromName('roster')).fetch('https://roster' + path, { method: 'POST', body: '{}' });
         const j = await r.json();
         if (!r.ok) throw new Error(j.error || `the ${title} card could not be read`);
         if (!j.there) return reply({ error: `The ${title} card has no one on ${j.day} (UTC) yet — tap ${how} first.` }, 400);
-        return reply(await andSort(env, await writeRanking(env, j.rows, target, j.day, j.ids)), 200);
+        return reply(await sendAll(env, j.day, [
+          target.id ? { to: target.book, write: () => writeRanking(env, j.rows, target, j.day) } : { skip: `no sheet is set for the ${target.book}` },
+          await roundPart(env, j.day, sheet, j.rows, j.ids)]), 200);
       } catch (e) {
         return reply({ error: String(e && e.message || e) }, e.status || 502);
       }
@@ -876,16 +958,30 @@ export default {
       try {
         const b = JSON.parse((await request.text()) || '{}');
         const target = await sheetTarget(env, 'neutral');
-        if (!target.id) return reply({ error: `No sheet is set for the ${target.book} yet — add one in the admin view (Sheets).` }, 400);
         const r = await env.ROSTER.get(env.ROSTER.idFromName('roster')).fetch('https://roster/nc-get', { method: 'POST', body: '{}' });
         const days = (await r.json()).days || {};
         const ds = Object.keys(days).filter(d => (days[d].players || []).length).sort();
         const day = isDay(b.day) ? b.day : ds[ds.length - 1];
         if (!day || !days[day] || !(days[day].players || []).length) return reply({ error: 'No Neutral City battle read yet — tap Read Neutral City first.' }, 400);
-        return reply(await andSort(env, await writeRanking(env, days[day].players.map(p => [p[0], p[1], p[2] || '']), target, day, days[day].players.map(p => p[3] || ''))), 200);
+        const rows = days[day].players.map(p => [p[0], p[1], p[2] || '']);
+        return reply(await sendAll(env, day, [
+          target.id ? { to: target.book, write: () => writeRanking(env, rows, target, day) } : { skip: `no sheet is set for the ${target.book}` },
+          await roundPart(env, day, 'neutral', rows, days[day].players.map(p => p[3] || ''))]), 200);
       } catch (e) {
         return reply({ error: String(e && e.message || e) }, e.status || (e instanceof SyntaxError ? 400 : 502));
       }
+    }
+
+    // Which Practice Round sheet a date goes to (the site's ✎ date → Send to sheet): {round, set (picked in the admin
+    // view, else from the schedule), sheet (one is set for it)}, or {round: 0}
+    if (url.pathname.replace(/^\/+/, '') === 'api/round-of') {
+      if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
+      try {
+        const b = JSON.parse((await request.text()) || '{}');
+        if (!isDay(b.day)) return reply({ error: 'day must be YYYY-MM-DD' }, 400);
+        const r = await roundOfDay(env, b.day);
+        return reply(r ? { round: r.round, set: r.set, sheet: !!r.id } : { round: 0 }, 200);
+      } catch (e) { return reply({ error: String(e && e.message || e) }, 502); }
     }
 
     // The bookmark's Frost Crystal Send: a contest's Individual Ranking as the Frost page has it (the latest battle read,
@@ -898,8 +994,6 @@ export default {
       if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
       try {
         const b = JSON.parse((await request.text()) || '{}');
-        const target = await sheetTarget(env, tableSend);
-        if (!target.id) return reply({ error: `No sheet is set for the ${target.book} yet — add one in the admin view (Sheets).` }, 400);
         const store = path => env.ROSTER.get(env.ROSTER.idFromName('roster')).fetch('https://roster' + path, { method: 'POST', body: '{}' }).then(r => r.json());
         const ro = await store('/list'), ours = new Set(ROUND_ALLIANCES);   // the alliances a Round sheet scores
         if (tableSend === 'roster') {
@@ -909,7 +1003,18 @@ export default {
           if (!rows.length) return reply({ error: 'The roster card is empty — tap Read all four first.' }, 400);
           // where a player who is no longer in 698N, S, W or C is now: Left, or the alliance they moved to
           const now = new Map((ro.rows || []).filter(x => x.pid).map(x => [x.pid, x.status === 'Left' ? 'Left' : x.alliance]));
-          return reply(await andSort(env, await writeRosterTab(env, target, rows, now), rows.map(r => r[4])), 200);
+          // the round: the one picked (the admin view's roster send), else today's
+          const today = new Date().toISOString().slice(0, 10), pick = ROUNDS.includes(b.round) ? b.round : 0;
+          let part;
+          if (pick) {
+            const id = ((await store('/settings')).rounds || {})[pick];
+            part = !id ? { skip: `no sheet is set for ${roundName(pick)}` } : { to: roundName(pick), write: async () => {
+              const out = await writeRosterTab(env, await roundTab(env, id, ROUND_TABS.roster), rows, now);
+              try { out.summary = await sortSummary(env, await roundTab(env, id, summaryTab(pick)), rows.map(r => r[4])); } catch (e) { out.summaryError = String(e.message || e); }
+              return out;
+            } };
+          } else part = await roundPart(env, today, 'roster', rows, now, rows.map(r => r[4]));
+          return reply(await sendAll(env, today, [part]), 200);
         }
         const days = (await store('/battle-get')).days || {}, ds = Object.keys(days).sort();
         const day = isDay(b.day) ? b.day : ds[ds.length - 1];
@@ -918,7 +1023,7 @@ export default {
         const rows = (days[day].players || []).filter(p => String(p.server) === '2698' && p.name)
           .map(p => [day, p.name, p.score || 0, allyOf.get(p.pid) || '', p.masked ? 'Yes' : '', p.pid || '']);
         if (!rows.length) return reply({ error: `The battle read on ${day} has none of our players.` }, 400);
-        return reply(await andSort(env, { ...(await writeTable(env, target, rows)), date: day }), 200);
+        return reply(await sendAll(env, day, [await roundPart(env, day, 'crystal', rows)]), 200);
       } catch (e) {
         return reply({ error: String(e && e.message || e) }, e.status || (e instanceof SyntaxError ? 400 : 502));
       }
@@ -1281,6 +1386,10 @@ const DEFAULT_SETTINGS = {
     { id: 'nc', title: 'Neutral City', show: true, link: '' },
     { id: 'player', title: 'Player Summary', show: true, link: '' }] },
   sheets: Object.fromEntries(Object.entries(SHEET_BASE).map(([k, t]) => [k, { id: t.id, gid: t.gid }])),
+  // the Practice Round sheets (a spreadsheet each, its tabs found by name) and the round each date goes to (2 to 4, or 0
+  // for none; a date not here goes to the round the schedule has running that day)
+  rounds: { 2: '', 3: '', 4: '' },
+  dayRound: {},
   // which sections the bookmark's panel in the game shows
   bookmark: { members: true, wb: true, st: true, et: true, ma: true, ev: true, frost: true, nc: true },
   // the cards' rules (admin → Filters & columns → Rules), checked in order: a player takes the colour and
@@ -1443,6 +1552,9 @@ function cleanSettings(s) {
     const i = s.sheets && s.sheets[name];
     if (i && /^[\w-]{20,100}$/.test(i.id) && Number.isInteger(i.gid) && i.gid >= 0) out.sheets[name] = { id: i.id, gid: i.gid };
   }
+  for (const n of ROUNDS) { const id = s.rounds && s.rounds[n]; out.rounds[n] = typeof id === 'string' && /^[\w-]{20,100}$/.test(id) ? id : ''; }
+  if (s.dayRound && typeof s.dayRound === 'object')
+    out.dayRound = Object.fromEntries(Object.entries(s.dayRound).filter(([d, v]) => isDay(d) && (v === 0 || ROUNDS.includes(v))).sort().slice(-200));
   return out;
 }
 
@@ -1727,6 +1839,17 @@ const ADMIN_OPS = {
       if (t.id === was.id && t.gid === was.gid) continue;
       try { await tabTitle(await googleToken(this.env), { ...SHEET_BASE[name], id: t.id, gid: t.gid }); }
       catch (e) { throw bad(`That sheet could not be used: ${e.message || e}`); }
+    }
+    // a round sheet set or changed: shared with the service account, with every tab the sends write to
+    for (const n of ROUNDS) {
+      const id = next.rounds[n];
+      if (!id || id === (cur.rounds || {})[n]) continue;
+      let titles;
+      try { titles = ((await sheetsCall(await googleToken(this.env), 'GET', '?fields=sheets.properties(sheetId,title)', null, { id })).sheets || []).map(t => t.properties.title); }
+      catch (e) { throw bad(`That sheet could not be used: ${e.message || e}`); }
+      const missing = [...Object.values(ROUND_TABS), summaryTab(n)].filter(t => !titles.includes(t));
+      if (missing.length) throw bad(`${roundName(n)}'s sheet is missing ${missing.length === 1 ? 'the tab' : 'these tabs'}: ${missing.join(', ')}.`);
+      roundTabs.delete(id);
     }
     await tx.put('settings', next);
     return { settings: next };

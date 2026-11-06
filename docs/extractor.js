@@ -1278,8 +1278,7 @@
     var j = await sendTo(b, '/st-send', {}, 'today\'s Snow Train');
     if (!j) return;
     sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
-    status('ok', 'Snow Train sent<small>' + Number(j.rows).toLocaleString() + ' rows from the card added, dated ' + esc(j.date) +
-      ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
+    status('ok', 'Snow Train sent<small>dated ' + esc(j.date) + where(j) + '</small>');
   };
 
   /* Energy Tower: its Unit Details to the site's card (api/et-update), which sends back each player's
@@ -1316,8 +1315,7 @@
     var j = await sendTo(b, '/et-send', {}, 'today\'s Energy Tower');
     if (!j) return;
     sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
-    status('ok', 'Energy Tower sent<small>' + Number(j.rows).toLocaleString() + ' rows from the card added, dated ' + esc(j.date) +
-      ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
+    status('ok', 'Energy Tower sent<small>dated ' + esc(j.date) + where(j) + '</small>');
   };
 
   /* Mammoth Assault: its View Queues to the site's card (api/ma-update), which fills in each player's
@@ -1354,8 +1352,7 @@
     var j = await sendTo(b, '/ma-send', {}, 'today\'s Mammoth Assault');
     if (!j) return;
     sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
-    status('ok', 'Mammoth Assault sent<small>' + Number(j.rows).toLocaleString() + ' rows from the card added, dated ' + esc(j.date) +
-      ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
+    status('ok', 'Mammoth Assault sent<small>dated ' + esc(j.date) + where(j) + '</small>');
   };
 
   /* Events: every section's stage times to the site's home page (api/schedule) */
@@ -1461,6 +1458,14 @@
     lock(false); refresh();
   };
 
+  // where a send went (the Worker's sent, skipped and errors): each sheet with its rows and a link, then what was not sent
+  function where(j) {
+    var out = (j.sent || [{ to: 'the sheet', rows: j.rows, link: j.link }]).map(function (x) {
+      return '<br>' + esc(x.to) + ': ' + Number(x.rows).toLocaleString() + ' rows' + (x.replaced ? ' (in place of ' + Number(x.replaced) + ' sent before)' : '') +
+        ' · <a href="' + esc(x.link) + '" target="_blank" rel="noopener">Open ↗</a>' + (x.summaryError ? ' · Summary not sorted: ' + esc(x.summaryError) : '');
+    }).join('');
+    return out + (j.skipped || []).concat(j.errors || []).map(function (x) { return '<br>Not sent: ' + esc(x); }).join('');
+  }
   // The Round sheet's Crystal tab (api/frost-send) and Input-Roster tab (api/roster-send): the Worker writes them from what
   // the site has (the Frost page's latest battle, the roster card), each row ending with the player's id
   $('#frs').onclick = async function () {
@@ -1469,8 +1474,7 @@
     var j = await sendTo(b, '/frost-send', {}, 'the latest Frost Crystal battle');
     if (!j) return;
     sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
-    status('ok', 'Frost Crystal sent<small>' + Number(j.rows).toLocaleString() + ' players added, dated ' + esc(j.date) +
-      ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
+    status('ok', 'Frost Crystal sent<small>dated ' + esc(j.date) + where(j) + '</small>');
   };
   $('#rsh').onclick = async function () {
     if (busy) return;
@@ -1479,8 +1483,7 @@
     if (!j) return;
     sub(b, 'Sent ' + Number(j.rows) + ' players · now');
     status('ok', 'Roster sent<small>' + Number(j.updated).toLocaleString() + ' updated, ' + Number(j.added).toLocaleString() + ' new at the end' +
-      (j.left ? ', ' + Number(j.left).toLocaleString() + ' no longer in the four alliances' : '') +
-      ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
+      (j.left ? ', ' + Number(j.left).toLocaleString() + ' no longer in the four alliances' : '') + where(j) + '</small>');
   };
 
   $('#ncs').onclick = async function () {
@@ -1489,8 +1492,7 @@
     var j = await sendTo(b, '/nc-send', {}, 'the latest Neutral City battle');
     if (!j) return;
     sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
-    status('ok', 'Neutral City sent<small>' + Number(j.rows).toLocaleString() + ' players added, dated ' + esc(j.date) +
-      ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
+    status('ok', 'Neutral City sent<small>dated ' + esc(j.date) + where(j) + '</small>');
   };
 
   /* Energy Tower points: its Rankings to the site's card (api/et-points), each player's points in
