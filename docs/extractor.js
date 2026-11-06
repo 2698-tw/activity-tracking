@@ -50,6 +50,25 @@
   }
 
   var API = 'https://data-collection.jk06nm04.workers.dev/api';
+  // Every call to the Worker carries the admin password (x-kartz-pass), which the Worker needs for each save and send
+  // (viewing needs nothing). It is asked for the first time one is needed, or when the Worker says it is wrong (it was
+  // changed), and kept in this browser for the game's site only. Cancelling leaves the call refused; nothing is saved.
+  var PASS = 'x2698.pass';
+  var passOf = function () { try { return localStorage.getItem(PASS) || ''; } catch (e) { return ''; } };
+  var fetch = async function (url, o) {
+    if (String(url).indexOf(API) !== 0) return window.fetch(url, o);
+    for (var tries = 0; ; tries++) {
+      var p = passOf(), q = Object.assign({}, o || {});
+      q.headers = Object.assign({}, (o && o.headers) || {}, p ? { 'x-kartz-pass': p } : {});
+      var r = await window.fetch(url, q);
+      if (r.status !== 401 || tries >= 2) return r;
+      var j = await r.clone().json().catch(function () { return {}; });
+      if (!j.needPass) return r;
+      var typed = window.prompt(p ? 'That password was not accepted. The site\'s admin password:' : 'Saving and sending need the site\'s admin password (asked once, kept in this browser):', '');
+      if (!typed) return r;
+      try { localStorage.setItem(PASS, typed.trim()); } catch (e) {}
+    }
+  };
   var SHEET = 'https://docs.google.com/spreadsheets/d/12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc/edit#gid=0';
   // alliance ids, from the game's Alliance CP ranking (2026-10-27)
   var ALLY = { '698N': 500245787, '698S': 500245801, '698W': 500246524, '698C': 500247242 };
