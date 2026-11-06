@@ -153,6 +153,15 @@ const ENERGY_TOWER = { id: '', gid: 0, book: 'Energy Tower', points: 'Points' };
 const MAMMOTH = { id: '', gid: 0, book: 'Mammoth Assault', flag: 'Garrisoned?', head: ['Date', 'Name', 'March CP', 'Alliance', 'Garrisoned?'] };
 // Neutral City's Points Log (docs/extractor.js, Send to sheet): Date (the battle's), Name, Points, Alliance
 const NEUTRAL = { id: '1NeHELo_UY1KYNMSKzlHo0z0jlMUrtP1gEFZQXYW2h_U', gid: 0, book: 'SS P2 Neutral City', head: ['Date', 'Name', 'Points', 'Alliance'] };
+// The Round sheet's Crystal tab (bookmark Send on Frost Crystal): Date, Name, Points, Alliance, Masked, Player ID — every
+// player of ours in a contest's Individual Ranking, masked ones under their real names. Set in the admin view (Sheets).
+const CRYSTAL = { id: '', gid: 0, book: 'Frost Crystal', head: ['Date', 'Name', 'Points', 'Alliance', 'Masked', 'Player ID'] };
+// The Round sheet's Input-Roster tab (bookmark Roster to sheet): Search Name, In Game Name, Alliance, Base CP (millions),
+// Player ID — everyone in 698N, S, W and C, each player keeping their row (writeRosterTab). Set in the admin view (Sheets).
+const ROSTER_TAB = { id: '', gid: 0, book: 'Input-Roster', head: ['Search Name', 'In Game Name', 'Alliance', 'Base CP', 'Player ID'] };
+// The sends to a Round sheet end each row with the player's id (the site's, made from the UID and never the UID), so
+// the sheet can look players up by it, through name changes and names two players share.
+const ID_HEAD = 'Player ID';
 const RANKING_ORIGIN = 'https://h5.topwargame.com';
 const RANKING_MAX = 3000;
 // The alliances that take part in a Kartz round (api/round-*).
@@ -249,7 +258,7 @@ async function appendRows(env, values, name = 'kartz') {
            book: target.book, tab: title, id: target.id, gid: target.gid };
 }
 
-async function writeRanking(env, rows, target = RANKING, day) {
+async function writeRanking(env, rows, target = RANKING, day, ids) {
   if (!Array.isArray(rows) || !rows.length)
     throw Object.assign(new Error('No rows to send.'), { status: 400 });
   if (rows.length > RANKING_MAX)
@@ -265,12 +274,16 @@ async function writeRanking(env, rows, target = RANKING, day) {
                        && (!flag || /^(Yes|No)$/.test(r[n - 1]))))
     throw Object.assign(new Error(`Every row must be [name, points, alliance${mid ? pts ? ', Rankings points' : ', unit type' : ''}${flag ? ', Yes or No' : ''}].`), { status: 400 });
   const end = 'DEF'[n - 3];
+  // the player ids (ids[i] for rows[i]), in the column after the row's last: G for the Snow Train, F for the Energy
+  // Tower and Mammoth Assault, E for Neutral City
+  const wide = 1 + n, idCol = Array.isArray(ids) && ids.length === rows.length ? String.fromCharCode(65 + wide) : '';
+  const last = idCol || end;
 
   const token = await googleToken(env);
   const tab = `'${(await tabTitle(token, target)).replace(/'/g, "''")}'`;
   // Each list goes below the last one, the way appendRows does it: find the last row with
   // anything in A to D (E) and write directly under it.
-  const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(`${tab}!A:${end}`)}`
+  const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(`${tab}!A:${last}`)}`
     + '?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE', null, target);
   const seen = got.values || [];
   let filled = seen.length;
@@ -281,8 +294,8 @@ async function writeRanking(env, rows, target = RANKING, day) {
   // as plain text.
   const today = new Date().toISOString().slice(0, 10);
   const date = dayAhead(day) ? day : today;
-  const first = Math.max(filled, 1) + 1, last = first + rows.length - 1;
-  const range = `${tab}!A${first}:${end}${last}`;
+  const first = Math.max(filled, 1) + 1;
+  const range = `${tab}!A${first}:${last}${first + rows.length - 1}`;
   // a new sheet: its header row (row 1 is kept for it either way)
   if (target.head && !(seen[0] || []).some(v => v !== '' && v != null)) {
     const head = `${tab}!A1:${end}1`;
@@ -297,16 +310,83 @@ async function writeRanking(env, rows, target = RANKING, day) {
     const head = `${tab}!E1`;
     await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(head)}?valueInputOption=RAW`, { range: head, values: [[target.points]] }, target);
   }
+  if (idCol && (seen[0] || [])[wide] !== ID_HEAD) {
+    const head = `${tab}!${idCol}1`;
+    await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(head)}?valueInputOption=RAW`, { range: head, values: [[ID_HEAD]] }, target);
+  }
   if (flag && (seen[0] || [])[n] !== target.flag) {
     const head = `${tab}!${end}1`;
     await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(head)}?valueInputOption=RAW`, { range: head, values: [[target.flag]] }, target);
   }
   const out = await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
     { range, majorDimension: 'ROWS',
-      values: rows.map(([name, points, ally, ...more]) => target.extra ? [date, asCell(name), points, more[0], asCell(ally), ...more.slice(1)]
-        : [date, asCell(name), points, asCell(ally), ...more]) }, target);
+      values: rows.map(([name, points, ally, ...more], i) => (target.extra ? [date, asCell(name), points, more[0], asCell(ally), ...more.slice(1)]
+        : [date, asCell(name), points, asCell(ally), ...more]).concat(idCol ? [ids[i] || ''] : [])) }, target);
   return { rows: out.updatedRows || rows.length, range: out.updatedRange || range, date,
            link: `https://docs.google.com/spreadsheets/d/${target.id}/edit#gid=${target.gid}&range=A${first}` };
+}
+
+// A Round sheet's own tab (Crystal, Input-Roster): its header row (target.head) in row 1, then the rows, added below the
+// last row with anything in it, or (replace) in place of every row below the header.
+async function writeTable(env, target, rows, { replace = false } = {}) {
+  const cols = target.head.length, end = String.fromCharCode(64 + cols);
+  if (!rows.length || rows.length > RANKING_MAX || !rows.every(r => Array.isArray(r) && r.length === cols))
+    throw Object.assign(new Error(`Every row must be ${cols} cells, at most ${RANKING_MAX} rows.`), { status: 400 });
+  const token = await googleToken(env);
+  const tab = `'${(await tabTitle(token, target)).replace(/'/g, "''")}'`;
+  const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(`${tab}!A:${end}`)}?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE`, null, target);
+  const seen = got.values || [];
+  let filled = seen.length;
+  while (filled > 0 && !(seen[filled - 1] || []).some(v => v !== '' && v != null)) filled--;
+  if (JSON.stringify((seen[0] || []).slice(0, cols)) !== JSON.stringify(target.head)) {
+    const head = `${tab}!A1:${end}1`;
+    await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(head)}?valueInputOption=RAW`, { range: head, values: [target.head] }, target);
+  }
+  if (replace && filled > 1) {
+    const old = `${tab}!A2:${end}${filled}`;
+    await sheetsCall(token, 'POST', `/values/${encodeURIComponent(old)}:clear`, {}, target);
+  }
+  const first = replace ? 2 : Math.max(filled, 1) + 1, range = `${tab}!A${first}:${end}${first + rows.length - 1}`;
+  const out = await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
+    { range, majorDimension: 'ROWS', values: rows.map(r => r.map(v => typeof v === 'string' ? asCell(v) : v)) }, target);
+  return { rows: out.updatedRows || rows.length, range: out.updatedRange || range,
+           link: `https://docs.google.com/spreadsheets/d/${target.id}/edit#gid=${target.gid}&range=A${first}` };
+}
+
+// The Round sheet's Input-Roster, updated in place: the Summary reads it row by row and its typed columns (Tier, passed
+// out, Notes) sit beside those rows, so no player's row ever moves. A player already there (by Player ID, column E)
+// keeps their row, with their name, search name, alliance and CP brought up to date; a new player is added at the end;
+// a player no longer in 698N, S, W or C keeps their row, the alliance column saying where they went (Left, or the
+// alliance they moved to). A row without a Player ID (typed by hand) is left as it is.
+async function writeRosterTab(env, target, rows, now) {
+  const cols = target.head.length, end = String.fromCharCode(64 + cols);
+  const token = await googleToken(env);
+  const tab = `'${(await tabTitle(token, target)).replace(/'/g, "''")}'`;
+  const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(`${tab}!A:${end}`)}?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE`, null, target);
+  const seen = got.values || [];
+  let filled = seen.length;
+  while (filled > 1 && !(seen[filled - 1] || []).some(v => v !== '' && v != null)) filled--;
+  const old = seen.slice(1, Math.max(filled, 1)).map(r => Array.from({ length: cols }, (_, i) => r[i] ?? ''));
+  const fresh = new Map(rows.map(r => [r[cols - 1], r]));
+  let updated = 0, left = 0;
+  const out = old.map(r => {
+    const id = String(r[cols - 1] || '');
+    if (!id) return r;                                              // typed by hand: untouched
+    if (fresh.has(id)) { const n = fresh.get(id); fresh.delete(id); updated++; return n; }
+    left++;
+    return [r[0], r[1], now.get(id) || 'Left', r[3], id];           // gone from our alliances: their row stays
+  });
+  const added = [...fresh.values()];
+  const all = out.concat(added);
+  if (JSON.stringify((seen[0] || []).slice(0, cols)) !== JSON.stringify(target.head)) {
+    const head = `${tab}!A1:${end}1`;
+    await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(head)}?valueInputOption=RAW`, { range: head, values: [target.head] }, target);
+  }
+  const range = `${tab}!A2:${end}${all.length + 1}`;
+  await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
+    { range, majorDimension: 'ROWS', values: all.map(r => r.map(v => typeof v === 'string' ? asCell(v) : v)) }, target);
+  return { rows: all.length, updated, added: added.length, left, range,
+           link: `https://docs.google.com/spreadsheets/d/${target.id}/edit#gid=${target.gid}&range=A${old.length + 2}` };
 }
 
 async function sheetsCall(token, method, path, body, target) {
@@ -339,7 +419,7 @@ async function tabTitle(token, target) {
 
 // Where each Send goes: the spreadsheet and tab set in the admin view (Sheets), else the ones above.
 // Columns and checks stay as fixed here.
-const SHEET_BASE = { kartz: TARGETS.kartz, cp: TARGETS.cp, ranking: RANKING, snowtrain: SNOW_TRAIN, energytower: ENERGY_TOWER, mammoth: MAMMOTH, neutral: NEUTRAL };
+const SHEET_BASE = { kartz: TARGETS.kartz, cp: TARGETS.cp, ranking: RANKING, snowtrain: SNOW_TRAIN, energytower: ENERGY_TOWER, mammoth: MAMMOTH, neutral: NEUTRAL, crystal: CRYSTAL, roster: ROSTER_TAB };
 async function sheetTarget(env, name) {
   let s = null;
   try {
@@ -466,7 +546,7 @@ export default {
     // the game page may reach the ranking route, the roster's MM/CE list and the settings (which of
     // the bookmark's sections to show), and nothing else
     const rankingCall = origin === RANKING_ORIGIN
-      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points', 'api/et-send', 'api/st-send', 'api/ma-update', 'api/ma-send', 'api/events', 'api/schedule', 'api/frost-read', 'api/frost-battle', 'api/nc-read', 'api/nc-send']
+      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points', 'api/et-send', 'api/st-send', 'api/ma-update', 'api/ma-send', 'api/events', 'api/schedule', 'api/frost-read', 'api/frost-battle', 'api/nc-read', 'api/nc-send', 'api/frost-send', 'api/roster-send']
         .includes(url.pathname.replace(/^\/+/, ''));
     const allowed = knownOrigin || hasPass || rankingCall;
 
@@ -685,7 +765,7 @@ export default {
         const j = await r.json();
         if (!r.ok) throw new Error(j.error || `the ${title} card could not be read`);
         if (!j.there) return reply({ error: `The ${title} card has no one on ${j.day} (UTC) yet — tap ${how} first.` }, 400);
-        return reply(await writeRanking(env, j.rows, target, j.day), 200);
+        return reply(await writeRanking(env, j.rows, target, j.day, j.ids), 200);
       } catch (e) {
         return reply({ error: String(e && e.message || e) }, e.status || 502);
       }
@@ -765,7 +845,43 @@ export default {
         const ds = Object.keys(days).filter(d => (days[d].players || []).length).sort();
         const day = isDay(b.day) ? b.day : ds[ds.length - 1];
         if (!day || !days[day] || !(days[day].players || []).length) return reply({ error: 'No Neutral City battle read yet — tap Read Neutral City first.' }, 400);
-        return reply(await writeRanking(env, days[day].players.map(p => [p[0], p[1], p[2] || '']), target, day), 200);
+        return reply(await writeRanking(env, days[day].players.map(p => [p[0], p[1], p[2] || '']), target, day, days[day].players.map(p => p[3] || '')), 200);
+      } catch (e) {
+        return reply({ error: String(e && e.message || e) }, e.status || (e instanceof SyntaxError ? 400 : 502));
+      }
+    }
+
+    // The bookmark's Frost Crystal Send: a contest's Individual Ranking as the Frost page has it (the latest battle read,
+    // or the date sent), our players only, masked ones under their real names: Date, Name, Points, Alliance (the roster's),
+    // Masked (Yes), Player ID; added below the rows already in the sheet like the other sends.
+    // The bookmark's Roster to sheet: everyone in 698N, S, W and C, Search Name, In Game Name, Alliance, Base CP
+    // (millions), Player ID, in the sheet's Input-Roster tab: each player keeps their row, new players are added at the end.
+    const tableSend = { 'api/frost-send': 'crystal', 'api/roster-send': 'roster' }[url.pathname.replace(/^\/+/, '')];
+    if (tableSend) {
+      if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
+      try {
+        const b = JSON.parse((await request.text()) || '{}');
+        const target = await sheetTarget(env, tableSend);
+        if (!target.id) return reply({ error: `No sheet is set for the ${target.book} yet — add one in the admin view (Sheets).` }, 400);
+        const store = path => env.ROSTER.get(env.ROSTER.idFromName('roster')).fetch('https://roster' + path, { method: 'POST', body: '{}' }).then(r => r.json());
+        const ro = await store('/list'), ours = new Set(ROUND_ALLIANCES);   // the alliances a Round sheet scores
+        if (tableSend === 'roster') {
+          const rows = (ro.rows || []).filter(x => x.status !== 'Left' && ours.has(x.alliance))
+            .sort((a, c) => [...ours].indexOf(a.alliance) - [...ours].indexOf(c.alliance) || (c.power || 0) - (a.power || 0))
+            .map(x => [x.search || x.name, x.name, x.alliance, Math.round((x.power || 0) / 1e6), x.pid || '']);
+          if (!rows.length) return reply({ error: 'The roster card is empty — tap Read all four first.' }, 400);
+          // where a player who is no longer in 698N, S, W or C is now: Left, or the alliance they moved to
+          const now = new Map((ro.rows || []).filter(x => x.pid).map(x => [x.pid, x.status === 'Left' ? 'Left' : x.alliance]));
+          return reply(await writeRosterTab(env, target, rows, now), 200);
+        }
+        const days = (await store('/battle-get')).days || {}, ds = Object.keys(days).sort();
+        const day = isDay(b.day) ? b.day : ds[ds.length - 1];
+        if (!day || !days[day]) return reply({ error: 'No Frost Crystal battle read yet — tap Read battle first.' }, 400);
+        const allyOf = new Map((ro.rows || []).filter(x => x.pid).map(x => [x.pid, x.status === 'Left' ? 'Left' : x.alliance]));
+        const rows = (days[day].players || []).filter(p => String(p.server) === '2698' && p.name)
+          .map(p => [day, p.name, p.score || 0, allyOf.get(p.pid) || '', p.masked ? 'Yes' : '', p.pid || '']);
+        if (!rows.length) return reply({ error: `The battle read on ${day} has none of our players.` }, 400);
+        return reply({ ...(await writeTable(env, target, rows)), date: day }, 200);
       } catch (e) {
         return reply({ error: String(e && e.message || e) }, e.status || (e instanceof SyntaxError ? 400 : 502));
       }
@@ -1857,11 +1973,13 @@ export class RosterStore {
     const rank = a => { const i = order.indexOf(a); return i < 0 ? 99 : i; };
     const rows = Object.keys(who).map(k => {
       const ro = roster[k];
-      return { name: String(who[k].name || ''), ally: String((ro ? (ro.status === 'Left' ? 'Left' : ro.alliance) : who[k].ally) || ''), cp: cps[k], pt: pts[k] ?? (cps[k] != null ? null : 0) };
+      return { k, name: String(who[k].name || ''), ally: String((ro ? (ro.status === 'Left' ? 'Left' : ro.alliance) : who[k].ally) || ''), cp: cps[k], pt: pts[k] ?? (cps[k] != null ? null : 0) };
     });
+    const pid = await this.pids(Object.keys(who));
     rows.sort((a, b) => rank(a.ally) - rank(b.ally) || a.ally.localeCompare(b.ally) || (b.cp || 0) - (a.cp || 0) || (b.pt || 0) - (a.pt || 0));
     return { day, there: new Set([...Object.keys(cps), ...Object.keys(pts)]).size,
-             rows: rows.map(r => [r.name.slice(0, 80), r.cp != null ? Math.round(r.cp / 1e6) + 'M' : '', r.ally.slice(0, 20), r.pt ?? '']) };
+             rows: rows.map(r => [r.name.slice(0, 80), r.cp != null ? Math.round(r.cp / 1e6) + 'M' : '', r.ally.slice(0, 20), r.pt ?? '']),
+             ids: rows.map(r => pid[r.k] || '') };
   }
 
   // Today's Mammoth Assault column as sheet rows: [name, March CP (79M), alliance, Yes] for a player in
@@ -1873,11 +1991,13 @@ export class RosterStore {
     const rank = a => { const i = order.indexOf(a); return i < 0 ? 99 : i; };
     const rows = Object.keys(who).map(k => {
       const ro = roster[k];
-      return { name: String(who[k].name || '').slice(0, 80), ally: String((ro ? (ro.status === 'Left' ? 'Left' : ro.alliance) : who[k].ally) || '').slice(0, 20), cp: cps[k] };
+      return { k, name: String(who[k].name || '').slice(0, 80), ally: String((ro ? (ro.status === 'Left' ? 'Left' : ro.alliance) : who[k].ally) || '').slice(0, 20), cp: cps[k] };
     });
     rows.sort((a, b) => rank(a.ally) - rank(b.ally) || a.ally.localeCompare(b.ally) || (b.cp || 0) - (a.cp || 0));
+    const pid = await this.pids(Object.keys(who));
     return { day, there: Object.keys(cps).length,
-             rows: rows.map(r => r.cp != null ? [r.name, Math.round(r.cp / 1e6) + 'M', r.ally, 'Yes'] : [r.name, '', r.ally, 'No']) };
+             rows: rows.map(r => r.cp != null ? [r.name, Math.round(r.cp / 1e6) + 'M', r.ally, 'Yes'] : [r.name, '', r.ally, 'No']),
+             ids: rows.map(r => pid[r.k] || '') };
   }
 
   // Today's Snow Train column as sheet rows: [name, March CP (256M), alliance, unit type, Yes], one per
@@ -1890,13 +2010,15 @@ export class RosterStore {
     const rank = a => { const i = order.indexOf(a); return i < 0 ? 99 : i; }, type = t => UNIT_TYPES.includes(t) ? t : '';
     const rows = Object.keys(who).map(k => {
       const ro = roster[k], w = who[k], types = asTypes(pts[k], w.type);
-      return { name: String(w.name || '').slice(0, 80), ally: String((ro ? (ro.status === 'Left' ? 'Left' : ro.alliance) : w.ally) || '').slice(0, 20),
+      return { k, name: String(w.name || '').slice(0, 80), ally: String((ro ? (ro.status === 'Left' ? 'Left' : ro.alliance) : w.ally) || '').slice(0, 20),
                type: type(w.type), types, top: Math.max(0, ...Object.values(types)), there: pts[k] != null };
     });
     rows.sort((a, b) => rank(a.ally) - rank(b.ally) || a.ally.localeCompare(b.ally) || b.top - a.top);
+    const pid = await this.pids(Object.keys(who)), each = r => r.there ? Object.keys(r.types) : [''];
     return { day, there: rows.filter(r => r.there).length,
              rows: rows.flatMap(r => r.there ? Object.entries(r.types).map(([t, v]) => [r.name, Math.round(v / 1e6) + 'M', r.ally, type(t), 'Yes'])
-                                             : [[r.name, '', r.ally, r.type, 'No']]) };
+                                             : [[r.name, '', r.ally, r.type, 'No']]),
+             ids: rows.flatMap(r => each(r).map(() => pid[r.k] || '')) };
   }
 
   // The Energy Tower's Rankings (this warzone's players and their points): each player's points that

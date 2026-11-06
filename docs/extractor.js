@@ -890,7 +890,8 @@
     '<div data-sec="members"><h3>Alliance members</h3><div class="grid">' +
       Object.keys(ALLY).map(function (t) { return act('a' + t, '', t, 'not read', t); }).join('') + '</div>' +
     '<div class="row2">' + act('all', 'main', 'Read all four', 'Updates the roster card') +
-      act('cp', 'send', 'Send to sheet', 'Read an alliance first') + '</div></div>' +
+      act('cp', 'send', 'Send to sheet', 'Read an alliance first') + '</div>' +
+    '<div class="row2">' + act('rsh', 'send', 'Roster to sheet', 'The Round sheet') + '</div></div>' +
     '<div data-sec="wb"><h3>Whitebeard ranking</h3><div class="wbsel"><select id="who"><option value="ALL4">698N, W, S, C</option><option value="OTHER">Other</option></select></div>' +
     '<div class="row2">' + act('wb', 'main', 'Read', 'Loads every rank') + act('wbs', 'send', 'Send to sheet', 'Read it first') + '</div></div>' +
     '<div data-sec="st"><h3>Snow Train</h3>' +
@@ -903,7 +904,8 @@
     '<div data-sec="ev"><h3>Events</h3>' +
     '<div class="row2">' + act('evr', 'main', 'Read events', 'For the home page') + '</div></div>' +
     '<div data-sec="frost"><h3>Frost Crystal Contest</h3>' +
-    '<div class="row2">' + act('frr', 'main', 'Read battlefields', 'For the Frost page') + act('frb', 'main', 'Read battle', 'At the battle\'s end') + '</div></div>' +
+    '<div class="row2">' + act('frr', 'main', 'Read battlefields', 'For the Frost page') + act('frb', 'main', 'Read battle', 'At the battle\'s end') + '</div>' +
+    '<div class="row2">' + act('frs', 'send', 'Send to sheet', 'The latest battle') + '</div></div>' +
     '<div data-sec="nc"><h3>Neutral City</h3>' +
     '<div class="row2">' + act('ncr', 'main', 'Read Neutral City', 'After a battle') + act('ncs', 'send', 'Send to sheet', 'The latest battle') + '</div></div>' +
     '<div class="status idle" id="st"><span class="si"></span><span class="tx">Ready. Tap a button to start.</span></div></div>';
@@ -1457,6 +1459,28 @@
       status('bad', 'Neutral City not read<small>' + esc(e.message || e) + '</small>');
     }
     lock(false); refresh();
+  };
+
+  // The Round sheet's Crystal tab (api/frost-send) and Input-Roster tab (api/roster-send): the Worker writes them from what
+  // the site has (the Frost page's latest battle, the roster card), each row ending with the player's id
+  $('#frs').onclick = async function () {
+    if (busy) return;
+    var b = $('#frs');
+    var j = await sendTo(b, '/frost-send', {}, 'the latest Frost Crystal battle');
+    if (!j) return;
+    sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
+    status('ok', 'Frost Crystal sent<small>' + Number(j.rows).toLocaleString() + ' players added, dated ' + esc(j.date) +
+      ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
+  };
+  $('#rsh').onclick = async function () {
+    if (busy) return;
+    var b = $('#rsh');
+    var j = await sendTo(b, '/roster-send', {}, 'the roster');
+    if (!j) return;
+    sub(b, 'Sent ' + Number(j.rows) + ' players · now');
+    status('ok', 'Roster sent<small>' + Number(j.updated).toLocaleString() + ' updated, ' + Number(j.added).toLocaleString() + ' new at the end' +
+      (j.left ? ', ' + Number(j.left).toLocaleString() + ' no longer in the four alliances' : '') +
+      ' · <a href="' + esc(j.link) + '" target="_blank" rel="noopener">Open in Sheets ↗</a></small>');
   };
 
   $('#ncs').onclick = async function () {
