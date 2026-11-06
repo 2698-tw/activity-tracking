@@ -159,6 +159,11 @@ const CRYSTAL = { id: '', gid: 0, book: 'Frost Crystal', head: ['Date', 'Name', 
 // The Round sheet's Input-Roster tab (bookmark Roster to sheet): Search Name, In Game Name, Alliance, Base CP (millions),
 // Player ID — everyone in 698N, S, W and C, each player keeping their row (writeRosterTab). Set in the admin view (Sheets).
 const ROSTER_TAB = { id: '', gid: 0, book: 'Input-Roster', head: ['Search Name', 'In Game Name', 'Alliance', 'Base CP', 'Player ID'] };
+// The Round sheet's Summary tab (the Round 2 Summary layout): sorted by SCORE TOTAL (G), then CP (E), highest first, after
+// every send to the Round sheet; each row is one player, found by the Player ID in its column U (a value, never a
+// formula), so a row's typed Tier, passed out and Notes move with it. Set in the admin view (Sheets).
+const SUMMARY_TAB = { id: '', gid: 0, book: 'Round Summary' };
+const SUMMARY = { score: 6, cp: 4, id: 20, cols: 21 };   // columns, from A = 0: SCORE TOTAL, CP, Player ID; A to U sorted
 // The sends to a Round sheet end each row with the player's id (the site's, made from the UID and never the UID), so
 // the sheet can look players up by it, through name changes and names two players share.
 const ID_HEAD = 'Player ID';
@@ -389,6 +394,38 @@ async function writeRosterTab(env, target, rows, now) {
            link: `https://docs.google.com/spreadsheets/d/${target.id}/edit#gid=${target.gid}&range=A${old.length + 2}` };
 }
 
+// After a send to the Round sheet: the players in Input-Roster that the Summary has no row for yet get one (their Player
+// ID written into the first empty rows of column U, as a value; the row's formulas fill in the rest), then the Summary's
+// rows are sorted by SCORE TOTAL, then CP. Nothing happens until a Summary tab is set in the admin view. ids: the
+// players to make sure have a row (the roster send's), else none.
+async function sortSummary(env, ids = []) {
+  const target = await sheetTarget(env, 'summary');
+  if (!target.id) return null;
+  const token = await googleToken(env);
+  const tab = `'${(await tabTitle(token, target)).replace(/'/g, "''")}'`;
+  const col = String.fromCharCode(65 + SUMMARY.id);
+  const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(`${tab}!${col}2:${col}`)}?majorDimension=COLUMNS&valueRenderOption=UNFORMATTED_VALUE`, null, target);
+  const have = ((got.values || [])[0] || []).map(v => String(v ?? ''));
+  let n = have.length;
+  while (n > 0 && !have[n - 1]) n--;
+  const there = new Set(have.slice(0, n).filter(Boolean));
+  const add = [...new Set(ids.filter(id => id && !there.has(id)))];
+  if (add.length) {
+    const range = `${tab}!${col}${n + 2}:${col}${n + 1 + add.length}`;
+    await sheetsCall(token, 'PUT', `/values/${encodeURIComponent(range)}?valueInputOption=RAW`, { range, majorDimension: 'ROWS', values: add.map(id => [id]) }, target);
+    n += add.length;
+  }
+  if (n > 1) await sheetsCall(token, 'POST', ':batchUpdate', { requests: [{ sortRange: {
+    range: { sheetId: target.gid, startRowIndex: 1, endRowIndex: n + 1, startColumnIndex: 0, endColumnIndex: SUMMARY.cols },
+    sortSpecs: [{ dimensionIndex: SUMMARY.score, sortOrder: 'DESCENDING' }, { dimensionIndex: SUMMARY.cp, sortOrder: 'DESCENDING' }] } }] }, target);
+  return { rows: n, added: add.length };
+}
+// a send's reply, with the Summary sorted after it (a failure there is reported, the send itself having worked)
+async function andSort(env, out, ids) {
+  try { const s = await sortSummary(env, ids); return s ? { ...out, summary: s } : out; }
+  catch (e) { return { ...out, summaryError: String(e && e.message || e) }; }
+}
+
 async function sheetsCall(token, method, path, body, target) {
   const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${target.id}${path}`, {
     method,
@@ -419,7 +456,7 @@ async function tabTitle(token, target) {
 
 // Where each Send goes: the spreadsheet and tab set in the admin view (Sheets), else the ones above.
 // Columns and checks stay as fixed here.
-const SHEET_BASE = { kartz: TARGETS.kartz, cp: TARGETS.cp, ranking: RANKING, snowtrain: SNOW_TRAIN, energytower: ENERGY_TOWER, mammoth: MAMMOTH, neutral: NEUTRAL, crystal: CRYSTAL, roster: ROSTER_TAB };
+const SHEET_BASE = { kartz: TARGETS.kartz, cp: TARGETS.cp, ranking: RANKING, snowtrain: SNOW_TRAIN, energytower: ENERGY_TOWER, mammoth: MAMMOTH, neutral: NEUTRAL, crystal: CRYSTAL, roster: ROSTER_TAB, summary: SUMMARY_TAB };
 async function sheetTarget(env, name) {
   let s = null;
   try {
@@ -765,7 +802,7 @@ export default {
         const j = await r.json();
         if (!r.ok) throw new Error(j.error || `the ${title} card could not be read`);
         if (!j.there) return reply({ error: `The ${title} card has no one on ${j.day} (UTC) yet — tap ${how} first.` }, 400);
-        return reply(await writeRanking(env, j.rows, target, j.day, j.ids), 200);
+        return reply(await andSort(env, await writeRanking(env, j.rows, target, j.day, j.ids)), 200);
       } catch (e) {
         return reply({ error: String(e && e.message || e) }, e.status || 502);
       }
@@ -845,7 +882,7 @@ export default {
         const ds = Object.keys(days).filter(d => (days[d].players || []).length).sort();
         const day = isDay(b.day) ? b.day : ds[ds.length - 1];
         if (!day || !days[day] || !(days[day].players || []).length) return reply({ error: 'No Neutral City battle read yet — tap Read Neutral City first.' }, 400);
-        return reply(await writeRanking(env, days[day].players.map(p => [p[0], p[1], p[2] || '']), target, day, days[day].players.map(p => p[3] || '')), 200);
+        return reply(await andSort(env, await writeRanking(env, days[day].players.map(p => [p[0], p[1], p[2] || '']), target, day, days[day].players.map(p => p[3] || ''))), 200);
       } catch (e) {
         return reply({ error: String(e && e.message || e) }, e.status || (e instanceof SyntaxError ? 400 : 502));
       }
@@ -872,7 +909,7 @@ export default {
           if (!rows.length) return reply({ error: 'The roster card is empty — tap Read all four first.' }, 400);
           // where a player who is no longer in 698N, S, W or C is now: Left, or the alliance they moved to
           const now = new Map((ro.rows || []).filter(x => x.pid).map(x => [x.pid, x.status === 'Left' ? 'Left' : x.alliance]));
-          return reply(await writeRosterTab(env, target, rows, now), 200);
+          return reply(await andSort(env, await writeRosterTab(env, target, rows, now), rows.map(r => r[4])), 200);
         }
         const days = (await store('/battle-get')).days || {}, ds = Object.keys(days).sort();
         const day = isDay(b.day) ? b.day : ds[ds.length - 1];
@@ -881,7 +918,7 @@ export default {
         const rows = (days[day].players || []).filter(p => String(p.server) === '2698' && p.name)
           .map(p => [day, p.name, p.score || 0, allyOf.get(p.pid) || '', p.masked ? 'Yes' : '', p.pid || '']);
         if (!rows.length) return reply({ error: `The battle read on ${day} has none of our players.` }, 400);
-        return reply({ ...(await writeTable(env, target, rows)), date: day }, 200);
+        return reply(await andSort(env, { ...(await writeTable(env, target, rows)), date: day }), 200);
       } catch (e) {
         return reply({ error: String(e && e.message || e) }, e.status || (e instanceof SyntaxError ? 400 : 502));
       }
