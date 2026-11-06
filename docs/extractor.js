@@ -17,6 +17,8 @@
  *   Neutral City: its Points Log, opened with the Neutral City tab's own Record button, every battle date's
  *     every page, for all and for each city fought in (its city picker); and the round's cities. For the site's Neutral City page (api/nc-read);
  *     Send puts the latest battle's players in SS P2 Neutral City (api/nc-send).
+ *   Fame: the Neutral City Treasury's Member List (Distribute Rewards → Select one) sorted by Fame (last round), every
+ *     page, straight to the Fame sheet (api/fame-send). Nothing is picked or distributed.
  * The panel is buttons only. Each alliance read updates the site's Alliance roster card
  * (api/roster-update) and each Whitebeard read the site's Whitebeard card (api/wb-update).
  * Nothing here sends anything to the game: the game makes its own usual requests for what it opens.
@@ -595,6 +597,65 @@
     return { days: days, cities: cities, summary: summary, skipped: skipped || [] };
   }
 
+  // Fame (last round): the Neutral City Treasury's Member List (Distribute Rewards → Select one), as an official sees it,
+  // sorted by Fame, every page loaded the way scrolling to the end does. Opened from wherever the treasury is: the
+  // Member List itself, Distribute Rewards (its Select one), or the treasury (its Distribute Rewards). Nothing is picked
+  // or distributed (the list's OK is never pressed), and what was opened is closed again. The date: the round's battle
+  // once it is over, else the newest battle the site has (the round before).
+  async function readFame(step) {
+    var U = ui(), opened = [], CN = req('CQ26NeutralController');
+    var S = compNamed('CQ26TreasureHouseSelectPlayer');
+    try {
+      if (!S) {
+        var R = compNamed('CQ26TreasureHouseSendRewardPanel');
+        if (!R) {
+          var H = compNamed('CQ26TreasureHousePanel');
+          if (!H) throw new Error('open the Neutral City Treasury first (Event Center → Neutral City Treasury)');
+          step('Opening Distribute Rewards…', .05);
+          H.onClickSendReward(); opened.unshift(win('CQ26TreasureHouseSendRewardPanel'));
+          for (var t0 = Date.now(); Date.now() - t0 < 10000 && !(R = compNamed('CQ26TreasureHouseSendRewardPanel')); await wait(200));
+          if (!R) throw new Error('Distribute Rewards did not open (only officials can open it)');
+          await wait(between(900, 1500));
+        }
+        step('Opening the Member List…', .1);
+        R.onClickSelectPlayer(null, '1'); opened.unshift(win('CQ26TreasureHouseSelectPlayer'));
+        for (var t1 = Date.now(); Date.now() - t1 < 10000 && !(S = compNamed('CQ26TreasureHouseSelectPlayer')); await wait(200));
+        if (!S) throw new Error('the Member List did not open: pick a reward in Distribute Rewards first');
+        await wait(between(700, 1200));
+      }
+      if (S._toggleIndex !== 3) {
+        step('Sorting by Fame…', .15);
+        S.onClickRankToggle(null, '3');                  // what tapping Fame (last round) runs
+        await wait(300);
+      }
+      for (var t2 = Date.now(); Date.now() - t2 < 8000 && (S._isLoadingData || !(S._rankInfoList || []).length); await wait(200));
+      if (!(S._rankInfoList || []).length) throw new Error('the Member List is empty');
+      for (var pg = 0; pg < 200 && !S._isLoadAllDataFinish; pg++) {
+        var had = S._rankInfoList.length;
+        step('Reading Fame… ' + had + ' players', Math.min(.85, .2 + pg * .02));
+        await wait(between(500, 1100));
+        S.scrollToBottomEvent();
+        for (var t3 = Date.now(); Date.now() - t3 < 6000 && (S._isLoadingData || S._rankInfoList.length === had); await wait(150))
+          if (!S._isLoadingData && Date.now() - t3 > 1500) break;
+        if (S._rankInfoList.length === had) break;
+      }
+      var parse1 = function (x) { try { return JSON.parse(x) || {}; } catch (e) { return {}; } };
+      // the UID only for the Worker to find each player in the roster; it writes the Player ID, never the UID
+      var rows = S._rankInfoList.map(function (r) { var p = parse1(r.sendPlayerInfo);
+        return [String(p.username || p.nickname || '').slice(0, 40), Number(r.score) || 0, Number(r.power) || 0, Number(r.rank) || 0, r.isSend ? 1 : 0, String(longText(r.uid) || '')]; })
+        .filter(function (r) { return r[0]; });
+      await wait(between(600, 1100));                   // a moment to look
+    } finally { opened.forEach(function (w) { try { if (w) U.CloseUI(w); } catch (e) {} }); }
+    var utc = function (t) { return new Date(t * 1000).toISOString().slice(0, 10); };
+    var stt = CN && CN.default.getInstance().getStatus(), now = Date.now() / 1000, day = '', round = 0;
+    if (stt && stt.fightEndTime && now >= stt.fightEndTime) { day = utc(stt.fightBeginTime); round = stt.round || 0; }
+    else {
+      round = stt && stt.round ? stt.round - 1 : 0;
+      try { var g = await postJson('/nc-read', {}); day = Object.keys(g.days || {}).filter(function (d) { return d <= new Date().toISOString().slice(0, 10); }).sort().pop() || ''; } catch (e) {}
+    }
+    return { day: day || new Date().toISOString().slice(0, 10), round: round, rows: rows };
+  }
+
   // One server the way a person looks it up: tapped on the warzone map (the game asks for its briefing
   // and opens its warzone card), a moment to look, then the card's Individual CP Ranking button. Its
   // top 20 read, then the ranking and the card closed again. map: the open warzone map.
@@ -914,7 +975,8 @@
     '<div class="row2">' + act('frr', 'main', 'Read battlefields', 'For the Frost page') + act('frb', 'main', 'Read battle', 'At the battle\'s end') + '</div>' +
     '<div class="row2">' + act('frs', 'send', 'Send to sheet', 'The latest battle') + '</div></div>' +
     '<div data-sec="nc"><h3>Neutral City</h3>' +
-    '<div class="row2">' + act('ncr', 'main', 'Read Neutral City', 'After a battle') + act('ncs', 'send', 'Send to sheet', 'The latest battle') + '</div></div>' +
+    '<div class="row2">' + act('ncr', 'main', 'Read Neutral City', 'After a battle') + act('ncs', 'send', 'Send to sheet', 'The latest battle') + '</div>' +
+    '<div class="stack">' + act('fmr', 'main', 'Read Fame', 'Treasury → Distribute Rewards · to the Fame sheet') + '</div></div>' +
     '<div class="status idle" id="st"><span class="si"></span><span class="tx">Ready. Tap a button to start.</span></div></div>';
   document.body.appendChild(host);
   var $ = function (s) { return root.querySelector(s); };
@@ -1508,6 +1570,23 @@
     if (!j) return;
     sub(b, 'Sent ' + Number(j.rows) + ' rows · now');
     status('ok', 'Neutral City sent<small>dated ' + esc(j.date) + where(j) + '</small>');
+  };
+
+  /* Read Fame: the treasury's Member List by Fame (last round), straight to the Fame sheet (api/fame-send) */
+  $('#fmr').onclick = async function () {
+    if (busy) return; lock(true);
+    var b = $('#fmr'); start(b); sub(b, 'reading…');
+    try {
+      var r = await readFame(function (t, p) { status('work', t, p); setP(b, p); });
+      setP(b, .9); sub(b, 'sending…'); status('work', 'Sending ' + r.rows.length + ' players to the Fame sheet…', .92);
+      var j = await postJson('/fame-send', r);
+      setP(b, 1); finish(b, true); sub(b, r.rows.length + ' players · now');
+      status('ok', 'Fame sent<small>' + r.rows.length + ' players, Round ' + r.round + ', dated ' + esc(dayText(j.date || r.day)) + where(j) + '</small>');
+    } catch (e) {
+      finish(b, false); sub(b, 'tap to try again');
+      status('bad', 'Fame not read<small>' + esc(e.message || e) + '</small>');
+    }
+    lock(false); refresh();
   };
 
   /* Energy Tower points: its Rankings to the site's card (api/et-points), each player's points in

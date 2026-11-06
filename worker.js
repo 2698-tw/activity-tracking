@@ -156,6 +156,11 @@ const NEUTRAL = { id: '1NeHELo_UY1KYNMSKzlHo0z0jlMUrtP1gEFZQXYW2h_U', gid: 0, bo
 // The Round sheet's Crystal tab (bookmark Send on Frost Crystal): Date, Name, Points, Alliance, Masked, Player ID — every
 // player of ours in a contest's Individual Ranking, masked ones under their real names. Set in the admin view (Sheets).
 const CRYSTAL = { id: '', gid: 0, book: 'Crystal', head: ['Date', 'Name', 'Points', 'Alliance', 'Masked', 'Player ID'] };
+// Neutral City Fame (bookmark Read Fame): the treasury's Member List sorted by Fame (last round), every player in the warzone:
+// Date (that round's battle), Round, Fame rank, Name, Search Name and Alliance (the roster's, by UID), Fame, Power, Rewards
+// sent, Player ID. A date sent again replaces its rows. Its own spreadsheet, first tab.
+const FAME = { id: '1cKLQxHgRC3NwY6lukjN5zy6zmz5VB99uzmSUuLuWiXk', gid: 0, book: 'Fame',
+  head: ['Date', 'Round', 'Fame rank', 'Name', 'Search Name', 'Alliance', 'Fame', 'Power', 'Rewards sent', 'Player ID'] };
 // The Round sheet's Input-Roster tab (bookmark Roster to sheet): Search Name, In Game Name, Alliance, Base CP (millions),
 // Player ID — everyone in 698N, S, W and C, each player keeping their row (writeRosterTab). Set in the admin view (Sheets).
 const ROSTER_TAB = { id: '', gid: 0, book: 'Input-Roster', head: ['Search Name', 'In Game Name', 'Alliance', 'Base CP', 'Player ID'] };
@@ -528,7 +533,7 @@ async function tabTitle(token, target) {
 
 // Where each Send goes: the spreadsheet and tab set in the admin view (Sheets), else the ones above.
 // Columns and checks stay as fixed here.
-const SHEET_BASE = { kartz: TARGETS.kartz, cp: TARGETS.cp, ranking: RANKING, snowtrain: SNOW_TRAIN, energytower: ENERGY_TOWER, mammoth: MAMMOTH, neutral: NEUTRAL };
+const SHEET_BASE = { kartz: TARGETS.kartz, cp: TARGETS.cp, ranking: RANKING, snowtrain: SNOW_TRAIN, energytower: ENERGY_TOWER, mammoth: MAMMOTH, neutral: NEUTRAL, fame: FAME };
 async function sheetTarget(env, name) {
   let s = null;
   try {
@@ -655,7 +660,7 @@ export default {
     // the game page may reach the ranking route, the roster's MM/CE list and the settings (which of
     // the bookmark's sections to show), and nothing else
     const rankingCall = origin === RANKING_ORIGIN
-      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points', 'api/et-send', 'api/st-send', 'api/ma-update', 'api/ma-send', 'api/events', 'api/schedule', 'api/frost-read', 'api/frost-battle', 'api/nc-read', 'api/nc-send', 'api/frost-send', 'api/roster-send', 'api/round-of']
+      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points', 'api/et-send', 'api/st-send', 'api/ma-update', 'api/ma-send', 'api/events', 'api/schedule', 'api/frost-read', 'api/frost-battle', 'api/nc-read', 'api/nc-send', 'api/frost-send', 'api/roster-send', 'api/round-of', 'api/fame-send']
         .includes(url.pathname.replace(/^\/+/, ''));
     const allowed = knownOrigin || hasPass || rankingCall;
 
@@ -967,6 +972,31 @@ export default {
         return reply(await sendAll(env, day, [
           target.id ? { to: target.book, write: () => writeRanking(env, rows, target, day) } : { skip: `no sheet is set for the ${target.book}` },
           await roundPart(env, day, 'neutral', rows, days[day].players.map(p => p[3] || ''))]), 200);
+      } catch (e) {
+        return reply({ error: String(e && e.message || e) }, e.status || (e instanceof SyntaxError ? 400 : 502));
+      }
+    }
+
+    // The bookmark's Read Fame: {day, round, rows: [[name, fame, power, rank, sent (0 or 1), uid]]}, the Member List as the game
+    // has it. Each player's Search Name, Alliance and Player ID come from the roster by UID; the UID is not written.
+    if (url.pathname.replace(/^\/+/, '') === 'api/fame-send') {
+      if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
+      if (origin !== RANKING_ORIGIN && !hasPass) return reply({ error: 'Fame is read in the game, with the bookmark.' }, 403);
+      try {
+        const body = await request.text();
+        if (body.length > 512 * 1024) return reply({ error: 'Request too large.' }, 413);
+        const b = JSON.parse(body || '{}'), int = v => Number.isInteger(v) && v >= 0;
+        const ok = isDay(b.day) && Number.isInteger(b.round) && b.round >= 0 && b.round <= 50
+          && Array.isArray(b.rows) && b.rows.length >= 1 && b.rows.length <= RANKING_MAX
+          && b.rows.every(r => Array.isArray(r) && r.length === 6 && typeof r[0] === 'string' && r[0].length >= 1 && r[0].length <= 40
+            && int(r[1]) && int(r[2]) && int(r[3]) && (r[4] === 0 || r[4] === 1) && /^(\d{5,20})?$/.test(String(r[5])));
+        if (!ok) return reply({ error: 'Fame must be {day, round, rows: [[name, fame, power, rank, sent, uid]]}.' }, 400);
+        const target = await sheetTarget(env, 'fame');
+        const who = await (await env.ROSTER.get(env.ROSTER.idFromName('roster')).fetch('https://roster/fame-who',
+          { method: 'POST', body: JSON.stringify({ uids: b.rows.map(r => String(r[5])) }) })).json();
+        const rows = b.rows.map((r, i) => [b.day, b.round, r[3], r[0], who[i][0], who[i][1], r[1], r[2], r[4] ? 'Yes' : 'No', who[i][2]]);
+        return reply(await sendAll(env, b.day, [target.id
+          ? { to: target.book, write: () => replaceDay(env, target, FAME.head, b.day, rows) } : { skip: 'no sheet is set for Fame' }]), 200);
       } catch (e) {
         return reply({ error: String(e && e.message || e) }, e.status || (e instanceof SyntaxError ? 400 : 502));
       }
@@ -1933,6 +1963,12 @@ export class RosterStore {
       const path = new URL(request.url).pathname;
       if (path === '/update') return Response.json(await this.update(await request.json()));
       if (path === '/list') return Response.json(await this.list());
+      // Fame's players by UID: [Search Name, Alliance (Left for one who has left), Player ID], '' for one not in the roster
+      if (path === '/fame-who') {
+        const { uids } = await request.json(), roster = await this.load(), pid = await this.pids(uids);
+        return Response.json(uids.map(u => { const r = u && roster[u];
+          return [r ? r.search || r.name || '' : '', r ? (r.status === 'Left' ? 'Left' : r.alliance || '') : '', pid[u] || '']; }));
+      }
       if (path === '/wb-update') return Response.json(await this.wbUpdate(await request.json(), 'wb'));
       if (path === '/wb-list') return Response.json(await this.wbList('wb'));
       if (path === '/st-update') return Response.json(await this.wbUpdate(await request.json(), 'st'));
