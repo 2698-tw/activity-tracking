@@ -146,7 +146,7 @@ h2.sec:first-child{margin-top:0}
 </div>
 <script src="last.js?v=1"></script>
 <script src="who.js?v=7"></script>
-<script src="sendday.js?v=2"></script>
+<script src="sendday.js?v=3"></script>
 <script>
 // inside the site (index.html#nc) the site's own header has the way back
 if (window.frameElement) document.getElementById('homeLink').remove();
@@ -182,6 +182,8 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   }
   const SHEET_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 3v18"/></svg>';
   const SHEET = 'https://docs.google.com/spreadsheets/d/1NeHELo_UY1KYNMSKzlHo0z0jlMUrtP1gEFZQXYW2h_U/edit#gid=0';
+  // the sheet's link only in admin mode (the site's admin pill, kept in this browser): visitors have no access to it
+  const isAdmin = () => { try { return !!localStorage.getItem('adminPass'); } catch { return false; } };
   // each player's search name, as the site's other cards have it (docs/cards.js, frost.html): from the roster
   // workbook's Alliance Rosters tab first, then the Base CP sends; the exact name first, then one written
   // without the fancy letters
@@ -266,7 +268,7 @@ if (window.frameElement) document.getElementById('homeLink').remove();
       ? `<td class="n">${N(r.on[d])}</td>` : '<td class="n rdim">—</td>').join('')}</tr>`).join('');
     $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>Neutral City</b>
         <label class="rsearch"><span aria-hidden="true">🔍</span><input id="q" type="text" placeholder="Search a name" autocomplete="off" value="${esc(q)}"><button type="button" class="rclear" id="qx" title="Clear the search" aria-label="Clear the search"${q ? '' : ' hidden'}>✕</button></label>
-        <button type="button" class="rgo" data-csv>Export CSV</button><a class="rsheet" href="${SHEET}" target="_blank" rel="noopener" title="Open in Google Sheets">${SHEET_ICON}Sheet ↗</a></div>
+        <button type="button" class="rgo" data-csv>Export CSV</button>${isAdmin() ? `<a class="rsheet" href="${SHEET}" target="_blank" rel="noopener" title="Open in Google Sheets">${SHEET_ICON}Sheet ↗</a>` : ''}</div>
       <div class="rreads">${N(rows.length)} players · ${ds.length} ${ds.length === 1 ? 'battle' : 'battles'}${ds.length ? ' · last read ' + esc(dayName(ds[ds.length - 1])) : ''}</div>
       <div class="rbar">${chips()}<span class="rcount">${N(l.length)} of ${N(rows.length)} players</span></div>
       <div class="rbody"><table class="rtable wbtable"><thead><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${ds.length + 2}" class="rdim">No player matches.</td></tr>`}</tbody></table></div></div>`;

@@ -8,7 +8,8 @@ window.SendDay = function ({ api, path, what, original, label, after }) {
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const admin = () => { try { return !!localStorage.getItem('adminPass'); } catch { return false; } };
   const settings = () => { try { return JSON.parse(localStorage.getItem('site.settings')) || {}; } catch { return {}; } };
-  const post = (p, body) => fetch(api + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  // admin only: the password the Worker needs for a send
+  const post = (p, body) => fetch(api + p, { method: 'POST', headers: { 'content-type': 'application/json', ...(() => { try { const p = localStorage.getItem('adminPass'); return p ? { 'x-kartz-pass': p } : {}; } catch { return {}; } })() }, body: JSON.stringify(body) })
     .then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error((j.error && j.error.message) || j.error || 'The Worker answered ' + r.status); return j; });
   const bar = document.createElement('div');
   bar.className = 'sendday'; bar.hidden = true;

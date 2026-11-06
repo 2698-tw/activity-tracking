@@ -669,7 +669,7 @@
       const y = m.querySelector('[data-y]'), err = m.querySelector('[data-e]');
       y.disabled = true; y.textContent = 'Sending…'; err.textContent = '';
       try {
-        const r = await fetch(API_BASE + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+        const r = await fetch(API_BASE + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(() => { try { const p = localStorage.getItem('adminPass'); return p ? { 'x-kartz-pass': p } : {}; } catch { return {}; } })() }, body: JSON.stringify(body) });   // admin: the password the Worker needs to send
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error((j.error && j.error.message) || j.error || 'the sheet did not accept it (' + r.status + ')');
         const link = j.link || `https://docs.google.com/spreadsheets/d/${j.id}/edit#gid=${j.gid}`;
@@ -737,7 +737,7 @@
         // both: Base CP, then the round sheet, each reported
         const y = m.querySelector('[data-y]'), err = m.querySelector('[data-e]');
         y.disabled = true; y.textContent = 'Sending…'; err.textContent = '';
-        const go = (path, body) => fetch(API_BASE + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+        const go = (path, body) => fetch(API_BASE + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(() => { try { const p = localStorage.getItem('adminPass'); return p ? { 'x-kartz-pass': p } : {}; } catch { return {}; } })() }, body: JSON.stringify(body) })
           .then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error((j.error && j.error.message) || j.error || r.status); return j; });
         const line = (to, f) => f.then(j => `<li>${esc(to)}: ${Number(j.rows).toLocaleString()} rows · <a href="${esc(j.link || `https://docs.google.com/spreadsheets/d/${j.id}/edit#gid=${j.gid}`)}" target="_blank" rel="noopener">Open ↗</a></li>`)
           .catch(e => `<li class="aerr">${esc(to)}: ✗ ${esc(e.message || e)}</li>`);

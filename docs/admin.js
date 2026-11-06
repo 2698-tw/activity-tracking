@@ -228,7 +228,7 @@ window.Admin = (function () {
   function applyHome() {
     const h = A.settings.home;
     if (!h || !h.cards || !h.cards.length) return;
-    const t = document.getElementById('bandTitle'); if (t) t.textContent = h.title;
+    const t = document.getElementById('bandTitle'); if (t) t.textContent = h.title; if (h.title) document.title = h.title;
     const t2 = document.querySelector('.top .brand h1'); if (t2) t2.textContent = h.title;
     const box = document.querySelector('.homecards');
     let prev = null;

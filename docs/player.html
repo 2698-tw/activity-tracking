@@ -211,6 +211,14 @@ if (window.frameElement) document.getElementById('homeLink').remove();
       seen('nc', d);
       for (const [name, score, ally, pid] of b.players) put('nc', name, ally, d, score, pid);
     }
+    // everyone in the site's alliances (as the admin view sets them), read in no event yet too: their name finds them,
+    // with No for every event
+    const ours = (() => { try { const a = JSON.parse(localStorage.getItem('site.settings')).alliances; if (Array.isArray(a) && a.length) return a; } catch {} return ['698N', '698S', '698W', '698C']; })();
+    for (const x of (ro && ro.rows) || []) {
+      if (x.status === 'Left' || !ours.includes(x.alliance)) continue;
+      const key = who_.key(x.name, x.pid);
+      if (!players.has(key)) players.set(key, { key, name: x.name, ally: x.alliance || '', v: {}, at: {}, was: new Set([x.name]), seen: '' });
+    }
   }
   async function load() {
     // the rounds from api/schedule, not api/events: ad blockers stop any address ending in /events

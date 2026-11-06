@@ -680,6 +680,14 @@ export default {
 
     if (request.method !== 'POST') return reply({ error: 'POST only' }, 405);
 
+    // Every save and send of the activity data (the bookmark's reads and sends, the site's admin sends) needs the admin
+    // password (x-kartz-pass), wherever it comes from: an Origin header can be made up outside a browser. Viewing needs
+    // nothing. A wrong password is answered slowly, to make guessing slow. needPass tells the bookmark to ask for it.
+    const needPass = async () => {
+      if (request.headers.get('x-kartz-pass')) await new Promise(r => setTimeout(r, 800));
+      return reply({ error: 'Saving and sending need the admin password.', needPass: true }, 401);
+    };
+
     // The ask bar's data (docs/ask.js): a fixed set of read-only tables, each a named list of tab
     // ranges, read with the service account (Alliance Rosters is not readable by link). Nothing
     // else in either workbook can be asked for — no Notes, no Discord names — and nothing is
@@ -710,6 +718,7 @@ export default {
       if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
       const body = await request.text();
       if (body.length > 256 * 1024) return reply({ error: 'Request too large.' }, 413);
+      if (!hasPass) return needPass();
       let read;
       try { read = checkRosterRead(JSON.parse(body)); }
       catch (e) { return reply({ error: String(e.message || e) }, 400); }
@@ -749,6 +758,7 @@ export default {
     if (dayCard) {
       if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
       if (dayCard.endsWith('-list')) return rosterCall(env, dayCard, null, reply);
+      if (!hasPass) return needPass();
       const body = await request.text();
       if (body.length > 512 * 1024) return reply({ error: 'Request too large.' }, 413);
       let read;
@@ -761,6 +771,7 @@ export default {
     // RawData-CP, A to I: date, submitter, search name, in-game name, alliance, base CP, and the three
     // march columns left empty. The rows are checked here; the tab is the existing 'cp' target.
     if (url.pathname.replace(/^\/+/, '') === 'api/game-cp') {
+      if (!hasPass) return needPass();
       const body = await request.text();
       if (body.length > 512 * 1024) return reply({ error: { code: 413, message: 'Request too large.' } }, 413);
       try {
@@ -850,6 +861,7 @@ export default {
     // The Snow Train's and the Energy Tower's Unit Details go to their own sheets the same way.
     const rankingRoute = { 'api/game-ranking': 'ranking', 'api/game-snowtrain': 'snowtrain', 'api/game-energytower': 'energytower', 'api/game-mammoth': 'mammoth' }[url.pathname.replace(/^\/+/, '')];
     if (rankingRoute) {
+      if (!hasPass) return needPass();
       const body = await request.text();
       if (body.length > 512 * 1024) return reply({ error: 'Request too large.' }, 413);
       try {
@@ -880,6 +892,7 @@ export default {
                       'api/st-send': ['snowtrain', '/st-day', 'Snow Train', 'Read garrison'],
                       'api/ma-send': ['mammoth', '/ma-day', 'Mammoth Assault', 'Read garrison'] }[url.pathname.replace(/^\/+/, '')];
     if (daySend) {
+      if (!hasPass) return needPass();
       const [sheet, path, title, how] = daySend;
       try {
         const target = await sheetTarget(env, sheet);
@@ -906,7 +919,7 @@ export default {
       let b;
       try { b = body ? JSON.parse(body) : {}; } catch { return reply({ error: 'Not JSON.' }, 400); }
       if (b.fields === undefined) return rosterCall(env, '/frost-get', null, reply);
-      if (origin !== RANKING_ORIGIN && !hasPass) return reply({ error: 'Battlefields are read in the game, with the bookmark.' }, 403);
+      if (!hasPass) return needPass();
       const f = b.fields, sv = b.servers;
       if (!/^20\d\d-\d\d-\d\d$/.test(b.day || '')) return reply({ error: 'day must be the contest date, YYYY-MM-DD' }, 400);
       if (!Array.isArray(f) || !f.length || f.length > 16
@@ -934,7 +947,7 @@ export default {
       let b;
       try { b = body ? JSON.parse(body) : {}; } catch { return reply({ error: 'Not JSON.' }, 400); }
       if (b.status === undefined) return rosterCall(env, '/battle-get', null, reply);
-      if (origin !== RANKING_ORIGIN && !hasPass) return reply({ error: 'The battle is read in the game, with the bookmark.' }, 403);
+      if (!hasPass) return needPass();
       try { return rosterCall(env, '/battle-add', checkBattle(b), reply); }
       catch (e) { return reply({ error: String(e.message || e) }, 400); }
     }
@@ -951,7 +964,7 @@ export default {
       let b;
       try { b = body ? JSON.parse(body) : {}; } catch { return reply({ error: 'Not JSON.' }, 400); }
       if (b.days === undefined) return rosterCall(env, '/nc-get', null, reply);
-      if (origin !== RANKING_ORIGIN && !hasPass) return reply({ error: 'Neutral City is read in the game, with the bookmark.' }, 403);
+      if (!hasPass) return needPass();
       try { return rosterCall(env, '/nc-set', checkNeutral(b), reply); }
       catch (e) { return reply({ error: String(e.message || e) }, 400); }
     }
@@ -960,6 +973,7 @@ export default {
     // sent), Date, Name, Points and Alliance, added below the rows already in the sheet like the other sends.
     if (url.pathname.replace(/^\/+/, '') === 'api/nc-send') {
       if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
+      if (!hasPass) return needPass();
       try {
         const b = JSON.parse((await request.text()) || '{}');
         const target = await sheetTarget(env, 'neutral');
@@ -981,7 +995,7 @@ export default {
     // has it. Each player's Search Name, Alliance and Player ID come from the roster by UID; the UID is not written.
     if (url.pathname.replace(/^\/+/, '') === 'api/fame-send') {
       if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
-      if (origin !== RANKING_ORIGIN && !hasPass) return reply({ error: 'Fame is read in the game, with the bookmark.' }, 403);
+      if (!hasPass) return needPass();
       try {
         const body = await request.text();
         if (body.length > 512 * 1024) return reply({ error: 'Request too large.' }, 413);
@@ -1022,6 +1036,7 @@ export default {
     const tableSend = { 'api/frost-send': 'crystal', 'api/roster-send': 'roster' }[url.pathname.replace(/^\/+/, '')];
     if (tableSend) {
       if (!env.ROSTER) return reply({ error: 'Worker has no ROSTER binding — see wrangler.toml.' }, 500);
+      if (!hasPass) return needPass();
       try {
         const b = JSON.parse((await request.text()) || '{}');
         const store = path => env.ROSTER.get(env.ROSTER.idFromName('roster')).fetch('https://roster' + path, { method: 'POST', body: '{}' }).then(r => r.json());
@@ -1070,7 +1085,7 @@ export default {
       let b;
       try { b = body ? JSON.parse(body) : {}; } catch { return reply({ error: 'Not JSON.' }, 400); }
       if (b.events === undefined) return rosterCall(env, '/ev-get', null, reply);
-      if (origin !== RANKING_ORIGIN && !hasPass) return reply({ error: 'Events are saved from the game, with the bookmark.' }, 403);
+      if (!hasPass) return needPass();
       const t = v => Number.isInteger(v) && v > 1.7e9 && v < 2.2e9;
       const name = v => typeof v === 'string' && v.length >= 1 && v.length <= 40;
       const ok = Array.isArray(b.rounds) && b.rounds.length >= 1 && b.rounds.length <= 12
