@@ -495,7 +495,8 @@
   // tab), then that tab's Record button: the Points Log, one tab per battle date, each date's every page read the
   // way scrolling to the end loads it, for All and then each city in its picker (the cities we fought in). Then the round's cities as the game has them, once its battle is over
   // (until the next round's battle, the cities are that round's). Everything opened is closed again.
-  async function readNeutral(step) {
+  // have: the dates the site has saved already; those are skipped, except the newest in the Points Log (read again)
+  async function readNeutral(step, have) {
     var U = ui(), WM = win('CQ26MainPanel'), WA = win('ActivityPanelNew'), WS = win('CQ25NeutralScorePanel'), CN = req('CQ26NeutralController');
     if (!U || !WM || !WA || !WS || !CN) throw new Error('no Neutral City in the game right now');
     var ctl = CN.default.getInstance(), opened = [];
@@ -529,9 +530,10 @@
         P = null;
       }
       if (!P) throw new Error('the Points Log did not open');
-      var times = P._times.slice();
+      var times = P._times.slice(), newest = times.map(utc).sort().pop(), skipped = [];
       for (var i = 0; i < times.length; i++) {
         var d = utc(times[i]);
+        if (d !== newest && have && have[d]) { skipped.push(d); continue; }
         if (P._curTabIdx !== i) {
           await wait(between(900, 1600));
           var before = P._data;
@@ -590,7 +592,7 @@
       }
     } finally { opened.forEach(function (w) { try { U.CloseUI(w); } catch (e) {} }); }
     if (!Object.keys(days).length && !summary) throw new Error('no Neutral City battle yet');
-    return { days: days, cities: cities, summary: summary };
+    return { days: days, cities: cities, summary: summary, skipped: skipped || [] };
   }
 
   // One server the way a person looks it up: tapped on the warzone map (the game asks for its briefing
@@ -1447,7 +1449,9 @@
     if (busy) return; lock(true);
     var b = $('#ncr'); start(b); sub(b, 'reading…');
     try {
-      var r = await readNeutral(function (t, p) { status('work', t, p); setP(b, p); });
+      var saved = {};
+      try { var g = await postJson('/nc-read', {}); Object.keys(g.days || {}).forEach(function (d) { if ((g.days[d].players || []).length) saved[d] = 1; }); } catch (e) {}
+      var r = await readNeutral(function (t, p) { status('work', t, p); setP(b, p); }, saved), skipped = r.skipped; delete r.skipped;
       var ds = Object.keys(r.days).sort(), last = ds.length ? r.days[ds[ds.length - 1]].length : 0;
       setP(b, .92); sub(b, 'saving…'); status('work', 'Saving for the Neutral City page…', .95);
       await postJson('/nc-read', r);
@@ -1455,6 +1459,7 @@
       setP(b, 1); finish(b, true); sub(b, last + ' players · now');
       status('ok', 'Neutral City read · ' + ds.length + ' ' + (ds.length === 1 ? 'battle' : 'battles') + '<small>' +
         (ds.length ? last + ' players on ' + dayText(ds[ds.length - 1]) + '. ' : '') +
+        (skipped.length ? 'Already saved, not read again: ' + skipped.map(dayText).join(', ') + '. ' : '') +
         (r.summary ? 'Round ' + r.summary.round + '\'s cities read. ' : 'Cities not read: the round\'s battle is not over. ') + 'On the site\'s Neutral City page.</small>');
     } catch (e) {
       finish(b, false); sub(b, 'tap to try again');
