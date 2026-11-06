@@ -464,7 +464,7 @@ async function roundPart(env, day, kind, rows, ids, sortIds) {
   if (!r.id) return { skip: `no sheet is set for ${roundName(r.round)}` };
   return { to: roundName(r.round), write: async () => {
     const tab = await roundTab(env, r.id, ROUND_TABS[kind]);
-    const out = kind === 'roster' ? await writeRosterTab(env, tab, rows, ids)
+    const out = kind === 'roster' ? await writeRosterTab(env, { ...ROSTER_TAB, ...tab }, rows, ids)
       : kind === 'crystal' ? await replaceDay(env, tab, CRYSTAL.head, day, rows)
       : await replaceDay(env, tab, ROUND_HEAD[kind], day, roundRows(kind, day, rows, ids));
     try { const st = await sortSummary(env, await roundTab(env, r.id, summaryTab(r.round)), sortIds || []); if (st) out.summary = st; }
@@ -1009,7 +1009,7 @@ export default {
           if (pick) {
             const id = ((await store('/settings')).rounds || {})[pick];
             part = !id ? { skip: `no sheet is set for ${roundName(pick)}` } : { to: roundName(pick), write: async () => {
-              const out = await writeRosterTab(env, await roundTab(env, id, ROUND_TABS.roster), rows, now);
+              const out = await writeRosterTab(env, { ...ROSTER_TAB, ...(await roundTab(env, id, ROUND_TABS.roster)) }, rows, now);
               try { out.summary = await sortSummary(env, await roundTab(env, id, summaryTab(pick)), rows.map(r => r[4])); } catch (e) { out.summaryError = String(e.message || e); }
               return out;
             } };
