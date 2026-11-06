@@ -713,17 +713,37 @@
     function sendRoster() {
       const AL = Admin.settings.alliances, list = W.rows.filter(r => r.status !== 'Left' && AL.includes(r.alliance));
       if (!list.length) return Admin.toast('Nobody to send');
-      const m = Admin.modal(`<h3>Send the roster to the sheet</h3>
-        <p>Adds ${list.length} ${list.length === 1 ? 'row' : 'rows'}, every Active player's Base CP, to Alliance Rosters › RawData-CP, dated now. Rows sent before stay as they are.</p>
+      const R = Admin.settings.rounds || {};
+      const m = Admin.modal(`<h3>Send the roster to the sheets</h3>
+        <label class="acheck"><input type="checkbox" data-to="cp" checked> Base CP <small>adds ${list.length} ${list.length === 1 ? 'row' : 'rows'}, every Active player's Base CP, to Alliance Rosters › RawData-CP, dated now</small></label>
+        <label class="acheck"><input type="checkbox" data-to="round" checked> Input-Roster of <select data-rr>${[2, 3, 4].map(n => `<option value="${n}"${R[n] ? '' : ' disabled'}>Practice Round ${n}${R[n] ? '' : ' (no sheet set)'}</option>`).join('')}</select> <small>updated in place: each player keeps their row, new players at the end</small></label>
         <p class="aerr" data-e></p>
-        <div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Send to sheet</button></div>`);
+        <div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Send</button></div>`);
       m.querySelector('[data-x]').onclick = m.close;
-      m.querySelector('[data-y]').onclick = () => {
+      // today's round, as the bookmark's Roster to sheet picks it
+      const sel = m.querySelector('[data-rr]'), firstSet = [2, 3, 4].find(n => R[n]);
+      if (firstSet) sel.value = String(firstSet); else { m.querySelector('[data-to="round"]').checked = false; m.querySelector('[data-to="round"]').disabled = true; }
+      fetch(API_BASE + '/round-of', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ day: new Date().toISOString().slice(0, 10) }) })
+        .then(r => r.json()).then(j => { if (j && j.round && R[j.round]) sel.value = String(j.round); }).catch(() => {});
+      m.querySelector('[data-y]').onclick = async () => {
+        const cp = m.querySelector('[data-to="cp"]').checked, round = m.querySelector('[data-to="round"]').checked, n = Number(sel.value);
+        if (!cp && !round) { m.querySelector('[data-e]').textContent = 'Tick a sheet to send to.'; return; }
         const at = new Date(), p = x => String(x).padStart(2, '0');
         const stamp = `${at.getMonth() + 1}/${at.getDate()}/${at.getFullYear()} ${p(at.getHours())}:${p(at.getMinutes())}:${p(at.getSeconds())}`;
         const rows = list.slice().sort((a, b) => allyOrder(a) - allyOrder(b) || b.power - a.power)
           .map(r => [stamp, 'Data Extractor', (r.search || r.name).slice(0, 80), r.name.slice(0, 80), r.alliance, Math.round(r.power / 1e6)]);
-        sendRows(m, '/game-cp', { rows }, 'Base CP');
+        if (cp && !round) return sendRows(m, '/game-cp', { rows }, 'Base CP');
+        if (round && !cp) return sendRows(m, '/roster-send', { round: n }, `Practice Round ${n}`);
+        // both: Base CP, then the round sheet, each reported
+        const y = m.querySelector('[data-y]'), err = m.querySelector('[data-e]');
+        y.disabled = true; y.textContent = 'Sending…'; err.textContent = '';
+        const go = (path, body) => fetch(API_BASE + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+          .then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error((j.error && j.error.message) || j.error || r.status); return j; });
+        const line = (to, f) => f.then(j => `<li>${esc(to)}: ${Number(j.rows).toLocaleString()} rows · <a href="${esc(j.link || `https://docs.google.com/spreadsheets/d/${j.id}/edit#gid=${j.gid}`)}" target="_blank" rel="noopener">Open ↗</a></li>`)
+          .catch(e => `<li class="aerr">${esc(to)}: ✗ ${esc(e.message || e)}</li>`);
+        const out = [await line('Base CP', go('/game-cp', { rows })), await line(`Practice Round ${n} › Input-Roster`, go('/roster-send', { round: n }))];
+        m.innerHTML = `<h3>Sent</h3><ul>${out.join('')}</ul><div class="arow"><button type="button" class="abtn pri" data-x>Done</button></div>`;
+        m.querySelector('[data-x]').onclick = m.close;
       };
     }
 

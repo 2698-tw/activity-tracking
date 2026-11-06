@@ -750,13 +750,16 @@
   function classOf(name, ally, power) { var m = matchOf(name, ally, power); return m ? m.cls : ''; }
   // the roster's search name, as the Base CP tab sends it; the in-game name when the roster has none
   function searchOf(name, ally, power) { var m = matchOf(name, ally, power); return (m && m.search) || name; }
+  // the roster card's search name: '' when the sheet has no row for the player (a new in-game name not yet in it), so
+  // the Worker keeps the search name they had rather than taking the new in-game name
+  function matchedSearch(name, ally, power) { var m = matchOf(name, ally, power); return (m && m.search) || ''; }
   var READY = loadClasses();
 
   // one alliance read into the site's Alliance Roster card (api/roster-update): its rows are updated
   // in place, matched by UID on the Worker; players missing from the read are marked Left there
   function pushRoster(tag, list) {
     var members = list.map(function (m) {
-      return { uid: m.uid, name: m.name, search: searchOf(m.name, tag, m.power), rank: m.rank, power: m.power, level: m.level,
+      return { uid: m.uid, name: m.name, search: matchedSearch(m.name, tag, m.power), rank: m.rank, power: m.power, level: m.level,
                join: m.join, last: m.last, online: m.online, cls: classOf(m.name, tag, m.power) };
     });
     return fetch(API + '/roster-update', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ alliance: tag, members: members }) })
@@ -891,7 +894,9 @@
       Object.keys(ALLY).map(function (t) { return act('a' + t, '', t, 'not read', t); }).join('') + '</div>' +
     '<div class="row2">' + act('all', 'main', 'Read all four', 'Updates the roster card') +
       act('cp', 'send', 'Send to sheet', 'Read an alliance first') + '</div>' +
-    '<div class="row2">' + act('rsh', 'send', 'Roster to sheet', 'The Round sheet') + '</div></div>' +
+    '<div class="row2"><div class="wbsel"><select id="rround" aria-label="Practice Round sheet">' +
+      [2, 3, 4].map(function (n) { return '<option value="' + n + '">Practice Round ' + n + '</option>'; }).join('') + '</select></div>' +
+      act('rsh', 'send', 'Roster to sheet', 'Input-Roster of that round') + '</div></div>' +
     '<div data-sec="wb"><h3>Whitebeard ranking</h3><div class="wbsel"><select id="who"><option value="ALL4">698N, W, S, C</option><option value="OTHER">Other</option></select></div>' +
     '<div class="row2">' + act('wb', 'main', 'Read', 'Loads every rank') + act('wbs', 'send', 'Send to sheet', 'Read it first') + '</div></div>' +
     '<div data-sec="st"><h3>Snow Train</h3>' +
@@ -1479,12 +1484,17 @@
   $('#rsh').onclick = async function () {
     if (busy) return;
     var b = $('#rsh');
-    var j = await sendTo(b, '/roster-send', {}, 'the roster');
+    var n = Number($('#rround').value);
+    var j = await sendTo(b, '/roster-send', { round: n }, 'the roster to Practice Round ' + n);
     if (!j) return;
     sub(b, 'Sent ' + Number(j.rows) + ' players · now');
     status('ok', 'Roster sent<small>' + Number(j.updated).toLocaleString() + ' updated, ' + Number(j.added).toLocaleString() + ' new at the end' +
       (j.left ? ', ' + Number(j.left).toLocaleString() + ' no longer in the four alliances' : '') + where(j) + '</small>');
   };
+
+  // Roster to sheet's round: today's (the admin view's pick for today, else the season's schedule), changeable before a send
+  fetch(API + '/round-of', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ day: new Date().toISOString().slice(0, 10) }) })
+    .then(function (r) { return r.json(); }).then(function (j) { if (j && j.round) $('#rround').value = String(j.round); }).catch(function () {});
 
   $('#ncs').onclick = async function () {
     if (busy) return;

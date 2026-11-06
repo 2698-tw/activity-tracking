@@ -655,7 +655,7 @@ export default {
     // the game page may reach the ranking route, the roster's MM/CE list and the settings (which of
     // the bookmark's sections to show), and nothing else
     const rankingCall = origin === RANKING_ORIGIN
-      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points', 'api/et-send', 'api/st-send', 'api/ma-update', 'api/ma-send', 'api/events', 'api/schedule', 'api/frost-read', 'api/frost-battle', 'api/nc-read', 'api/nc-send', 'api/frost-send', 'api/roster-send']
+      && ['api/settings', 'api/game-ranking', 'api/roster-class', 'api/roster-update', 'api/game-cp', 'api/wb-update', 'api/game-snowtrain', 'api/st-update', 'api/game-energytower', 'api/et-update', 'api/et-points', 'api/et-send', 'api/st-send', 'api/ma-update', 'api/ma-send', 'api/events', 'api/schedule', 'api/frost-read', 'api/frost-battle', 'api/nc-read', 'api/nc-send', 'api/frost-send', 'api/roster-send', 'api/round-of']
         .includes(url.pathname.replace(/^\/+/, ''));
     const allowed = knownOrigin || hasPass || rankingCall;
 
@@ -2050,8 +2050,10 @@ export class RosterStore {
         else if (was.alliance !== read.alliance) move(m.uid, m.name, was.alliance, read.alliance);
         if (renameNoted(moves, m.uid, was.name, m.name, read.alliance, now)) renamed++;
       }
-      // what the admin view set to stay (MM/CE) wins over the read
-      rows[m.uid] = { ...was, ...m, ...(was && was.pin), alliance: read.alliance, status: 'Active', leftAt: 0, seenAt: now, firstAt: (was && was.firstAt) || now,
+      // what the admin view set to stay (MM/CE) wins over the read. The search name: the one the bookmark matched in the
+      // roster sheet; when it matched none (an in-game name the sheet doesn't have yet, after a rename), the one the
+      // player had, else their in-game name
+      rows[m.uid] = { ...was, ...m, search: m.search || (was && was.search) || m.name, ...(was && was.pin), alliance: read.alliance, status: 'Active', leftAt: 0, seenAt: now, firstAt: (was && was.firstAt) || now,
                       ...(was ? { names: formerNames(was, m.name) } : {}) };
     }
     for (const uid of Object.keys(rows)) {
