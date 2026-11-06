@@ -146,6 +146,7 @@ h2.sec:first-child{margin-top:0}
 </div>
 <script src="last.js?v=1"></script>
 <script src="who.js?v=7"></script>
+<script src="sendday.js?v=2"></script>
 <script>
 // inside the site (index.html#nc) the site's own header has the way back
 if (window.frameElement) document.getElementById('homeLink').remove();
@@ -231,7 +232,10 @@ if (window.frameElement) document.getElementById('homeLink').remove();
 
   const dates = () => Object.keys(days).sort();
   const dayName = d => new Date(d + 'T00:00:00Z').toLocaleDateString([], { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  // admin: a battle date sent to the Neutral City sheet and its Practice Round sheet (sendday.js)
+  const sendDay = SendDay({ api: API, path: '/nc-send', what: 'Neutral City', original: 'neutral', label: d => dayName(d), after: $('days') });
   function draw() {
+    sendDay.show(day === ALL ? null : day);
     $('days').innerHTML = [ALL, ...dates()].map(d =>
       `<button type="button" role="tab" data-day="${esc(d)}" class="${d === day ? 'on' : ''}" aria-selected="${d === day}">${d === ALL ? 'All' : esc(dayName(d))}</button>`).join('');
     $('bar').hidden = day === ALL;                 // All: its Export CSV is in the card, as on the other cards

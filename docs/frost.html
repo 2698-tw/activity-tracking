@@ -199,6 +199,7 @@ td.cp{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
 </div>
 <script src="last.js?v=1"></script>
 <script src="who.js?v=7"></script>
+<script src="sendday.js?v=2"></script>
 <script>
 // inside the site (index.html#frost) the site's own header has the way back
 if (window.frameElement) document.getElementById('homeLink').remove();
@@ -310,7 +311,10 @@ if (window.frameElement) document.getElementById('homeLink').remove();
   }
 
   const dayName = d => new Date(d + 'T00:00:00Z').toLocaleDateString([], { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  // admin: a contest date's battle (its Individual Ranking) sent to its Practice Round sheet's Crystal tab (sendday.js)
+  const sendDay = SendDay({ api: API, path: '/frost-send', what: 'Frost Crystal', original: '', label: d => dayName(d), after: $('days') });
   function draw() {
+    sendDay.show(day !== ALL && bdays[day] ? day : null);
     $('days').innerHTML = (Object.keys(bdays).length ? [ALL] : []).concat([...new Set([...Object.keys(days), ...Object.keys(bdays)])].sort()).map(d =>
       `<button type="button" role="tab" data-day="${esc(d)}" class="${d === day ? 'on' : ''}" aria-selected="${d === day}">${d === ALL ? 'All' : esc(dayName(d))}</button>`).join('');
     document.querySelector('.tabs').hidden = day === ALL;
