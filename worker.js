@@ -172,7 +172,11 @@ const ROSTER_TAB = { id: '', gid: 0, book: 'Input-Roster', head: ['Search Name',
 const ROUNDS = [2, 3, 4];
 const ROUND_TABS = { snowtrain: 'Train', energytower: 'ET', mammoth: 'Mammoth', neutral: 'NC', crystal: 'Crystal', roster: 'Input-Roster' };
 const roundName = n => `Practice Round ${n}`, summaryTab = n => `Round ${n} Summary`;
-const SUMMARY = { score: 6, cp: 4, id: 20, cols: 21 };   // columns, from A = 0: SCORE TOTAL, CP, Player ID; A to U sorted
+// The Summary's columns are found by their headers (SCORE TOTAL, CP, Player ID), since rounds score different events
+// (Round 3 has no Crystal or NC columns); A to the Player ID column is sorted. These are Round 2's, used if a header is missing.
+const SUMMARY = { score: 6, cp: 4, id: 20 };
+// Tabs a round sheet may leave out: a send of that kind for that round is then skipped, not an error
+const ROUND_OPTIONAL = ['neutral', 'crystal'];
 // The sends to a Round sheet end each row with the player's id (the site's, made from the UID and never the UID), so
 // the sheet can look players up by it, through name changes and names two players share.
 const ID_HEAD = 'Player ID';
@@ -467,6 +471,10 @@ async function roundPart(env, day, kind, rows, ids, sortIds) {
   const r = await roundOfDay(env, day);
   if (!r) return { skip: `${day} goes to no Practice Round sheet` };
   if (!r.id) return { skip: `no sheet is set for ${roundName(r.round)}` };
+  if (ROUND_OPTIONAL.includes(kind)) {
+    try { await roundTab(env, r.id, ROUND_TABS[kind]); }
+    catch (e) { if (/has no tab called/.test(e.message)) return { skip: `${roundName(r.round)} does not score ${ROUND_TABS[kind]}` }; throw e; }
+  }
   return { to: roundName(r.round), write: async () => {
     const tab = await roundTab(env, r.id, ROUND_TABS[kind]);
     const out = kind === 'roster' ? await writeRosterTab(env, { ...ROSTER_TAB, ...tab }, rows, ids)
@@ -485,7 +493,11 @@ async function roundPart(env, day, kind, rows, ids, sortIds) {
 async function sortSummary(env, target, ids = []) {
   const token = await googleToken(env);
   const tab = `'${(await tabTitle(token, target)).replace(/'/g, "''")}'`;
-  const col = String.fromCharCode(65 + SUMMARY.id);
+  const head = ((await sheetsCall(token, 'GET', `/values/${encodeURIComponent(`${tab}!1:1`)}`, null, target)).values || [[]])[0]
+    .map(h => String(h || '').trim().toLowerCase());
+  const at = (name, dflt) => { const i = head.indexOf(name); return i >= 0 ? i : dflt; };
+  const C = { score: at('score total', SUMMARY.score), cp: at('cp', SUMMARY.cp), id: at('player id', SUMMARY.id) };
+  const col = String.fromCharCode(65 + C.id);
   const got = await sheetsCall(token, 'GET', `/values/${encodeURIComponent(`${tab}!${col}2:${col}`)}?majorDimension=COLUMNS&valueRenderOption=UNFORMATTED_VALUE`, null, target);
   const have = ((got.values || [])[0] || []).map(v => String(v ?? ''));
   let n = have.length;
@@ -498,8 +510,8 @@ async function sortSummary(env, target, ids = []) {
     n += add.length;
   }
   if (n > 1) await sheetsCall(token, 'POST', ':batchUpdate', { requests: [{ sortRange: {
-    range: { sheetId: target.gid, startRowIndex: 1, endRowIndex: n + 1, startColumnIndex: 0, endColumnIndex: SUMMARY.cols },
-    sortSpecs: [{ dimensionIndex: SUMMARY.score, sortOrder: 'DESCENDING' }, { dimensionIndex: SUMMARY.cp, sortOrder: 'DESCENDING' }] } }] }, target);
+    range: { sheetId: target.gid, startRowIndex: 1, endRowIndex: n + 1, startColumnIndex: 0, endColumnIndex: C.id + 1 },
+    sortSpecs: [{ dimensionIndex: C.score, sortOrder: 'DESCENDING' }, { dimensionIndex: C.cp, sortOrder: 'DESCENDING' }] } }] }, target);
   return { rows: n, added: add.length };
 }
 
@@ -1892,7 +1904,7 @@ const ADMIN_OPS = {
       let titles;
       try { titles = ((await sheetsCall(await googleToken(this.env), 'GET', '?fields=sheets.properties(sheetId,title)', null, { id })).sheets || []).map(t => t.properties.title); }
       catch (e) { throw bad(`That sheet could not be used: ${e.message || e}`); }
-      const missing = [...Object.values(ROUND_TABS), summaryTab(n)].filter(t => !titles.includes(t));
+      const missing = [...Object.entries(ROUND_TABS).filter(([k]) => !ROUND_OPTIONAL.includes(k)).map(([, t]) => t), summaryTab(n)].filter(t => !titles.includes(t));
       if (missing.length) throw bad(`${roundName(n)}'s sheet is missing ${missing.length === 1 ? 'the tab' : 'these tabs'}: ${missing.join(', ')}.`);
       roundTabs.delete(id);
     }
