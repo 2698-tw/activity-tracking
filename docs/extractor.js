@@ -1237,7 +1237,7 @@
   // every alliance read, the last read of each
   function cpRows() {
     var out = [];
-    Object.keys(S.members).forEach(function (tag) { (S.members[tag].list || []).forEach(function (m) { out.push({ name: m.name, ally: tag, power: m.power }); }); });
+    Object.keys(S.members).forEach(function (tag) { (S.members[tag].list || []).forEach(function (m) { out.push({ name: m.name, ally: tag, power: m.power, uid: m.uid }); }); });
     return out;
   }
   // a send: the plane bobs while it goes, flies off when the sheet has it
@@ -1260,7 +1260,7 @@
   $('#cp').onclick = async function () {
     if (busy) return;
     var b = $('#cp'), at = stamp(new Date());
-    var rows = cpRows().map(function (m) { return [at, SUBMITTER, searchOf(m.name, m.ally, m.power), m.name, m.ally, Math.round(m.power / 1e6)]; });
+    var rows = cpRows().map(function (m) { return [at, SUBMITTER, searchOf(m.name, m.ally, m.power), m.name, m.ally, Math.round(m.power / 1e6), /^\d{5,20}$/.test(String(m.uid || '')) ? String(m.uid) : '']; });
     if (!rows.length) return nudge(b, 'Nothing to send yet<small>Read an alliance first.</small>');
     await READY;
     var j = await sendTo(b, '/game-cp', { rows: rows }, rows.length + ' Base CP rows');

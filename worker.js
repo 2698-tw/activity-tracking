@@ -134,9 +134,9 @@ const TARGETS = {
   // the Kartz tab: Input-RawData of the Kartz Tracker, C to K (B was given to another column)
   kartz: { id: '1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE', gid: 1243524383,
            from: 'C', to: 'K', book: 'Kartz Tracker' },
-  // the Base CP tab: Alliance Rosters, A to I
+  // the Base CP tab: Alliance Rosters, A to J (C is the Player ID)
   cp:    { id: '1gumrQaMDdMzkzX3s9leBQZFt2jvDYhAU488sH4sXPY8', gid: 237521468,
-           from: 'A', to: 'I', book: 'Alliance Rosters' },
+           from: 'A', to: 'J', book: 'Alliance Rosters' },
 };
 // The game's ranking lists (docs/bookmark.html, run on the Top War web game): Date, Name, Points
 // and Alliance, in A to D of the first tab. Each send is added below the lists already there.
@@ -184,7 +184,7 @@ const RANKING_ORIGIN = 'https://h5.topwargame.com';
 const RANKING_MAX = 3000;
 // The alliances that take part in a Kartz round (api/round-*).
 const ROUND_ALLIANCES = ['698N', '698S', '698W', '698C'];
-const SHEET_COLS = 9;                   // both targets take nine columns
+const colsOf = t => t.to.charCodeAt(0) - t.from.charCodeAt(0) + 1;   // Kartz C to K: nine; Base CP A to J: ten
 const MAX_ROWS = 1000;
 
 const b64url = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)))
@@ -242,6 +242,7 @@ async function appendRows(env, values, name = 'kartz') {
     throw Object.assign(new Error('No rows to append.'), { status: 400 });
   if (values.length > MAX_ROWS)
     throw Object.assign(new Error(`At most ${MAX_ROWS} rows at a time.`), { status: 400 });
+  const SHEET_COLS = colsOf(target);
   if (!values.every(r => Array.isArray(r) && r.length === SHEET_COLS
                          && r.every(v => typeof v === 'string' || typeof v === 'number')))
     throw Object.assign(new Error(`Every row must be ${SHEET_COLS} text or number cells.`),
@@ -780,8 +781,9 @@ export default {
     }
 
     // Base CP from the extractor's alliance reads, in the Base CP tab's own format: Alliance Rosters,
-    // RawData-CP, A to I: date, submitter, search name, in-game name, alliance, base CP, and the three
-    // march columns left empty. The rows are checked here; the tab is the existing 'cp' target.
+    // RawData-CP, A to J: date, submitter, Player ID, search name, in-game name, alliance, base CP, and the
+    // three march columns left empty. Each row may end with the player's UID, used here only to make the
+    // Player ID (never written). The rows are checked here; the tab is the existing 'cp' target.
     if (url.pathname.replace(/^\/+/, '') === 'api/game-cp') {
       if (!hasPass) return needPass();
       const body = await request.text();
@@ -789,12 +791,15 @@ export default {
       try {
         const { rows } = JSON.parse(body);
         if (!Array.isArray(rows) || !rows.length || rows.length > 1000
-            || !rows.every(r => Array.isArray(r) && r.length === 6
+            || !rows.every(r => Array.isArray(r) && (r.length === 6 || (r.length === 7 && /^(\d{5,20})?$/.test(String(r[6]))))
               && /^\d{1,2}\/\d{1,2}\/\d{4} \d{2}:\d{2}:\d{2}$/.test(r[0])
               && [1, 2, 3, 4].every(i => typeof r[i] === 'string' && r[i].length <= 80) && r[1].trim()
               && Number.isFinite(r[5]) && r[5] >= 0 && r[5] < 10000))
           return reply({ error: { code: 400, message: 'Every row must be [date, submitter, search name, in-game name, alliance, base CP].' } }, 400);
-        const out = await appendRows(env, rows.map(r => [...r, '', '', '']), 'cp');
+        const uids = [...new Set(rows.map(r => String(r[6] || '')).filter(Boolean))];
+        const pid = uids.length ? await (await env.ROSTER.get(env.ROSTER.idFromName('roster')).fetch('https://roster/pids', { method: 'POST', body: JSON.stringify({ uids }) })).json() : {};
+        const out = await appendRows(env, rows.map(r => { const id = pid[String(r[6] || '')] || '';
+          return [r[0], r[1], id ? "'" + id : '', r[2], r[3], r[4], r[5], '', '', '']; }), 'cp');
         return reply(out, 200);
       } catch (e) {
         const status = e.status || (e instanceof SyntaxError ? 400 : 502);
@@ -819,13 +824,13 @@ export default {
         const tab = `'${(await tabTitle(token, target)).replace(/'/g, "''")}'`;
         [roster, raw] = await Promise.all([
           sheetsCall(token, 'GET', `/values/${encodeURIComponent("'Alliance Rosters'!A2:C")}?majorDimension=ROWS`, null, { id: ROSTER_BOOK }),
-          sheetsCall(token, 'GET', `/values/${encodeURIComponent(tab + '!C2:J')}?majorDimension=ROWS`, null, target),
+          sheetsCall(token, 'GET', `/values/${encodeURIComponent(tab + '!D2:K')}?majorDimension=ROWS`, null, target),
         ]);
       } catch (e) { return reply({ error: String(e.message || e) }, 502); }
       const t = v => String(v || '').trim();
       // [in-game name, alliance, search name]
       const rosterNames = (roster.values || []).map(r => [t(r[1]), t(r[2]), t(r[0])]).filter(r => r[0] && r[2]);
-      // C search name, D in-game name, E alliance, J Name Check; later rows are newer
+      // D search name, E in-game name, F alliance, K Name Check (C is the Player ID); later rows are newer
       const best = new Map();
       for (const r of raw.values || []) {
         const search = t(r[0]), name = t(r[1]), ally = t(r[2]);
@@ -1991,6 +1996,7 @@ export class RosterStore {
       if (path === '/update') return Response.json(await this.update(await request.json()));
       if (path === '/list') return Response.json(await this.list());
       // Fame's players by UID: [Search Name, Alliance (Left for one who has left), Player ID], '' for one not in the roster
+      if (path === '/pids') { const { uids } = await request.json(); return Response.json(await this.pids(Array.isArray(uids) ? uids.slice(0, 2000) : [])); }
       if (path === '/fame-who') {
         const { uids } = await request.json(), roster = await this.load(), pid = await this.pids(uids);
         return Response.json(uids.map(u => { const r = u && roster[u];
