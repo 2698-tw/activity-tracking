@@ -238,7 +238,7 @@ window.Admin = (function () {
   }
   applyHome();
 
-  const PAGES = [['cols', 'Cards & rules'], ['home', 'Home page'], ['sheets', 'Sheets & rounds'], ['history', 'History']];
+  const PAGES = [['cols', 'Cards & rules'], ['home', 'Home page'], ['sheets', 'Sheets & rounds'], ['history', 'History'], ['visitors', 'Visitors']];
   let page = 'cols', log = null;
   const sec = { cols: 'wb', sheets: 'overview' }, openRules = new Set();
   const GROUPS = [
@@ -273,7 +273,7 @@ window.Admin = (function () {
     }
     tabs.innerHTML = PAGES.map(([k, l]) => `<button type="button" class="rchip ${page === k ? 'on' : ''}" data-pg="${k}">${l}</button>`).join('');
     view.onchange = view.onclick = null;
-    ({ cols: colsPage, home: homePage, sheets: sheetsPage, history: historyPage })[page]();
+    ({ cols: colsPage, home: homePage, sheets: sheetsPage, history: historyPage, visitors: visitorsPage })[page]();
   }
   if (tabs) tabs.onclick = e => { const b = e.target.closest('[data-pg]'); if (b) { page = b.dataset.pg; drawPage(); } };
   if (view) {
@@ -629,6 +629,100 @@ window.Admin = (function () {
       if (n > 1 && !await A.confirm(`Undo ${n} changes?`, 'This one and every change after it.', 'Undo', false)) return;
       await A.busy(b, () => A.undo(b.dataset.u));
     };
+  }
+
+  const VIEW_NAMES = { home: 'Home', practice: 'Practice Round menu', roster: 'Alliance roster', whitebeard: 'Whitebeard', snowtrain: 'Snow Train', energytower: 'Energy Tower', mammoth: 'Mammoth Assault', frost: 'Frost Crystal Contest', nc: 'Neutral City', player: 'Player Summary', stormduel: 'Storm Duel', kartz: 'Kartz' };
+  const RANGES = [['1', 'Today'], ['7', '7 days'], ['event', 'This event'], ['30', '30 days']];
+  let vRange = '7', vData = null;
+  const num = n => Number(n || 0).toLocaleString('en-US');
+  const hourName = h => `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`;
+  async function visitorsPage() {
+    const seg = `<div class="aseg">${RANGES.map(([k, l]) => `<button type="button" class="${k === vRange ? 'on' : ''}" data-vr="${k}">${l}</button>`).join('')}</div>`;
+    const top = head('Admin · Visitors', "Who's using the site", seg);
+    if (!vData || vData.range !== vRange) {
+      view.innerHTML = `<div class="apanel">${top}<p class="ahint" style="margin:0">Loading…</p></div>`;
+      bindRange();
+      const want = vRange;
+      let r;
+      try { r = await A.call('visitors', { range: want }); } catch (e) { if (page === 'visitors') view.innerHTML = `<div class="apanel">${top}<p class="aerr">${esc(e.message)}</p></div>`; bindRange(); return; }
+      if (page !== 'visitors' || want !== vRange) return;
+      vData = { ...r, range: want };
+    }
+    const d = vData, today = vRange === '1';
+    const u = d.total.u || 0, v = d.total.v || 0;
+    const ch = d.prev ? Math.round((u - d.prev) / d.prev * 100) : null;
+    const days = [];
+    for (let t = Date.parse(d.start + 'T00:00:00Z'); t <= Date.parse(d.end + 'T00:00:00Z'); t += 864e5) {
+      const k = new Date(t).toISOString().slice(0, 10), x = d.days.find(y => y.day === k);
+      days.push({ k, u: x ? x.u : 0, v: x ? x.v : 0 });
+    }
+    const dname = (k, opt) => new Date(k + 'T12:00:00Z').toLocaleDateString('en-US', { timeZone: 'UTC', ...opt });
+    const hours = Array.from({ length: 24 }, (_, h) => { const x = d.hours.find(y => y.hour === h); return { h, u: x ? x.u : 0, v: x ? x.v : 0 }; });
+    const bestDay = days.reduce((a, x) => (x.u > a.u ? x : a), days[0]);
+    const bestHour = hours.reduce((a, x) => (x.u > a.u ? x : a), hours[0]);
+    const prevName = today ? 'yesterday' : 'the period before';
+    const tiles = [
+      ['Unique visitors', num(u), ch === null ? (u ? 'No earlier visits to compare' : '') : `<b class="${ch < 0 ? 'dn' : ''}">${ch >= 0 ? '+' : ''}${ch}%</b> vs ${prevName}`],
+      ['Page views', num(v), u ? `${(v / u).toFixed(1)} pages per visitor` : ''],
+      today ? ['Right now', num(d.now), 'visitors in the last 30 min'] : ['Average per day', num(Math.round(days.reduce((a, x) => a + x.u, 0) / days.length)), 'unique visitors'],
+      today ? ['Busiest hour', bestHour.u ? hourName(bestHour.h) : '–', bestHour.u ? `${num(bestHour.u)} visitors` : ''] : ['Busiest day', bestDay.u ? dname(bestDay.k, { weekday: 'short', month: 'short', day: 'numeric' }) : '–', bestDay.u ? `${num(bestDay.u)} visitors` : ''],
+    ];
+    const pts = today ? hours.map(x => ({ label: `${hourName(x.h)}`, tick: x.h % 3 === 0 ? hourName(x.h) : '', u: x.u, v: x.v }))
+      : days.map((x, i) => ({ label: dname(x.k, { weekday: 'short', month: 'short', day: 'numeric' }), tick: (days.length <= 10 || i % Math.ceil(days.length / 7) === 0 || i === days.length - 1) ? dname(x.k, { month: 'short', day: 'numeric' }) : '', u: x.u, v: x.v }));
+    const devs = d.devices.reduce((a, x) => a + x.u, 0) || 1;
+    const devName = { phone: 'Phone', computer: 'Computer', tablet: 'Tablet' };
+    const range = `${dname(d.start, { month: 'short', day: 'numeric' })}${d.start === d.end ? '' : ' to ' + dname(d.end, { month: 'short', day: 'numeric' })}`;
+    view.innerHTML = `<div class="apanel">${top}
+      <p class="ahint">${today ? 'Today' : esc(range)}${d.event ? ' (from the first round in Dates → rounds)' : ''}. Days and hours are in IST.</p>
+      <div class="avtiles">${tiles.map(([l, n, s]) => `<div class="avtile"><div class="l">${l}</div><div class="n">${n}</div><div class="s">${s}</div></div>`).join('')}</div>
+      <div class="avtwo">
+        <div class="avbox"><h3>${today ? 'Unique visitors by hour, today' : 'Unique visitors per day'}</h3><div class="avchart"><svg></svg><div class="avtip"></div></div>
+          <div class="avleg"><span><i></i>Unique visitors</span><span><i class="pv"></i>Page views</span></div></div>
+        <div class="avbox"><h3>Phone or computer</h3>
+          ${d.devices.length ? `<div class="avdev">${d.devices.map(x => { const pc = Math.round(x.u / devs * 100); return `<div class="r"><span>${devName[x.dev] || esc(x.dev)}</span><div class="b"><i style="width:${pc}%"></i></div><span>${pc}%</span></div>`; }).join('')}</div>` : '<p class="ahint" style="margin:0">No visits yet.</p>'}
+          <h3 style="margin-top:18px">Busiest time</h3><p class="avbusy">${bestHour.u ? `${hourName(bestHour.h)} to ${hourName((bestHour.h + 1) % 24)} IST` : 'No visits yet.'}</p></div>
+      </div>
+      <div class="avbox" style="margin-top:12px"><h3>By page</h3>
+        ${d.pages.length ? `<div class="agridw"><table class="avtab"><thead><tr><th>Page</th><th class="n">Unique visitors</th><th class="n">Page views</th><th class="avsh">Share of visitors</th></tr></thead><tbody>
+        ${d.pages.map(x => { const pc = u ? Math.round(x.u / u * 100) : 0; return `<tr><td>${esc(VIEW_NAMES[x.page] || x.page)}</td><td class="n">${num(x.u)}</td><td class="n">${num(x.v)}</td><td class="avsh"><div class="avshare"><i style="width:${pc}%"></i><span>${pc}%</span></div></td></tr>`; }).join('')}
+        </tbody></table></div>` : '<p class="ahint" style="margin:0">No visits yet.</p>'}</div>
+      <p class="ahint" style="margin:12px 0 0">One visitor = one phone or computer, counted once per page per day. No names, game IDs, IPs or cookies are stored. Someone on two devices counts twice, and ad blockers can hide a few visits.</p></div>`;
+    bindRange();
+    drawChart(view.querySelector('.avchart'), pts);
+  }
+  function bindRange() {
+    view.querySelectorAll('[data-vr]').forEach(b => { b.onclick = () => { vRange = b.dataset.vr; drawPage(); }; });
+  }
+  function drawChart(box, pts) {
+    const svg = box.querySelector('svg'), tip = box.querySelector('.avtip');
+    const W = Math.max(280, box.clientWidth || 600), H = 190, pad = 22, n = pts.length;
+    const max = Math.max(1, ...pts.map(p => p.v)), bw = (W - 8) / n, gap = Math.min(6, bw * 0.25), y = val => (H - pad - 16) * val / max;
+    let s = '';
+    for (let k = 0; k <= 3; k++) { const yy = H - pad - (H - pad - 16) * k / 3; s += `<line x1="0" x2="${W}" y1="${yy}" y2="${yy}" stroke="var(--line)"/>`; if (k) s += `<text x="2" y="${yy - 3}" font-size="10" fill="var(--muted)">${num(Math.round(max * k / 3))}</text>`; }
+    const ticks = [];
+    pts.forEach((p, i) => {
+      const x = 4 + i * bw + gap / 2, w = Math.max(1, bw - gap);
+      s += `<g data-i="${i}"><rect x="${x}" y="${H - pad - y(p.v)}" width="${w}" height="${y(p.v)}" rx="3" fill="var(--avsoft)"/><rect x="${x}" y="${H - pad - y(p.u)}" width="${w}" height="${y(p.u)}" rx="3" fill="var(--accent)"/><rect x="${x - gap / 2}" y="0" width="${bw}" height="${H}" fill="transparent"/></g>`;
+      if (p.tick) ticks.push([x + w / 2, p.tick]);
+    });
+    let room = Infinity;
+    for (const [cx, t] of ticks.reverse()) {
+      if (room - cx < 44) continue;
+      room = cx;
+      const an = cx - 22 < 0 ? 'start' : cx + 22 > W ? 'end' : 'middle';
+      s += `<text x="${an === 'start' ? 2 : an === 'end' ? W - 2 : cx}" y="${H - 6}" font-size="10" fill="var(--muted)" text-anchor="${an}">${t}</text>`;
+    }
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.innerHTML = s;
+    svg.onmousemove = e => {
+      const g = e.target.closest('g[data-i]'); if (!g) { tip.style.opacity = 0; return; }
+      const p = pts[+g.dataset.i], b = g.getBoundingClientRect(), c = svg.getBoundingClientRect();
+      tip.innerHTML = `<b>${esc(p.label)}</b> · ${num(p.u)} visitors · ${num(p.v)} views`;
+      tip.style.left = Math.min(c.width - 80, Math.max(80, b.left - c.left + b.width / 2)) + 'px';
+      tip.style.top = (H - pad - y(p.v)) * c.height / H + 'px';
+      tip.style.opacity = 1;
+    };
+    svg.onmouseleave = () => { tip.style.opacity = 0; };
   }
 
   return A;
