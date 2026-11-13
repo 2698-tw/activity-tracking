@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Player Summary</title>
+<link rel="icon" href="icon.png">
+<style>
+@font-face{font-family:Selawik;font-style:normal;font-weight:400;font-display:swap;src:url(fonts/selawik-400.woff2) format('woff2')}@font-face{font-family:Selawik;font-style:normal;font-weight:600;font-display:swap;src:url(fonts/selawik-600.woff2) format('woff2')}@font-face{font-family:Selawik;font-style:normal;font-weight:700 900;font-display:swap;src:url(fonts/selawik-700.woff2) format('woff2')}
+:root{--bg:#eef4f9;--card:#fff;--ink:#14212e;--dim:#62748a;--line:#dbe5ee;--head:#f4f8fb;--acc:#1789a8;--us:#e8f6ea;--usink:#1f7a3a;--bad:#b42318;
+  --band1:#0b3b57;--band2:#1789a8;--band3:#8fd6e6}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0d151d;--card:#15212c;--ink:#e6eef5;--dim:#8ea2b5;--line:#243444;--head:#1a2835;--acc:#5cc6d6;--us:#173322;--usink:#7fd99a;--bad:#ff8a80}}
+:root[data-theme="dark"]{--bg:#0d151d;--card:#15212c;--ink:#e6eef5;--dim:#8ea2b5;--line:#243444;--head:#1a2835;--acc:#5cc6d6;--us:#173322;--usink:#7fd99a;--bad:#ff8a80}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 Selawik,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+.band{background:linear-gradient(135deg,var(--band1),var(--band2) 60%,var(--band3));color:#fff;padding:22px 16px 18px}
+.band .in,.wrap{max-width:1280px;margin:0 auto}
+.band h1{margin:0;font-size:24px;letter-spacing:.01em}
+.band p{margin:4px 0 0;opacity:.85}
+.band a{color:#fff}
+.homelink{display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;padding:4px 12px 4px 10px;border-radius:999px;font-size:13px;font-weight:600;
+  text-decoration:none;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35)}
+.homelink:hover{background:rgba(255,255,255,.26)}
+.wrap{padding:16px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.bar .grow{flex:1}
+@media (max-width:640px){.bar .status{order:3;flex-basis:100%}.bar #csv{margin-left:auto}}
+button,.btn{font:inherit;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
+.rapp{color-scheme:dark;color:#f3f3f7;background:rgba(22,22,30,.97);border-radius:18px;box-shadow:0 12px 40px rgba(0,0,0,.25),inset 0 0 0 2px rgba(224,69,123,.55);overflow:hidden}
+.rhead{display:flex;align-items:center;gap:10px;padding:12px 14px 8px;flex-wrap:wrap}
+.rhead b{font-size:15.5px}
+.rsearch{flex:1;min-width:160px;display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.08);border-radius:999px;padding:6px 14px;margin:0}
+.rsearch:focus-within{box-shadow:inset 0 0 0 2px rgba(224,69,123,.85)}
+.rsearch input{flex:1;min-width:0;border:0;outline:0;background:none;color:#fff;font:inherit;font-size:15px;padding:0;caret-color:#fff}
+.rreads{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 14px 8px;font-size:12.5px;color:rgba(235,235,245,.65)}
+.rbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 14px 10px}
+.rchip{border:0;background:rgba(255,255,255,.08);color:#f3f3f7;border-radius:999px;padding:5px 12px;font:inherit;font-size:12.5px;font-weight:400;cursor:pointer}
+.rchip.on{background:rgba(195,20,65,.35);box-shadow:inset 0 0 0 1px #e0457b}
+.rcount{margin-left:auto;font-size:12.5px;color:rgba(235,235,245,.5)}
+.rbody{overflow:auto;padding:0 14px 14px}
+.rtable{width:100%;border-collapse:collapse;font-size:13.5px}
+.rtable th{position:sticky;top:0;background:#20212c;text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:rgba(235,235,245,.6);padding:8px 10px;font-weight:600;white-space:nowrap}
+.rtable th.n,.rtable td.n{text-align:right;font-variant-numeric:tabular-nums}
+.rtable td{padding:7px 10px;border-top:1px solid rgba(255,255,255,.08);white-space:nowrap;color:#f3f3f7}
+.rtable tr.us td{background:rgba(126,226,168,.12);color:#8ff0b5;font-weight:700}
+.rtable td.up{color:#8ff0b5;font-size:12.5px}
+.rtable .rdim{color:rgba(235,235,245,.45)}
+.tabs[hidden]{display:none}
+.rclear{flex:none;width:22px;height:22px;display:grid;place-items:center;border:0;border-radius:50%;padding:0;background:rgba(255,255,255,.16);color:#fff;font-size:12px;line-height:1;cursor:pointer}
+.rclear:hover{background:rgba(255,255,255,.28)}
+.rclear[hidden]{display:none}
+.empty{padding:14px 11px;color:var(--dim)}
+.skel{height:200px;border-radius:10px;background:linear-gradient(90deg,var(--card),var(--head),var(--card));background-size:200% 100%;animation:sk 1.4s linear infinite;border:1px solid var(--line)}
+@keyframes sk{to{background-position:-200% 0}}
+.rtable td.n{color:#f3f3f7}
+.rtable td.n.rdim{color:rgba(235,235,245,.45)}
+.rsearch{padding-right:6px;transition:box-shadow .15s ease}
+.rsearch input{border-radius:0;line-height:22px;width:auto}
+.rgo{width:auto;flex:none;border:0;border-radius:999px;padding:7px 14px;font:inherit;font-weight:700;color:#fff;cursor:pointer;background:rgba(255,255,255,.12)}
+.rgo:hover{background:rgba(255,255,255,.2)}
+.rsheet{flex:none;display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:7px 13px;font-weight:700;font-size:13.5px;text-decoration:none;color:#fff;background:rgba(255,255,255,.12)}
+.rsheet:hover{background:rgba(255,255,255,.2)}
+.rsheet svg{width:15px;height:15px}
+.rreads{gap:6px 14px}
+.rchip{font-weight:400}
+.rbody{flex:1}
+.rtable th{cursor:pointer;border:0}
+.rtable td{border-top:0;border-bottom:1px solid rgba(255,255,255,.08)}
+.wbtable{border-collapse:separate;border-spacing:0;min-width:100%;width:auto}
+.wbtable th.n{text-align:right}
+.wbtable td{background:#1a1a23}
+.wbtable th:first-child,.wbtable td:first-child{position:sticky;left:0;z-index:1}
+.rbody{clip-path:inset(0 14px)}
+.wbtable th:first-child{z-index:3}
+.wbtable td:first-child{box-shadow:1px 0 0 rgba(255,255,255,.08),-2px 0 0 #1a1a23}
+.wbtable th:first-child{box-shadow:-2px 0 0 #20212c}
+.wbtable tr.us td{background:#1d2a23}
+.bar[hidden]{display:none}
+@media (max-width:640px){.rapp{border-radius:14px}}
+.rtag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;background:#3a3a3a;color:#ddd}
+.rtag.tLeft{background:transparent;color:#8a8f99;box-shadow:inset 0 0 0 1px #4a4f58}.rtag.t698N{background:#22324f;color:#9ec5ff}.rtag.t698S{background:#3b2340;color:#e9a8ff}.rtag.t698W{background:#203d33;color:#7ee2a8}.rtag.t698C{background:#45321b;color:#ffc078}
+.rapp{overflow:visible}
+.rsearch{position:relative}
+.drop{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:20;max-height:320px;overflow:auto;margin:0;padding:6px;list-style:none;
+  background:#20212c;border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.45),inset 0 0 0 1px rgba(255,255,255,.08);animation:dropIn .12s ease-out}
+.drop[hidden]{display:none}
+.drop li{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:9px;cursor:pointer;color:#f3f3f7;font-size:14px}
+.drop li .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drop li.on,.drop li:hover{background:rgba(195,20,65,.3)}
+.drop li.none{cursor:default;color:rgba(235,235,245,.55)}
+.drop li.none:hover{background:none}
+.drop .more{font-size:12px;color:rgba(235,235,245,.5);padding:6px 10px 2px;cursor:default}
+.drop .more:hover{background:none}
+@keyframes dropIn{from{opacity:0;transform:translateY(-4px)}}
+@media (prefers-reduced-motion:reduce){.drop{animation:none}}
+.who{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:2px 14px 10px;font-size:15px}
+.who b{font-size:17px}
+.rtable td.no{color:#ff9b9b;font-weight:600}
+.rtable td small{display:block;font-size:11px;color:rgba(235,235,245,.5)}
+.tag{display:inline-block;border-radius:6px;padding:1px 8px;font-size:12px;font-weight:700}
+.tag.wb{background:#2a3550;color:#a9c4ff}
+.rtable td.nev{color:rgba(235,235,245,.42);font-size:11.5px;font-style:italic;white-space:normal;line-height:1.25;text-align:center;
+  background:repeating-linear-gradient(135deg,rgba(255,255,255,.025) 0 6px,transparent 6px 12px)}
+.rtable.even{table-layout:fixed;width:100%}
+.even col.ev{width:26%}
+.rtable.even th.n,.rtable.even td.n{text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rtable.even .rs{display:none}
+@media (max-width:640px){
+  .rtable.even .rw{display:none}.rtable.even .rs{display:inline}
+  .rbody{padding:0 8px 12px}.even col.ev{width:29%}
+  .rtable.even th,.rtable.even td{padding:7px 2px}
+  .rtable.even td:first-child,.rtable.even th:first-child{padding-left:8px}
+  .rtable.even td:first-child{white-space:normal;line-height:1.25;font-size:13px}
+  .rtable.even td.n{font-size:12px;text-overflow:clip}
+  .rtable.even td.nev{font-size:10.5px;padding:7px 4px}
+}
+@media (max-width:360px){.rtable.even td.n{font-size:10.5px;letter-spacing:-.02em}}
+.tnote{margin:0;padding:0 14px 14px;font-size:12.5px;color:rgba(235,235,245,.6)}
+.hint{padding:30px 14px;color:rgba(235,235,245,.6);text-align:center}
+</style>
+</head>
+<body>
+<div class="band"><div class="in">
+  <a class="homelink" id="homeLink" href="./"><span aria-hidden="true">←</span>Home</a>
+  <h1>Player Summary</h1>
+</div></div>
+<div class="wrap">
+  <div id="out"><div class="skel"></div></div>
+</div>
+<div id="room" aria-hidden="true"></div>
+<script src="last.js?v=2"></script>
+<script src="who.js?v=7"></script>
+<script>
+if (window.frameElement) document.getElementById('homeLink').remove();
+</script>
+<script>
+(function () {
+  const API = location.hostname.endsWith('.workers.dev') ? '/api' : 'https://data-collection.jk06nm04.workers.dev/api';
+  const US = 2698;
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const N = v => Number(v || 0).toLocaleString('en-US');
+  const allyTag = a => a ? `<span class="rtag t${esc(a)}">${esc(a)}</span>` : '';
+  const fold = s => String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, '');
+  let snames = [new Map(), new Map()];
+  function nameMap(list) {
+    const m = new Map(), weakKeys = new Set();
+    for (const [name, , search, weak] of list || []) for (const k of [name, '~' + fold(name)]) {
+      if (weak && m.has(k) && !weakKeys.has(k)) continue;
+      m.set(k, search); weak ? weakKeys.add(k) : weakKeys.delete(k);
+    }
+    const bare = new Map();
+    for (const [name, , search] of list || []) { const b = Who.untag(name); if (b) bare.set(b, bare.has(b) && bare.get(b) !== search ? null : search); }
+    for (const [b, s] of bare) if (s && !m.has(b)) { m.set(b, s); if (!m.has('~' + fold(b))) m.set('~' + fold(b), s); }
+    return m;
+  }
+  const searchOf = (name, key) => { if (key) { const s = who_.search(key); if (s !== undefined) return s; } for (const m of snames) { const s = m.get(name) || (fold(name) !== '' && m.get('~' + fold(name))); if (s) return s; } return ''; };
+  const nameCell = (name, key) => { const s = searchOf(name, key); return esc(name) + (s && s !== name ? ` <span class="rdim">(${esc(s)})</span>` : ''); };
+  const nameHit = (name, f, key) => !f || fold(name).includes(f) || fold(searchOf(name, key)).includes(f);
+
+  const EVENTS = [
+    { id: 'st', name: 'Snow Train', what: 'garrisoned', yes: 1 },
+    { id: 'et', name: 'Energy Tower', what: 'points' },
+    { id: 'ma', name: 'Mammoth Assault', what: 'garrisoned', yes: 1 },
+    { id: 'frost', name: 'Frost Crystal Contest', what: 'individual points' },
+    { id: 'nc', name: 'Neutral City', what: 'individual points' },
+    { id: 'sd', name: 'Storm Duel', what: 'individual points' },
+  ];
+  let rounds = [], players = new Map(), read = {}, q = '', who = '';
+
+  const roundOf = d => { const t = Date.parse(d + 'T12:00:00Z') / 1000, r = rounds.find(x => x.st <= t && t < x.et); return r ? r.round : t < rounds[0].st ? rounds[0].round : null; };
+  let who_ = Who(null);
+  let pidOf = new Map();
+  function put(ev, name0, ally, d, v, pid) {
+    const r = roundOf(d); if (!name0 || r == null) return;
+    if (!pid && who_.key(name0, '', ally, d).startsWith('n:')) { const s = pidOf.get(name0); if (s && s.size === 1) pid = [...s][0]; }
+    const key = who_.key(name0, pid, ally, d), ro = who_.row(key);
+    const p = players.get(key) || { key, name: ro ? ro.name : name0, ally: ro ? ro.alliance || '' : '', v: {}, at: {}, was: new Set(), seen: '' };
+    p.was.add(name0);
+    if (!ro && d >= p.seen) { p.name = name0; p.seen = d; }
+    if (ally && (!ro || !p.ally)) p.ally = ally;
+    const k = ev + ':' + r;
+    if (!(k in p.at) || d >= p.at[k]) { (p.v[ev] = p.v[ev] || {})[r] = Number(v) || 0; p.at[k] = d; }
+    players.set(key, p);
+  }
+  const wasNames = p => [...p.was].filter(n => n !== p.name);
+  const seen = (ev, d) => { const r = roundOf(d); if (r != null) (read[ev] = read[ev] || new Set()).add(r); };
+
+  const LISTS = ['/schedule', '/wb', '/st', '/et', '/ma', '/frost-battle', '/nc-read', '/search-names', '/roster', '/sd-read', '/left-roster'];
+  function take([ev, wb, st, et, ma, fb, nc, sn, ro, sd, lr]) {
+    players = new Map(); read = {}; who_ = Who(ro, sn && sn.roster);
+    const leftAll = ((lr && lr.rows) || []).map(([search, name, ally]) => [name || search, ally, search]);
+    const gone = new Set(leftAll.filter(r => r[1] === 'Transferred').flatMap(([name, , search]) => [fold(name), fold(search)]).filter(Boolean));
+    const leftRows = leftAll.filter(r => r[1] !== 'Transferred');
+    snames = [nameMap(sn && sn.roster), nameMap(sn && sn.raw), nameMap(leftRows)];
+    rounds = (ev && ev.rounds) || [];
+    if (!rounds.length) throw new Error('the season\'s rounds are not read yet (the bookmark\'s Read events)');
+    pidOf = new Map();
+    const saw = (n, pid) => { if (n && pid) { if (!pidOf.has(n)) pidOf.set(n, new Set()); pidOf.get(n).add(pid); } };
+    for (const j of [wb, st, et, ma]) for (const r of (j && j.rows) || []) saw(r.name, r.pid);
+    for (const b of Object.values((fb && fb.days) || {})) for (const p of b.players || []) if (String(p.server) === String(US)) saw(p.name, p.pid);
+    for (const b of Object.values((nc && nc.days) || {})) for (const p of b.players || []) saw(p[0], p[3]);
+    for (const b of Object.values((sd && sd.days) || {})) for (const p of b.players || []) saw(p[0], p[3]);
+    const sum = v => v && typeof v === 'object' ? Object.values(v).reduce((a, b) => a + (Number(b) || 0), 0) : v;
+    for (const [id, j, f] of [['wb', wb, r => r.pts], ['st', st, r => r.pts], ['et', et, r => r.score], ['ma', ma, r => r.pts]]) {
+      if (!j) continue;
+      (j.dates || []).forEach(d => seen(id, d));
+      for (const r of j.rows || []) for (const [d, v] of Object.entries(f(r) || {})) put(id, r.name, r.ally, d, sum(v), r.pid);
+    }
+    for (const [d, b] of Object.entries((fb && fb.days) || {})) {
+      seen('frost', d);
+      for (const p of b.players || []) if (String(p.server) === String(US)) put('frost', p.name, '', d, p.score, p.pid);
+    }
+    for (const [d, b] of Object.entries((nc && nc.days) || {})) {
+      if (!(b.players || []).length) continue;
+      seen('nc', d);
+      for (const [name, score, ally, pid] of b.players) put('nc', name, ally, d, score, pid);
+    }
+    for (const [d, b] of Object.entries((sd && sd.days) || {})) {
+      if (!(b.players || []).length) continue;
+      seen('sd', d);
+      for (const [name, score, ally, pid] of b.players) put('sd', name, ally, d, score, pid);
+    }
+    for (const x of (ro && ro.rows) || []) {
+      const key = who_.key(x.name, x.pid);
+      if (!players.has(key)) players.set(key, { key, name: x.name, ally: x.status === 'Left' ? 'Left' : x.alliance || '', v: {}, at: {}, was: new Set([x.name]), seen: '' });
+    }
+    const known = new Set();
+    for (const p of players.values()) for (const n of p.was) if (fold(n)) known.add(fold(n));
+    for (const [name, ally, search] of leftRows) {
+      if ([name, search].some(n => fold(n) && known.has(fold(n)))) continue;
+      const key = who_.key(name);
+      if (players.has(key)) continue;
+      players.set(key, { key, name, ally: 'Left', v: {}, at: {}, was: new Set([name]), seen: '' });
+      known.add(fold(name));
+    }
+    for (const [key, p] of players) if ([...p.was].some(n => gone.has(fold(n)))) players.delete(key);
+    const leftNames = new Set(leftRows.flatMap(([name, , search]) => [fold(name), fold(search)]).filter(Boolean));
+    for (const p of players.values()) {
+      const r = who_.row(p.key);
+      if (r && r.status !== 'Left') continue;
+      if ([...p.was].some(n => leftNames.has(fold(n)))) p.ally = 'Left';
+    }
+  }
+  async function load() {
+    const L = LISTS.map(path => Last.post(API + path)), had = !!L[0].now;
+    try { if (had) { take(L.map(x => x.now)); draw(); } } catch {}
+    const fresh = await Promise.all(L.map(x => x.next.catch(() => null)));
+    if (had && L.every((x, i) => x.same || !fresh[i])) return;
+    try { take(fresh.map((j, i) => j || L[i].now)); draw(); }
+    catch (e) { $('out').innerHTML = `<div class="empty">✗ ${esc(e.message || e)}</div>`; }
+  }
+
+  const wbLevel = p => read.wb ? Math.max(0, ...Object.values(p.v.wb || {})) : '';
+  const wbTag = p => { const l = wbLevel(p); return l === '' ? '' : `<span class="tag wb">Whitebeard ${l ? 'Lv. ' + N(l) : 'No'}</span>`; };
+
+  function draw() {
+    if (!$('q')) {
+      $('out').innerHTML = `<div class="rapp"><div class="rhead"><b>Player Summary</b>
+          <label class="rsearch"><span aria-hidden="true">🔍</span><input id="q" type="text" placeholder="Search your name" autocomplete="off" spellcheck="false"
+            role="combobox" aria-expanded="false" aria-controls="drop" aria-autocomplete="list"><button type="button" class="rclear" id="qx" title="Clear the search" aria-label="Clear the search" hidden>✕</button>
+            <ul class="drop" id="drop" role="listbox" hidden></ul></label></div>
+        <div class="rreads" id="reads"></div><div id="body"></div></div>`;
+      wire();
+    }
+    $('reads').textContent = `${N(players.size)} players · ${EVENTS.length + 1} events · ${rounds.length} rounds`;
+    const p = players.get(who);
+    if (!p) { $('body').innerHTML = '<div class="hint">Search your in-game name to see your participation in every event.</div>'; return; }
+    const now = Date.now() / 1000, done = r => r.et <= now;
+    const has = (e, r) => !!(read[e.id] && read[e.id].has(r.round));
+    const state = (e, i) => {
+      const r = rounds[i];
+      if (has(e, r)) { const v = p.v[e.id] && p.v[e.id][r.round]; return v ? { html: `<td class="n">${e.yes ? 'Yes' : N(v)}</td>` } : { html: `<td class="n no">${e.yes ? 'No' : '0'}</td>` }; }
+      if (done(r) || (i > 0 && !has(e, rounds[i - 1]))) return { none: true };
+      return { html: '<td class="n rdim">—</td>' };
+    };
+    const cells = e => {
+      const st = rounds.map((r, i) => state(e, i));
+      let out = '';
+      for (let i = 0; i < st.length;) {
+        if (!st[i].none) { out += st[i].html; i++; continue; }
+        let j = i; while (j < st.length && st[j].none) j++;
+        const which = j - i === 1 ? `Round ${rounds[i].round}` : `Rounds ${rounds[i].round}–${rounds[j - 1].round}`;
+        out += `<td class="nev" colspan="${j - i}">No ${esc(e.name)} in ${which}</td>`;
+        i = j;
+      }
+      return out;
+    };
+    $('body').innerHTML = `<div class="who"><b>${nameCell(p.name, p.key)}</b>${allyTag(p.ally)}${wbTag(p)}${wasNames(p).length ? `<span class="rdim">was ${wasNames(p).map(esc).join(', ')}</span>` : ''}</div>
+      <div class="rbody"><table class="rtable wbtable even"><colgroup><col class="ev">${rounds.map(() => '<col>').join('')}</colgroup><thead><tr><th>Event</th>${rounds.map(r => `<th class="n"><span class="rw">Round </span><span class="rs">R</span>${r.round}</th>`).join('')}</tr></thead>
+      <tbody>${EVENTS.map(e => `<tr><td>${esc(e.name)}<small>${esc(e.what)}</small></td>${cells(e)}</tr>`).join('')}</tbody></table></div>`;
+  }
+
+  const MAX = 50;
+  let hits = [], at = -1;
+  function openList() {
+    const inp = $('q'), drop = $('drop'), f = fold(inp.value);
+    const starts = p => [p.name, searchOf(p.name, p.key), ...p.was].some(n => fold(n).startsWith(f)) ? 0 : 1;
+    hits = f ? [...players.values()].filter(p => nameHit(p.name, f, p.key) || [...p.was].some(n => fold(n).includes(f))).sort((a, b) => starts(a) - starts(b) || a.name.localeCompare(b.name)) : [];
+    at = hits.length ? 0 : -1;
+    if (!f) return closeList();
+    drop.innerHTML = hits.length
+      ? hits.slice(0, MAX).map((x, i) => `<li role="option" id="opt${i}" data-i="${i}" class="${i === at ? 'on' : ''}"><span class="nm">${nameCell(x.name, x.key)}</span>${allyTag(x.ally)}</li>`).join('') +
+        (hits.length > MAX ? `<li class="more">${N(hits.length)} players match: type more of the name.</li>` : '')
+      : '<li class="none">No player matches.</li>';
+    drop.hidden = false; inp.setAttribute('aria-expanded', 'true');
+    room();
+  }
+  function closeList() {
+    $('drop').hidden = true; $('q').setAttribute('aria-expanded', 'false'); at = -1; room();
+  }
+  function mark(i) {
+    const items = $('drop').querySelectorAll('li[data-i]');
+    if (!items.length) return;
+    at = (i + items.length) % items.length;
+    items.forEach((li, k) => li.classList.toggle('on', k === at));
+    items[at].scrollIntoView({ block: 'nearest' });
+    $('q').setAttribute('aria-activedescendant', 'opt' + at);
+  }
+  function pick(i) {
+    const p = hits[i]; if (!p) return;
+    who = p.key; $('q').value = p.name; $('qx').hidden = false; closeList(); draw();
+  }
+  function room() {
+    const drop = $('drop'), gap = $('room');
+    gap.style.height = '0';
+    if (drop.hidden) return;
+    const over = drop.getBoundingClientRect().bottom + 16 - document.body.getBoundingClientRect().bottom;
+    if (over > 0) gap.style.height = over + 'px';
+  }
+  function wire() {
+    const inp = $('q');
+    inp.oninput = () => { q = inp.value; $('qx').hidden = !q; openList(); };
+    inp.onfocus = () => { if (inp.value && !(players.get(who) && players.get(who).name === inp.value)) openList(); };
+    inp.onkeydown = e => {
+      const open = !$('drop').hidden;
+      if (e.key === 'ArrowDown') { e.preventDefault(); open ? mark(at + 1) : openList(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); if (open) mark(at - 1); }
+      else if (e.key === 'Enter') { e.preventDefault(); if (open && at >= 0) pick(at); }
+      else if (e.key === 'Escape') closeList();
+    };
+    $('drop').onmousedown = e => e.preventDefault();
+    $('drop').onclick = e => { const li = e.target.closest('li[data-i]'); if (li) pick(Number(li.dataset.i)); };
+    $('qx').onclick = e => { e.preventDefault(); q = ''; who = ''; inp.value = ''; $('qx').hidden = true; closeList(); draw(); inp.focus(); };
+    document.addEventListener('click', e => { if (!e.target.closest('.rsearch')) closeList(); });
+  }
+  load();
+})();
+</script>
+</body>
+</html>

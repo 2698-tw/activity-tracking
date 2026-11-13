@@ -1,0 +1,635 @@
+
+window.Admin = (function () {
+  const A = { on: false, settings: null, ready: null };
+  const subs = [];
+  const emit = kind => subs.forEach(fn => { try { fn(kind); } catch (e) { console.error(e); } });
+  A.subscribe = fn => subs.push(fn);
+
+  const col = (k, label) => ({ k, label, show: true });
+  const DEFAULTS = {
+    alliances: ['698N', '698S', '698W', '698C'],
+    cards: {
+      wb: { title: 'Whitebeard ranking', sort: 'last', filter: '', fmt: 'full', unitFilters: false, cols: [col('name', 'Name'), col('ally', 'Alliance'), col('@dates', 'Date columns')] },
+      st: { title: 'Snow Train', sort: 'cp1', filter: '', fmt: 'M', unitFilters: true,
+            cols: [col('name', 'Name'), col('cp1', 'March CP 1'), col('u1', 'Unit 1'), col('cp2', 'March CP 2'), col('u2', 'Unit 2'), col('cp3', 'March CP 3'), col('u3', 'Unit 3'), col('ally', 'Alliance'), col('@dates', 'Date columns')] },
+      ro: { title: 'Alliance roster', sort: 'power', filter: '', fmt: 'M', unitFilters: false,
+            cols: [col('name', 'Name'), col('alliance', 'Alliance'), col('rank', 'Rank'), col('power', 'Power'), col('cls', 'MM/CE'), col('join', 'Joined'), col('last', 'Last online'), col('status', 'Status')] },
+      et: { title: 'Energy Tower', sort: 'best', filter: '', fmt: 'M', unitFilters: false, cols: [col('name', 'Name'), col('best', 'Best March CP'), col('ally', 'Alliance'), col('@dates', 'Date columns')] },
+      ma: { title: 'Mammoth Assault', sort: 'best', filter: '', fmt: 'M', unitFilters: false, cols: [col('name', 'Name'), col('best', 'Best March CP'), col('ally', 'Alliance'), col('@dates', 'Date columns')] },
+    },
+    home: { title: '2698 Data Extractor', banner: '2698', cards: [] },
+    sheets: {},
+    rounds: { 2: '', 3: '', 4: '' },
+    dayRound: {},
+    bookmark: { members: true, wb: true, st: true, et: true, ma: true, ev: true, frost: true, nc: true, sd: true },
+    rules: [
+      { id: 'missed', name: 'Missed days', label: 'missed', on: true, color: 'red', chip: false, cards: ['wb', 'st', 'et', 'ma'], all: [{ f: 'missed', op: 'ge', v: 2 }] },
+      { id: 'away', name: 'Away', label: 'away', on: true, color: 'amber', chip: true, cards: ['ro'], all: [{ f: 'last', op: 'ge', v: 3 }, { f: 'status', op: 'is', v: 'Active' }] },
+      { id: 'fresh', name: 'New players', label: 'new', on: true, color: 'green', chip: false, cards: ['ro', 'wb', 'st', 'et', 'ma'], all: [{ f: 'seen', op: 'le', v: 14 }] },
+    ],
+  };
+  const HL_COLORS = ['red', 'amber', 'green', 'blue', 'purple'];
+  const DATED = ['wb', 'st', 'et', 'ma'], ALL5 = ['wb', 'st', 'et', 'ma', 'ro'];
+  A.RULE_FIELDS = {
+    cp: { label: 'CP (M, best)', kind: 'num', cards: ['ro', 'st', 'et', 'ma'] },
+    pts: { label: 'Points (best day)', kind: 'num', cards: ['wb'] },
+    missed: { label: 'Days missed', kind: 'num', cards: DATED },
+    present: { label: 'Days there', kind: 'num', cards: DATED },
+    seen: { label: 'Joined the server (days ago)', kind: 'num', cards: ALL5 },
+    ally: { label: 'Alliance', kind: 'opt', cards: ALL5, opts: () => [...A.settings.alliances, 'OTHER'] },
+    unit: { label: 'Unit type', kind: 'opt', cards: ['st'], opts: () => ['Army', 'Navy', 'Air Force'] },
+    name: { label: 'Name', kind: 'text', cards: ALL5 },
+    rank: { label: 'Rank (1–5)', kind: 'num', cards: ['ro'] },
+    last: { label: 'Last online (days ago)', kind: 'num', cards: ['ro'] },
+    joined: { label: 'Joined (days ago)', kind: 'num', cards: ['ro'] },
+    cls: { label: 'MM / CE', kind: 'opt', cards: ['ro'], opts: () => ['MM', 'CE'] },
+    status: { label: 'Status', kind: 'opt', cards: ['ro'], opts: () => ['Active', 'Left'] },
+  };
+  const RULE_OPS = { num: [['ge', 'at least'], ['le', 'at most'], ['eq', 'exactly'], ['bt', 'between']], opt: [['is', 'is'], ['not', 'is not']], text: [['has', 'contains'], ['is', 'is']] };
+  const SHEET_NAMES = { fame: 'Fame (bookmark Send)', kartz: 'Kartz ranking (Send on the Kartz page)', cp: 'Base CP (Alliance Rosters, RawData-CP)', ranking: 'Whitebeard ranking (bookmark Send)', snowtrain: 'Snow Train (bookmark Send)', energytower: 'Energy Tower (bookmark Send)', mammoth: 'Mammoth Assault (bookmark Send)', neutral: 'Neutral City (bookmark Send)' };
+  const HOME_NAMES = { kartz: 'Kartz ranking', cp: 'Alliance roster', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault', frost: 'Frost Crystal Contest', nc: 'Neutral City', player: 'Player Summary', sd: 'Storm Duel' };
+  const BOOKMARK_NAMES = { members: 'Alliance members', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault', ev: 'Events (home page)', frost: 'Frost Crystal Contest', nc: 'Neutral City', sd: 'Storm Duel' };
+  const CARD_NAMES = { wb: 'Whitebeard', st: 'Snow Train', ro: 'Alliance roster', et: 'Energy Tower', ma: 'Mammoth Assault' };
+
+  const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
+                  set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} } };
+  try { const s = JSON.parse(store.get('site.settings')); if (s && s.cards && s.cards.ma) A.settings = s; } catch {}
+  if (!A.settings) A.settings = DEFAULTS;
+
+  async function post(path, body, pass) {
+    const headers = { 'content-type': 'application/json' };
+    if (pass) headers['x-kartz-pass'] = pass;
+    const r = await fetch(API_BASE + path, { method: 'POST', headers, body: JSON.stringify(body || {}) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(new Error(j.error || 'The Worker answered ' + r.status), { status: r.status });
+    return j;
+  }
+  A.ready = post('/settings').then(s => setSettings(s)).catch(e => console.warn('settings:', e.message));
+  function setSettings(s) {
+    if (!s || !s.cards) return;
+    A.settings = s;
+    store.set('site.settings', JSON.stringify(s));
+    applyHome();
+    emit('settings');
+  }
+
+  A.call = async (op, body, note) => {
+    const pass = store.get('adminPass');
+    if (!pass) { lock(); throw new Error('Admin mode is off.'); }
+    try { return await post('/admin', { op, ...body, note }, pass); }
+    catch (e) {
+      if (e.status === 403) { lock(); toast('✗ ' + e.message + ' Admin mode is off.'); }
+      throw e;
+    }
+  };
+  A.saveSettings = async (fn, note) => {
+    const next = structuredClone(A.settings);
+    fn(next);
+    const res = await A.call('settings', { settings: next }, note);
+    setSettings(res.settings);
+    done(res);
+    return res;
+  };
+  A.undo = async id => {
+    try { const r = await A.call('undo', { id }); toast(r.undone === 1 ? 'Undone' : `Undid ${r.undone} changes`); }
+    catch (e) { toast('✗ ' + e.message); }
+    A.ready = post('/settings').then(setSettings).catch(() => {});
+    await A.ready;
+    emit('data');
+  };
+  function done(res) {
+    if (res && res.entry) toast('Saved · ' + res.entry.what, res.entry.id);
+    else toast('Nothing changed');
+    if (page === 'history') drawPage();
+  }
+  A.done = done;
+
+  let toastEl, toastTimer;
+  function toast(msg, undoId) {
+    if (!toastEl) {
+      toastEl = document.createElement('div'); toastEl.className = 'atoast';
+      toastEl.innerHTML = '<span></span><button type="button">Undo</button>';
+      document.body.appendChild(toastEl);
+    }
+    toastEl.firstChild.textContent = msg;
+    const b = toastEl.lastChild;
+    b.style.display = undoId ? '' : 'none';
+    toastEl.classList.toggle('plain', !undoId);
+    b.onclick = () => { toastEl.classList.remove('on'); A.undo(undoId); };
+    toastEl.classList.add('on');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove('on'), undoId ? 6000 : 3500);
+  }
+  A.toast = toast;
+  function modal(html, wide) {
+    closePop();
+    const s = document.createElement('div'); s.className = 'ascrim';
+    s.innerHTML = `<div class="amodal ${wide ? 'wide' : ''}" role="dialog">${html}</div>`;
+    document.body.appendChild(s);
+    const m = s.firstChild;
+    m.close = () => s.remove();
+    s.onmousedown = e => { if (e.target === s) m.close(); };
+    s.onkeydown = e => { if (e.key === 'Escape') m.close(); };
+    setTimeout(() => { const f = m.querySelector('input:not([type=checkbox]),select'); if (f) f.focus(); }, 30);
+    return m;
+  }
+  A.modal = modal;
+  A.confirm = (title, body, yes = 'Remove', danger = true) => new Promise(res => {
+    const m = modal(`<h3>${title}</h3><p>${body}</p><div class="arow"><button type="button" class="abtn" data-n>Cancel</button><button type="button" class="abtn ${danger ? 'danger' : 'pri'}" data-y>${yes}</button></div>`);
+    m.querySelector('[data-n]').onclick = () => { m.close(); res(false); };
+    m.querySelector('[data-y]').onclick = () => { m.close(); res(true); };
+  });
+  A.busy = async (btn, work) => {
+    const t = btn.textContent; btn.disabled = true; btn.textContent = 'Saving…';
+    try { return await work(); } finally { btn.disabled = false; btn.textContent = t; }
+  };
+  let pop = null;
+  function closePop() { if (pop) { pop.remove(); pop = null; } }
+  A.popover = (anchor, items) => {
+    closePop();
+    pop = document.createElement('div'); pop.className = 'apop';
+    pop.innerHTML = items.map((it, i) => it === '-' ? '<hr>' : `<button type="button" data-i="${i}" class="${it.danger ? 'danger' : ''}">${it.label}</button>`).join('');
+    document.body.appendChild(pop);
+    const r = anchor.getBoundingClientRect();
+    pop.style.top = (scrollY + r.bottom + 4) + 'px';
+    pop.style.left = Math.max(8, Math.min(scrollX + r.left, scrollX + innerWidth - pop.offsetWidth - 8)) + 'px';
+    pop.onclick = e => { const b = e.target.closest('button'); if (!b) return; closePop(); items[b.dataset.i].run(); };
+  };
+  addEventListener('mousedown', e => { if (pop && !pop.contains(e.target)) closePop(); });
+
+  const LOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+  const OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/></svg>';
+  const pills = [];
+  for (const id of ['themeHome', 'theme']) {
+    const t = $(id); if (!t) continue;
+    const p = document.createElement('div'); p.className = 'apill';
+    t.parentNode.insertBefore(p, t);
+    p.onclick = e => {
+      const b = e.target.closest('[data-p]'); if (!b) return;
+      if (b.dataset.p === 'open') unlock();
+      else if (b.dataset.p === 'page') location.hash = '#admin';
+      else { lock(); toast('Admin mode is off'); }
+    };
+    pills.push(p);
+  }
+  function drawPills() {
+    for (const p of pills) {
+      p.classList.toggle('on', A.on);
+      p.innerHTML = A.on ? `<button type="button" data-p="page" title="Admin settings and History" aria-label="Admin settings">${OPEN}<span class="t">Admin</span></button><button type="button" data-p="exit" class="x">Exit</button>`
+                         : `<button type="button" data-p="open" title="Admin" aria-label="Admin">${LOCK}<span class="t">Admin</span></button>`;
+    }
+  }
+  function setOn(on) {
+    if (A.on === on) return;
+    A.on = on; document.documentElement.classList.toggle('isadmin', on); drawPills(); drawPage(); emit('admin');
+  }
+  function lock() { store.set('adminPass', null); setOn(false); }
+  A.lock = lock;
+  function unlock() {
+    const m = modal(`<div class="alock">${LOCK}</div><h3>Admin</h3>
+      <p>Enter the admin password to edit rows, columns, filters and settings.</p>
+      <form><label>Password<input type="password" autocomplete="current-password"></label><p class="aerr"></p>
+      <div class="arow"><button type="button" class="abtn" data-n>Cancel</button><button class="abtn pri">Unlock</button></div></form>`);
+    m.querySelector('[data-n]').onclick = m.close;
+    m.querySelector('form').onsubmit = async e => {
+      e.preventDefault();
+      const pass = m.querySelector('input').value, err = m.querySelector('.aerr'), go = m.querySelector('.pri');
+      const shake = msg => { err.textContent = msg; m.classList.remove('shake'); void m.offsetWidth; m.classList.add('shake'); };
+      if (!pass) return shake('Type the password.');
+      go.disabled = true; go.textContent = 'Checking…';
+      try {
+        await post('/admin', { op: 'check' }, pass);
+        store.set('adminPass', pass); m.close(); setOn(true); toast('Admin mode on');
+      } catch (x) { shake(x.message); m.querySelector('input').select(); }
+      go.disabled = false; go.textContent = 'Unlock';
+    };
+  }
+  A.unlock = unlock;
+  if (store.get('adminPass')) A.on = true;
+  document.documentElement.classList.toggle('isadmin', !!A.on);
+  store.set('cardPass', null);
+  drawPills();
+
+  function applyHome() {
+    const h = A.settings.home;
+    if (!h || !h.cards || !h.cards.length) return;
+    const t = document.getElementById('bandTitle'); if (t) t.textContent = h.title; if (h.title) document.title = h.title;
+    const t2 = document.querySelector('.top .brand h1'); if (t2) t2.textContent = h.title;
+    const prev = new Map();
+    for (const c of h.cards) {
+      const el = document.querySelector(`.hcard[data-card="${c.id}"]`); if (!el) continue;
+      const box = el.parentElement, p = prev.get(box), at = p ? p.nextElementSibling : box.firstElementChild;
+      if (at !== el) box.insertBefore(el, at);
+      prev.set(box, el);
+      if (el.hidden !== !c.show) el.hidden = !c.show;
+      const b = el.querySelector('b'); if (b.textContent !== c.title) b.textContent = c.title;
+      for (const o of document.querySelectorAll(`.rsheet[data-sheet="${c.id}"]`)) {
+        if (o.getAttribute('href') !== c.link) o.href = c.link; if (o.hidden !== !c.link) o.hidden = !c.link;
+      }
+    }
+    for (const sec of document.querySelectorAll('#home .hsec')) {
+      const cards = [...sec.querySelectorAll('.hcard')], none = cards.length > 0 && cards.every(x => x.hidden);
+      if (sec.hidden !== none) sec.hidden = none;
+    }
+    const root = document.documentElement, home = document.getElementById('home');
+    if (root.classList.contains('homewait')) {
+      root.classList.remove('homewait');
+      if (home) { home.classList.remove('cardsin'); void home.offsetWidth; home.classList.add('cardsin'); }
+    }
+  }
+  applyHome();
+
+  const PAGES = [['cols', 'Cards & rules'], ['home', 'Home page'], ['sheets', 'Sheets & rounds'], ['history', 'History']];
+  let page = 'cols', log = null;
+  const sec = { cols: 'wb', sheets: 'overview' }, openRules = new Set();
+  const GROUPS = [
+    { name: 'Seal Stone Chaos · Practice Round', events: ['wb', 'st', 'et', 'ma', 'frost', 'nc', 'sd'], sheets: ['ranking', 'snowtrain', 'energytower', 'mammoth', 'neutral', 'fame'], rounds: true },
+    { name: 'Seal Stone Chaos · Main Event', events: [], sheets: [], soon: 'Added when the main event starts' },
+  ];
+  const EVENTS = {
+    wb: { name: 'Whitebeard', card: 'wb', go: '#whitebeard' }, st: { name: 'Snow Train', card: 'st', go: '#snowtrain', tab: 'Train' },
+    et: { name: 'Energy Tower', card: 'et', go: '#energytower', tab: 'ET' }, ma: { name: 'Mammoth Assault', card: 'ma', go: '#mammoth', tab: 'Mammoth' },
+    frost: { name: 'Frost Crystal Contest', go: '#frost', tab: 'Crystal' }, nc: { name: 'Neutral City', go: '#nc', tab: 'NC', sheet: 'neutral' },
+    sd: { name: 'Storm Duel', go: '#stormduel', tab: 'Storm Duel' },
+  };
+  const SHEET_SHORT = { ranking: 'Whitebeard ranking', snowtrain: 'Snow Train', energytower: 'Energy Tower', mammoth: 'Mammoth Assault', neutral: 'Neutral City', fame: 'Fame', cp: 'Base CP', kartz: 'Kartz ranking' };
+  const SHEET_FROM = { kartz: 'The Kartz page', cp: 'Bookmark (alliance reads)' };
+  const OTHER_SHEETS = ['cp', 'kartz'];
+  const groupOf = k => GROUPS.find(g => g.sheets.includes(k) || g.events.includes(k));
+  function shell(groups, cur, content) {
+    const item = ([k, l, ct, cls]) => `<button type="button" class="ani ${k === cur ? 'on' : ''} ${cls || ''}" data-sec="${esc(k)}">${cls === 'ok' || cls === 'warn' ? `<span class="adot ${cls}"></span>` : ''}${esc(l)}${ct ? `<span class="ct">${esc(ct)}</span>` : ''}</button>`;
+    return `<div class="adm"><nav class="anav">${groups.map(g => `<div class="ang"><span>${esc(g.g)}</span>${g.soon ? `<div class="asoon">${esc(g.soon)}</div>` : g.items.map(item).join('')}</div>`).join('')}</nav>
+      <select class="anavsel" data-secsel aria-label="Section">${groups.filter(g => !g.soon).map(g => `<optgroup label="${esc(g.g)}">${g.items.map(([k, l]) => `<option value="${esc(k)}" ${k === cur ? 'selected' : ''}>${esc(l)}</option>`).join('')}</optgroup>`).join('')}</select>
+      <div class="amain">${content}</div></div>`;
+  }
+  const head = (crumb, title, right = '') => `<div class="aph"><div><div class="acrumb">${esc(crumb)}</div><h2>${esc(title)}</h2></div>${right}</div>`;
+  const view = $('adminView'), tabs = $('adminTabs');
+  function drawPage() {
+    if (!view || location.hash !== '#admin') return;
+    if (!A.on) {
+      tabs.innerHTML = '';
+      view.innerHTML = `<div class="apanel"><h2>Admin</h2><p class="ahint">This page is for the site's admin. Unlock it with the password to change the cards, the settings and the Sheets the bookmark sends to.</p><button type="button" class="abtn pri" data-unlock>Unlock</button></div>`;
+      view.querySelector('[data-unlock]').onclick = unlock;
+      return;
+    }
+    tabs.innerHTML = PAGES.map(([k, l]) => `<button type="button" class="rchip ${page === k ? 'on' : ''}" data-pg="${k}">${l}</button>`).join('');
+    view.onchange = view.onclick = null;
+    ({ cols: colsPage, home: homePage, sheets: sheetsPage, history: historyPage })[page]();
+  }
+  if (tabs) tabs.onclick = e => { const b = e.target.closest('[data-pg]'); if (b) { page = b.dataset.pg; drawPage(); } };
+  if (view) {
+    view.addEventListener('click', e => { const b = e.target.closest('button[data-sec]'); if (b) { sec[page] = b.dataset.sec; drawPage(); scrollTo({ top: Math.min(scrollY, view.getBoundingClientRect().top + scrollY - 12) }); } });
+    view.addEventListener('change', e => { if (e.target.matches('[data-secsel]')) { sec[page] = e.target.value; drawPage(); } });
+  }
+  addEventListener('hashchange', drawPage);
+  A.subscribe(k => { if (k !== 'admin') drawPage(); });
+  const save = (fn, note) => A.saveSettings(fn, note).catch(e => { toast('✗ ' + e.message); drawPage(); });
+  const arrows = (attr, i, n, first = 0) => `<button type="button" class="abtn sm" data-${attr}u="${i}" ${i > first ? '' : 'disabled'} aria-label="Up">↑</button><button type="button" class="abtn sm" data-${attr}d="${i}" ${i >= first && i < n - 1 ? '' : 'disabled'} aria-label="Down">↓</button>`;
+  const swap = (list, i, j) => { [list[i], list[j]] = [list[j], list[i]]; };
+
+  const rulesOf = () => A.settings.rules || DEFAULTS.rules;
+  const fieldsFor = cards => Object.entries(A.RULE_FIELDS).filter(([, f]) => !cards.length || cards.every(c => f.cards.includes(c)));
+  const optName = v => v === 'OTHER' ? 'Other' : v;
+  function rulesPanel() {
+    const R = rulesOf();
+    const val = (c, i, j) => {
+      const f = A.RULE_FIELDS[c.f], at = `data-rl="${i}" data-rc="${j}"`;
+      if (f.kind === 'opt') return `<select ${at} data-rp="v">${f.opts().map(o => `<option value="${esc(o)}" ${o === c.v ? 'selected' : ''}>${esc(optName(o))}</option>`).join('')}</select>`;
+      if (f.kind === 'text') return `<input type="text" ${at} data-rp="v" value="${esc(c.v)}" maxlength="40" class="rlv">`;
+      return `<input type="number" ${at} data-rp="v" value="${esc(c.v)}" step="any" class="tiny">` + (c.op === 'bt' ? ` and <input type="number" ${at} data-rp="v2" value="${esc(c.v2 ?? '')}" step="any" class="tiny">` : '');
+    };
+    const sum = r => r.all.map(c => { const f = A.RULE_FIELDS[c.f], op = (RULE_OPS[f.kind].find(o => o[0] === c.op) || [, c.op])[1]; return `${f.label} ${op} ${f.kind === 'opt' ? optName(c.v) : c.v}${c.op === 'bt' ? ' and ' + (c.v2 ?? '') : ''}`; }).join(' and ');
+    return `<div class="apanel">${head('General', 'Highlight rules', '<button type="button" class="abtn sm pri" data-rladd>+ Add a rule</button>')}<p class="ahint">Each card colours a player by every rule they match, in this order, and the row takes the colour of the first. Click a rule to edit it. CP is in millions, the best a player has.</p>
+      ${R.map((r, i) => `<div class="arule ${r.on ? '' : 'off'} ${openRules.has(r.id || i) ? '' : 'shut'}">
+        <button type="button" class="arsum" data-rlopen="${esc(r.id || i)}"><span class="hl hl-${r.color}">${esc(r.label || '·')}</span><span class="arn">${esc(r.name)}</span><span class="ars">${esc(sum(r))}</span>
+          <span class="archips">${r.cards.map(k => `<span class="arcc">${esc(CARD_NAMES[k])}</span>`).join('')}</span>${r.chip ? '<span class="astat mute">filter chip</span>' : ''}${r.on ? '' : '<span class="astat mute">off</span>'}<span class="arcaret" aria-hidden="true">▾</span></button>
+        <div class="arbody"><div class="arhead"><span class="arord">${i ? 'ELSE IF' : 'IF'}</span><input type="text" data-rl="${i}" data-rp="name" value="${esc(r.name)}" maxlength="40" aria-label="Rule name" class="arname">
+          <label class="acheck"><input type="checkbox" data-rl="${i}" data-rp="on" ${r.on ? 'checked' : ''}> On</label>${arrows('rl', i, R.length)}<button type="button" class="abtn sm" data-rlx="${i}">Delete</button></div>
+        ${r.all.map((c, j) => {
+          const f = A.RULE_FIELDS[c.f], miss = r.cards.filter(k => !f.cards.includes(k));
+          return `<div class="arcond"><span class="arw">${j ? 'AND' : ''}</span>
+          <select data-rl="${i}" data-rc="${j}" data-rp="f">${fieldsFor(r.cards).concat(fieldsFor(r.cards).some(([k]) => k === c.f) ? [] : [[c.f, f]]).map(([k, x]) => `<option value="${k}" ${k === c.f ? 'selected' : ''}>${esc(x.label)}</option>`).join('')}</select>
+          <select data-rl="${i}" data-rc="${j}" data-rp="op">${RULE_OPS[f.kind].map(([k, l]) => `<option value="${k}" ${k === c.op ? 'selected' : ''}>${l}</option>`).join('')}</select>
+          ${val(c, i, j)}${r.all.length > 1 ? `<button type="button" class="abtn sm" data-rlcx="${i}.${j}" aria-label="Remove">✕</button>` : ''}
+          ${miss.length ? `<span class="ahint arwarn">Not on ${miss.map(k => CARD_NAMES[k]).join(', ')}: the rule is skipped there</span>` : ''}</div>`;
+        }).join('')}
+        <div class="arcond"><span class="arw"></span><button type="button" class="abtn sm" data-rlca="${i}" ${r.all.length >= 6 ? 'disabled' : ''}>+ And</button></div>
+        <div class="arthen"><span class="arw">THEN</span>
+          <span class="arsw">${HL_COLORS.map(c => `<button type="button" class="hl-${c} ${r.color === c ? 'on' : ''}" data-rlcol="${i}" data-col="${c}" aria-label="${c}" title="${c}"></button>`).join('')}</span>
+          <input type="text" data-rl="${i}" data-rp="label" value="${esc(r.label)}" maxlength="16" placeholder="label" class="rlv" aria-label="Label">
+          ${r.label ? `<span class="hl hl-${r.color}">${esc(r.label)}</span>` : ''}
+          <label class="acheck"><input type="checkbox" data-rl="${i}" data-rp="chip" ${r.chip ? 'checked' : ''}> Filter chip</label></div>
+        <div class="arcards"><span class="arw">ON</span>${ALL5.map(k => `<label class="acheck"><input type="checkbox" data-rl="${i}" data-rk="${k}" ${r.cards.includes(k) ? 'checked' : ''}> ${CARD_NAMES[k]}</label>`).join('')}</div>
+      </div></div>`).join('')}
+      ${R.length ? '<p class="ahint" style="margin-top:8px">A player who matches no rule gets no colour.</p>' : '<p class="ahint">No rules yet.</p>'}</div>`;
+  }
+  const ruleSave = (fn, what, from, to) => save(n => { n.rules = n.rules || structuredClone(DEFAULTS.rules); fn(n.rules); }, { what: 'Rules · ' + what, from, to });
+  function ruleChange(t, d) {
+    const R = rulesOf(), i = +d.rl, r = R[i];
+    if (d.rk) return ruleSave(L => { const c = L[i].cards; L[i].cards = ALL5.filter(k => k === d.rk ? t.checked : c.includes(k)); },
+      `${r.name} on ${CARD_NAMES[d.rk]}`, r.cards.includes(d.rk) ? 'on' : 'off', t.checked ? 'on' : 'off');
+    if (d.rc != null) {
+      const j = +d.rc, c = r.all[j], F = A.RULE_FIELDS;
+      let v = t.value;
+      if (d.rp === 'f') {
+        const f = F[v], next = { f: v, op: RULE_OPS[f.kind][0][0], v: f.kind === 'opt' ? f.opts()[0] : f.kind === 'num' ? 0 : '' };
+        return ruleSave(L => { L[i].all[j] = next; }, `${r.name} · condition ${j + 1}`, F[c.f].label, f.label);
+      }
+      if (d.rp === 'op') return ruleSave(L => { L[i].all[j].op = v; if (v === 'bt' && L[i].all[j].v2 == null) L[i].all[j].v2 = +L[i].all[j].v || 0; }, `${r.name} · condition ${j + 1}`, c.op, v);
+      if (F[c.f].kind === 'num') { v = Number(v); if (!Number.isFinite(v)) { t.value = c[d.rp] ?? ''; return; } }
+      return ruleSave(L => { L[i].all[j][d.rp] = v; }, `${r.name} · ${F[c.f].label}`, String(c[d.rp] ?? '—'), String(v));
+    }
+    if (d.rp === 'name' || d.rp === 'label') {
+      const v = t.value.trim();
+      if (d.rp === 'name' && !v) { t.value = r.name; return; }
+      return ruleSave(L => { L[i][d.rp] = v; }, `${r.name} · ${d.rp}`, r[d.rp] || '—', v || '—');
+    }
+    return ruleSave(L => { L[i][d.rp] = t.checked; }, `${r.name}${d.rp === 'chip' ? ' · filter chip' : ''}`, r[d.rp] ? 'on' : 'off', t.checked ? 'on' : 'off');
+  }
+  async function ruleClick(d) {
+    const R = rulesOf();
+    if (d.rlcol != null) { const r = R[d.rlcol]; return ruleSave(L => { L[d.rlcol].color = d.col; }, `${r.name} · colour`, r.color, d.col); }
+    if (d.rlu != null || d.rld != null) { const i = +(d.rlu ?? d.rld), j = d.rlu != null ? i - 1 : i + 1; return ruleSave(L => swap(L, i, j), `moved ${R[i].name}`, `place ${i + 1}`, `place ${j + 1}`); }
+    if (d.rlca != null) { const r = R[d.rlca], [k, f] = fieldsFor(r.cards)[0] || ['name', A.RULE_FIELDS.name];
+      return ruleSave(L => { L[d.rlca].all.push({ f: k, op: RULE_OPS[f.kind][0][0], v: f.kind === 'opt' ? f.opts()[0] : f.kind === 'num' ? 0 : '' }); }, `${r.name} · added a condition`, '—', f.label); }
+    if (d.rlcx != null) { const [i, j] = d.rlcx.split('.').map(Number), r = R[i]; return ruleSave(L => { L[i].all.splice(j, 1); }, `${r.name} · removed a condition`, A.RULE_FIELDS[r.all[j].f].label, '—'); }
+    if (d.rlx != null) {
+      const r = R[d.rlx];
+      if (await A.confirm(`Delete ${esc(r.name)}?`, 'The rule comes off every card. History can undo it.', 'Delete'))
+        ruleSave(L => { L.splice(d.rlx, 1); }, 'deleted a rule', r.name, '—');
+      return;
+    }
+    if ('rladd' in d) {
+      const id = 'r' + Date.now().toString(36).slice(-8);
+      openRules.add(id);
+      return ruleSave(L => { L.push({ id, name: 'New rule', label: '', on: true, color: 'blue', chip: false, cards: ['st'], all: [{ f: 'cp', op: 'ge', v: 100 }] }); }, 'added a rule', '—', 'New rule');
+    }
+  }
+
+  function colsPage() {
+    const S = A.settings, AL = S.alliances;
+    const tag = a => `<span class="rtag t${esc(a)}">${esc(a)}</span>`;
+    const card = c => {
+      const C = S.cards[c];
+      const sorts = C.cols.filter(x => x.k !== '@dates').map(x => [x.k, x.label]).concat(c === 'ro' ? [] : [['last', 'Latest date']]);
+      const filters = ['', ...AL, ...(c === 'ro' ? [] : ['OTHER'])];
+      const ev = EVENTS[c], g = ev && groupOf(c), applies = rulesOf().filter(r => r.cards.includes(c));
+      return `<div class="apanel">${head(g ? g.name : 'Roster', CARD_NAMES[c], `<a class="abtn sm" href="${ev ? ev.go : '#roster'}">Open the card ↗</a>`)}<p class="ahint">How the card looks for everyone when it opens.</p>
+        <h3 class="ah3">Display</h3>
+        <div class="alist">
+          <div class="ali"><span class="alab">Card title</span><input type="text" data-c="${c}" data-f="title" value="${esc(C.title)}" maxlength="40"></div>
+          <div class="ali"><span class="alab">Default sort</span><select data-c="${c}" data-f="sort">${sorts.map(([k, l]) => `<option value="${k}" ${C.sort === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
+          <div class="ali"><span class="alab">Default filter</span><select data-c="${c}" data-f="filter">${filters.map(a => `<option value="${esc(a)}" ${C.filter === a ? 'selected' : ''}>${a === 'OTHER' ? 'Other' : esc(a) || 'Everyone'}</option>`).join('')}</select></div>
+          <div class="ali"><span class="alab">Numbers</span><select data-c="${c}" data-f="fmt">${[['M', c === 'ro' ? '812.0M' : '256M'], ['k', '256,158k'], ['full', '256,158,825']].map(([k, l]) => `<option value="${k}" ${C.fmt === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+          ${c === 'st' ? `<div class="ali"><span class="alab">Unit filters</span><label class="acheck"><input type="checkbox" data-c="st" data-f="unitFilters" ${C.unitFilters ? 'checked' : ''}> Army / Navy / Air Force chips</label></div>` : ''}
+        </div>
+        <h3 class="ah3">Columns <span>· ${C.cols.filter(x => x.show).length} of ${C.cols.length} shown</span></h3><p class="ahint">Switch to show, type to rename, arrows to move. Name stays first.</p>
+        <div class="alist">${C.cols.map((x, i) => `<div class="ali acolrow ${x.show ? '' : 'off'}">
+          <input type="checkbox" class="asw" data-c="${c}" data-cs="${i}" ${x.show ? 'checked' : ''} ${x.k === 'name' ? 'disabled' : ''} aria-label="Show">
+          <input type="text" data-c="${c}" data-cl="${i}" value="${esc(x.label)}" maxlength="30" ${x.k === '@dates' ? 'disabled title="Each date is its own column"' : ''}>
+          ${x.k === 'name' ? '<span class="ahint" style="margin:0">always first</span>' : arrows('c' + c, i, C.cols.length, 1)}</div>`).join('')}</div>
+        <h3 class="ah3">Highlight rules on this card</h3>
+        ${applies.length ? `<div class="archips">${applies.map(r => `<span class="arcc big">${r.label ? `<span class="hl hl-${r.color}">${esc(r.label)}</span>` : `<span class="hl hl-${r.color}">·</span>`} ${esc(r.name)}</span>`).join('')}</div>` : '<p class="ahint">None.</p>'}
+        <p class="ahint" style="margin-top:8px"><button type="button" class="alink" data-sec="rules">Edit the rules →</button></p></div>`;
+    };
+    const pagePanel = k => {
+      const ev = EVENTS[k], g = groupOf(k);
+      return `<div class="apanel">${head(g ? g.name : '', ev.name, `<a class="abtn sm" href="${ev.go}">Open the page ↗</a>`)}
+        <p class="ahint">This event has its own page rather than a card, so there's nothing to set here yet.</p>
+        <div class="asoon big">Sends to ${ev.tab ? `the <b>${esc(ev.tab)}</b> tab of each round sheet` : 'no sheet'}${ev.sheet ? ` and the ${esc(SHEET_SHORT[ev.sheet])} sheet` : ''}. <button type="button" class="alink" data-gosheet="${esc(ev.sheet || 'rounds')}">See in Sheets →</button></div></div>`;
+    };
+    const alliesPanel = () => `<div class="apanel">${head('General', 'Alliances')}
+      <p class="ahint">The filter chips on every card, in this order. Renaming one renames it on every player too. The bookmark still labels its own reads 698N, 698S, 698W and 698C.</p>`;
+    const alliesList = () => `<div class="alist">${AL.map((a, i) => `<div class="ali">${tag(a)}<input type="text" data-ar="${i}" value="${esc(a)}" maxlength="12">${arrows('a', i, AL.length)}<button type="button" class="abtn sm" data-ax="${i}" ${AL.length > 1 ? '' : 'disabled'}>Remove</button></div>`).join('')}
+        <div class="ali"><input type="text" data-an placeholder="New alliance tag" maxlength="12"><button type="button" class="abtn sm pri" data-aadd>Add</button></div></div></div>`;
+    const nav = [
+      { g: 'General', items: [['allies', 'Alliances', String(AL.length)], ['rules', 'Highlight rules', String(rulesOf().length)]] },
+      ...GROUPS.map(g => ({ g: g.name, soon: g.events.length ? '' : g.soon, items: g.events.map(k => [k, EVENTS[k].name, EVENTS[k].card ? '' : 'page', EVENTS[k].card ? '' : 'pg']) })),
+      { g: 'Roster', items: [['ro', 'Alliance roster']] },
+    ];
+    const k = sec.cols;
+    const body = k === 'allies' ? alliesPanel() + alliesList() : k === 'rules' ? rulesPanel() : S.cards[k] ? card(k) : EVENTS[k] ? pagePanel(k) : card('wb');
+    view.innerHTML = shell(nav, k, body);
+    view.onchange = async e => {
+      const t = e.target, d = t.dataset, c = d.c, C = c && S.cards[c];
+      if (d.rl != null) return ruleChange(t, d);
+      if (d.ar) {
+        const from = AL[d.ar], to = t.value.trim();
+        if (!to || to === from) { t.value = from; return; }
+        try { const r = await A.call('alliance-rename', { from, to }, { what: 'Renamed alliance', from, to }); await reloadSettings(); done(r); emit('data'); }
+        catch (x) { toast('✗ ' + x.message); drawPage(); }
+        return;
+      }
+      if (d.f) {
+        const v = t.type === 'checkbox' ? t.checked : t.value.trim(), label = { title: 'title', sort: 'default sort', filter: 'default filter', fmt: 'number format', unitFilters: 'unit filters' }[d.f];
+        const show = x => d.f === 'sort' ? (sorts(c).find(s => s[0] === x) || [, x])[1] : d.f === 'filter' ? (x === 'OTHER' ? 'Other' : x || 'Everyone') : String(x);
+        if (d.f === 'title' && !v) { t.value = C.title; return; }
+        return save(n => { n.cards[c][d.f] = v; }, { what: `${CARD_NAMES[c]} · ${label}`, from: show(C[d.f]), to: show(v) });
+      }
+      if (d.cs) { const x = C.cols[d.cs]; return save(n => { n.cards[c].cols[d.cs].show = t.checked; }, { what: `${CARD_NAMES[c]} · ${x.label} column`, from: x.show ? 'shown' : 'hidden', to: t.checked ? 'shown' : 'hidden' }); }
+      if (d.cl) { const x = C.cols[d.cl], v = t.value.trim(); if (!v) { t.value = x.label; return; } return save(n => { n.cards[c].cols[d.cl].label = v; }, { what: `${CARD_NAMES[c]} · renamed column`, from: x.label, to: v }); }
+    };
+    const sorts = c => S.cards[c].cols.filter(x => x.k !== '@dates').map(x => [x.k, x.label]).concat([['last', 'Latest date']]);
+    view.onclick = async e => {
+      const b = e.target.closest('button'); if (!b) return;
+      const d = b.dataset;
+      if (d.rlopen != null) { const id = /^\d+$/.test(d.rlopen) ? +d.rlopen : d.rlopen; openRules.has(id) ? openRules.delete(id) : openRules.add(id); return drawPage(); }
+      if (d.gosheet) { page = 'sheets'; sec.sheets = d.gosheet; return drawPage(); }
+      if (['rlcol', 'rlu', 'rld', 'rlca', 'rlcx', 'rlx', 'rladd'].some(k => k in d)) return ruleClick(d);
+      for (const c of ['wb', 'st', 'et', 'ma', 'ro']) {
+        const u = d['c' + c + 'u'], dn = d['c' + c + 'd'];
+        if (u == null && dn == null) continue;
+        const L = S.cards[c].cols, i = +(u ?? dn), j = u != null ? i - 1 : i + 1;
+        return save(n => swap(n.cards[c].cols, i, j), { what: `${CARD_NAMES[c]} · moved ${L[i].label} ${u != null ? 'left' : 'right'}`, from: `place ${i + 1}`, to: `place ${j + 1}` });
+      }
+      if (d.au || d.ad) { const i = +(d.au ?? d.ad), j = d.au ? i - 1 : i + 1; return save(n => swap(n.alliances, i, j), { what: `Alliances · moved ${AL[i]}`, from: `place ${i + 1}`, to: `place ${j + 1}` }); }
+      if (d.ax) {
+        const a = AL[d.ax];
+        if (await A.confirm(`Remove ${esc(a)}?`, `${esc(a)} stops being a filter chip. Its players stay: under Other on Whitebeard, Snow Train and Energy Tower.`))
+          save(n => { n.alliances.splice(d.ax, 1); }, { what: 'Removed alliance', from: a, to: '—' });
+        return;
+      }
+      if ('aadd' in d) {
+        const v = view.querySelector('[data-an]').value.trim();
+        if (!v || AL.includes(v)) return toast(v ? v + ' is already there' : 'Type the tag first');
+        save(n => { n.alliances.push(v); }, { what: 'Added alliance', from: '—', to: v });
+      }
+    };
+  }
+  async function reloadSettings() { setSettings(await post('/settings')); }
+
+  function homePage() {
+    const H = A.settings.home;
+    view.innerHTML = `<div class="apanel"><h2>Home page</h2><div class="alist">
+        <div class="ali"><span class="alab">Site title</span><input type="text" data-h="title" value="${esc(H.title)}" maxlength="60"></div></div></div>
+      <div class="apanel"><h2>Cards</h2><p class="ahint">Show or hide, the title, the sheet link (the Sheet pill at the top right of the section), and the order.</p><div class="alist">
+      ${H.cards.map((x, i) => `<div class="ali wrapline"><input type="checkbox" data-hs="${i}" ${x.show ? 'checked' : ''} aria-label="Show on the home page">
+        <input type="text" data-ht="${i}" value="${esc(x.title)}" maxlength="40" class="short">
+        <input type="url" data-hl="${i}" value="${esc(x.link)}" class="long">${arrows('h', i, H.cards.length)}</div>`).join('')}</div>
+      <p class="ahint" style="margin-top:12px"><a href="./">Open the home page ↗</a></p></div>
+      <div class="apanel"><h2>Bookmark</h2><p class="ahint">The sections the 2698 Data Extractor bookmark shows in the game. A hidden one keeps its saved reads and comes back when ticked again; it takes effect the next time the bookmark is opened.</p><div class="alist">
+      ${Object.entries(BOOKMARK_NAMES).map(([k, l]) => `<div class="ali"><label class="acheck"><input type="checkbox" data-bm="${k}" ${(A.settings.bookmark || {})[k] !== false ? 'checked' : ''}> ${l}</label></div>`).join('')}</div></div>`;
+    view.onchange = e => {
+      const t = e.target, d = t.dataset, v = t.value.trim();
+      if (d.bm) return save(n => { n.bookmark = { ...DEFAULTS.bookmark, ...n.bookmark, [d.bm]: t.checked }; }, { what: `Bookmark · ${BOOKMARK_NAMES[d.bm]}`, from: t.checked ? 'hidden' : 'shown', to: t.checked ? 'shown' : 'hidden' });
+      if (d.h === 'title') { if (!v) { t.value = H.title; return; } return save(n => { n.home.title = v; }, { what: 'Home · site title', from: H.title, to: v }); }
+      if (d.hs) { const x = H.cards[d.hs]; return save(n => { n.home.cards[d.hs].show = t.checked; }, { what: `Home · ${x.title} card`, from: x.show ? 'shown' : 'hidden', to: t.checked ? 'shown' : 'hidden' }); }
+      if (d.ht) { const x = H.cards[d.ht]; if (!v) { t.value = x.title; return; } return save(n => { n.home.cards[d.ht].title = v; }, { what: `Home · ${HOME_NAMES[x.id]} card title`, from: x.title, to: v }); }
+      if (d.hl) { const x = H.cards[d.hl]; if (!/^https:\/\/\S+$/.test(v)) { toast('The link must start with https://'); t.value = x.link; return; } return save(n => { n.home.cards[d.hl].link = v; }, { what: `Home · ${x.title} link`, from: x.link, to: v }); }
+    };
+    view.onclick = e => {
+      const b = e.target.closest('button'); if (!b) return;
+      const u = b.dataset.hu, dn = b.dataset.hd; if (u == null && dn == null) return;
+      const C = H.cards, i = +(u ?? dn), j = u != null ? i - 1 : i + 1;
+      save(n => swap(n.home.cards, i, j), { what: `Home · moved ${C[i].title} ${u != null ? 'up' : 'down'}`, from: `place ${i + 1}`, to: `place ${j + 1}` });
+    };
+  }
+
+  const ROUND_NS = [2, 3, 4], ROUND_TAB_LIST = n => ['Train', 'ET', 'Mammoth', 'Crystal', 'NC', 'Storm Duel', 'Input-Roster', `Round ${n} Summary`];
+  const DAY_EVENTS = [['/st', 'Snow Train'], ['/et', 'Energy Tower'], ['/ma', 'Mammoth'], ['/frost-battle', 'Frost Crystal'], ['/nc-read', 'Neutral City']];
+  async function roundDates() {
+    const lists = await Promise.all([...DAY_EVENTS.map(([p]) => post(p).catch(() => null)), post('/schedule').catch(() => null)]);
+    const days = new Map();
+    DAY_EVENTS.forEach(([p, name], i) => {
+      const j = lists[i]; if (!j) return;
+      const ds = j.dates || Object.keys(j.days || {}).filter(d => p !== '/nc-read' || ((j.days[d] || {}).players || []).length);
+      for (const d of ds) { if (!days.has(d)) days.set(d, new Set()); days.get(d).add(name); }
+    });
+    const rounds = ((lists[DAY_EVENTS.length] || {}).rounds) || [];
+    const fromSchedule = d => { const t = Date.parse(d + 'T12:00:00Z') / 1000, r = rounds.find(x => x.st <= t && t < x.et); return r && ROUND_NS.includes(r.round) ? r.round : 0; };
+    return [...days.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([d, ev]) => ({ d, events: [...ev], sched: fromSchedule(d) }));
+  }
+  function datesPanel(el) {
+    el.innerHTML = '<p class="ahint">Reading the dates…</p>';
+    roundDates().then(list => {
+      const pick = A.settings.dayRound || {}, nm = n => n ? `Practice Round ${n}` : 'None';
+      if (!list.length) { el.innerHTML = '<p class="ahint">No reads yet.</p>'; return; }
+      el.innerHTML = `<div class="agridw"><table class="atable"><thead><tr><th>Date</th><th>Read that day</th><th>Goes to</th></tr></thead><tbody>${list.map(x => `<tr>
+        <td>${esc(x.d)}</td><td>${x.events.map(esc).join(', ')}</td>
+        <td><select data-dr="${esc(x.d)}"><option value=""${pick[x.d] == null ? ' selected' : ''}>${esc(nm(x.sched))} (schedule)</option>${[...ROUND_NS, 0].map(n => `<option value="${n}"${pick[x.d] === n ? ' selected' : ''}>${esc(nm(n))}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div>`;
+    }).catch(e => { el.innerHTML = `<p class="aerr">✗ ${esc(e.message || e)}</p>`; });
+  }
+  function sheetsPage() {
+    const T = A.settings.sheets, R = A.settings.rounds || {};
+    const link = t => t.id ? `https://docs.google.com/spreadsheets/d/${t.id}/edit#gid=${t.gid}` : '';
+    const book = id => id ? `https://docs.google.com/spreadsheets/d/${id}/edit` : '';
+    const has = k => !!(T[k] && T[k].id);
+    const roundsSet = ROUND_NS.filter(n => R[n]).length;
+    const sheetItem = k => [k, SHEET_SHORT[k] || k, '', has(k) ? 'ok' : 'warn'];
+    const nav = [
+      { g: 'Overview', items: [['overview', 'Everything at a glance']] },
+      ...GROUPS.map(g => ({ g: g.name, soon: g.rounds || g.sheets.length ? '' : g.soon, items: [...(g.rounds ? [['rounds', 'Round sheets', `${roundsSet}/${ROUND_NS.length}`], ['dates', 'Dates → rounds']] : []), ...g.sheets.filter(k => T[k]).map(sheetItem)] })),
+      { g: 'Roster & other', items: OTHER_SHEETS.filter(k => T[k]).map(sheetItem) },
+      { g: 'Safety', items: [['backup', 'Backup & restore']] },
+    ];
+    const stat = ok => ok ? '<span class="astat ok">● Linked</span>' : '<span class="astat warn">● Not set</span>';
+    const groupName = k => { const g = groupOf(k); return g ? g.name.replace(/^.*· /, '') : 'Roster & other'; };
+    const overview = () => {
+      const rows = [
+        ...ROUND_NS.map(n => ({ name: `Practice Round ${n}`, grp: 'Practice Round', from: 'Every send for its dates', ok: !!R[n], k: 'rounds' })),
+        ...[...GROUPS.flatMap(g => g.sheets), ...OTHER_SHEETS].filter(k => T[k]).map(k => ({ name: SHEET_SHORT[k] || k, grp: groupName(k), from: SHEET_FROM[k] || 'Bookmark', ok: has(k), k })),
+      ];
+      return `<div class="apanel">${head('Overview', 'Where reads go', `<span class="astat ${rows.every(r => r.ok) ? 'ok' : 'warn'}">${rows.filter(r => r.ok).length} of ${rows.length} linked</span>`)}
+        <p class="ahint">Every sheet the site and the bookmark send to. Edit opens its link.</p>
+        <div class="agridw"><table class="atable"><thead><tr><th>Sheet</th><th>Group</th><th>Filled by</th><th>Status</th><th></th></tr></thead><tbody>
+        ${rows.map(r => `<tr><td><b>${esc(r.name)}</b></td><td>${esc(r.grp)}</td><td>${esc(r.from)}</td><td>${stat(r.ok)}</td><td><button type="button" class="abtn sm" data-sec="${esc(r.k)}">Edit</button></td></tr>`).join('')}
+        </tbody></table></div></div>`;
+    };
+    const roundsPanel = () => `<div class="apanel">${head(GROUPS[0].name, 'Round sheets')}
+      <p class="ahint">Every send also goes to a Practice Round sheet: the one its date is set to under Dates → rounds. Paste the round's spreadsheet link. It needs the tabs Train, ET, Mammoth, Crystal, NC, Storm Duel, Input-Roster and Round <i>N</i> Summary, and must be shared with the service account as Editor. Sending a date again replaces that date's rows in the round sheet, and its Summary is sorted by SCORE TOTAL after every send.</p>
+      <div class="argrid">${ROUND_NS.map(n => `<div class="arcard"><div class="aph" style="margin:0"><b>Practice Round ${n}</b>${stat(!!R[n])}</div>
+        <input type="url" data-rl="${n}" value="${esc(book(R[n]))}" placeholder="No sheet yet — paste the spreadsheet's link">
+        <div class="ali"><button type="button" class="abtn sm pri" data-rs="${n}">Save</button>${R[n] ? `<a class="abtn sm" href="${esc(book(R[n]))}" target="_blank" rel="noopener">Open ↗</a>` : ''}</div>
+        <p class="aerr" data-re="${n}"></p></div>`).join('')}</div>
+      <div class="asoon big" style="margin-top:12px">The main event gets its own group with its own round sheets, separate from these.</div></div>`;
+    const datesBox = () => `<div class="apanel">${head(GROUPS[0].name, 'Dates → rounds')}
+      <p class="ahint">Every date with a read, and the round sheet it goes to. A date left on <i>(schedule)</i> goes to the round the season's schedule has running that day. A change applies to the next send: rows already sent stay where they are.</p>
+      <div data-dates></div></div>`;
+    const sheetPanel = k => `<div class="apanel">${head(groupOf(k) ? groupOf(k).name : 'Roster & other', SHEET_SHORT[k] || k, stat(has(k)))}
+      <p class="ahint">${esc(SHEET_NAMES[k] || SHEET_SHORT[k] || k)}. Paste the link of the tab to send to (it carries the spreadsheet and the tab). The Worker tries it before saving: the spreadsheet must be shared with its service account as Editor. The columns written stay the same.</p>
+      <div class="asheet"><div class="ali"><input type="url" data-sl="${k}" value="${esc(link(T[k]))}" placeholder="No sheet yet — paste a tab's link" class="long"><button type="button" class="abtn sm pri" data-ss="${k}">Save</button>${has(k) ? `<a class="abtn sm" href="${esc(link(T[k]))}" target="_blank" rel="noopener">Open ↗</a>` : ''}</div>
+      <p class="aerr" data-se="${k}"></p></div></div>`;
+    const backupPanel = () => `<div class="apanel">${head('Safety', 'Backup & restore')}<p class="ahint">Every card's data and every setting in one file. Restoring puts all of it back as it was in the file (History can undo that too).</p>
+        <div class="ali"><button type="button" class="abtn pri" data-bk>Download backup</button><label class="abtn">Restore from a backup…<input type="file" accept=".json,application/json" data-rs hidden></label></div></div>`;
+    const k = sec.sheets;
+    const body = k === 'overview' ? overview() : k === 'rounds' ? roundsPanel() : k === 'dates' ? datesBox() : k === 'backup' ? backupPanel() : T[k] ? sheetPanel(k) : overview();
+    view.innerHTML = shell(nav, k, body);
+    const dl = view.querySelector('[data-dates]'); if (dl) datesPanel(dl);
+    view.oninput = null;
+    if (!view.__dr) view.__dr = 1, view.addEventListener('change', e => {
+      const sel = e.target.closest('[data-dr]'); if (!sel) return;
+      const d = sel.dataset.dr, was = (A.settings.dayRound || {})[d], v = sel.value === '' ? null : +sel.value;
+      const nm = n => n == null ? 'schedule' : n ? `Practice Round ${n}` : 'none';
+      save(n => { n.dayRound = n.dayRound || {}; if (v == null) delete n.dayRound[d]; else n.dayRound[d] = v; }, { what: `Sheets · ${d}`, from: nm(was), to: nm(v) });
+    });
+    view.onclick = async e => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.rs) {
+        const n = +b.dataset.rs, raw = view.querySelector(`[data-rl="${n}"]`).value.trim(), err = view.querySelector(`[data-re="${n}"]`);
+        const id = raw ? (raw.match(/\/d\/([\w-]{20,})/) || [, /^[\w-]{20,}$/.test(raw) ? raw : ''])[1] : '';
+        if (raw && !id) { err.textContent = 'That is not a Google Sheets link.'; return; }
+        if (id === (R[n] || '')) { err.textContent = id ? 'That is the sheet already.' : ''; return; }
+        err.textContent = id ? 'Trying the sheet…' : '';
+        try {
+          await A.busy(b, () => A.saveSettings(s => { s.rounds = s.rounds || {}; s.rounds[n] = id; },
+            { what: `Sheets · Practice Round ${n}`, from: R[n] ? `${R[n].slice(0, 10)}…` : 'none', to: id ? `${id.slice(0, 10)}…` : 'none' }));
+        } catch (x) { err.textContent = '✗ ' + x.message; }
+        return;
+      }
+      if (b.dataset.ss) {
+        const k = b.dataset.ss, raw = view.querySelector(`[data-sl="${k}"]`).value.trim(), err = view.querySelector(`[data-se="${k}"]`);
+        const id = (raw.match(/\/d\/([\w-]{20,})/) || [, /^[\w-]{20,}$/.test(raw) ? raw : ''])[1], gm = raw.match(/[#&?]gid=(\d+)/);
+        if (!id) { err.textContent = 'That is not a Google Sheets link.'; return; }
+        const gid = gm ? +gm[1] : T[k].id === id ? T[k].gid : 0;
+        if (id === T[k].id && gid === T[k].gid) { err.textContent = 'That is where it goes already.'; return; }
+        err.textContent = 'Trying the sheet…';
+        try {
+          await A.busy(b, () => A.saveSettings(n => {
+            n.sheets[k] = { id, gid };
+            const h = { energytower: 'et', mammoth: 'ma' }[k] && n.home.cards.find(c => c.id === { energytower: 'et', mammoth: 'ma' }[k]);
+            if (h && !h.link) h.link = link({ id, gid });
+          }, { what: `Sheets · ${SHEET_NAMES[k]}`, from: T[k].id ? `${T[k].id.slice(0, 10)}… tab ${T[k].gid}` : 'none', to: `${id.slice(0, 10)}… tab ${gid}` }));
+        } catch (x) { err.textContent = '✗ ' + x.message; }
+        return;
+      }
+      if ('bk' in b.dataset) {
+        try {
+          const r = await A.busy(b, () => A.call('backup'));
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(new Blob([JSON.stringify(r)], { type: 'application/json' }));
+          a.download = `2698-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+        } catch (x) { toast('✗ ' + x.message); }
+      }
+    };
+    view.onchange = async e => {
+      const t = e.target; if (!('rs' in t.dataset) || !t.files[0]) return;
+      const f = t.files[0]; t.value = '';
+      let b;
+      try { b = JSON.parse(await f.text()); if (!b || b.site !== '2698' || !b.data) throw 0; }
+      catch { toast('✗ That is not a backup of this site'); return; }
+      if (!await A.confirm('Restore this backup?', `Every card and setting goes back to how it was on ${esc(new Date(b.at).toLocaleString())}. Reads and changes since then are replaced. History can undo it.`, 'Restore')) return;
+      try { const r = await A.call('restore', { data: b.data }, { what: 'Restored a backup', from: 'as it was', to: f.name }); await reloadSettings(); done(r); emit('data'); }
+      catch (x) { toast('✗ ' + x.message); }
+    };
+  }
+
+  async function historyPage() {
+    view.innerHTML = '<div class="apanel"><h2>History</h2><p class="ahint">Loading…</p></div>';
+    try { log = (await A.call('log')).log; } catch (e) { view.innerHTML = `<div class="apanel"><p class="aerr">${esc(e.message)}</p></div>`; return; }
+    if (page !== 'history') return;
+    const tm = t => new Date(t).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    view.innerHTML = `<div class="apanel"><h2>History</h2>
+      <p class="ahint">Every admin change, newest first (the last ${log.length >= 100 ? 100 : log.length}). Undo goes back to just before that change, undoing the later ones too. It also takes back what the bookmark read since then on the same cards.</p>
+      ${log.length ? `<div class="alog">${log.map((x, i) => `<div class="alogi"><time>${tm(x.t)}</time><div class="awhat">${esc(x.what)}${x.from || x.to ? `<div class="aov"><s>${esc(x.from || '—')}</s> → <ins>${esc(x.to || '—')}</ins></div>` : ''}</div>
+        <button type="button" class="abtn sm" data-u="${esc(x.id)}" data-i="${i}">${i ? `Undo to here (${i + 1})` : 'Undo'}</button></div>`).join('')}</div>`
+      : '<p class="ahint" style="margin:0">No changes yet.</p>'}</div>`;
+    view.onclick = async e => {
+      const b = e.target.closest('[data-u]'); if (!b) return;
+      const n = +b.dataset.i + 1;
+      if (n > 1 && !await A.confirm(`Undo ${n} changes?`, 'This one and every change after it.', 'Undo', false)) return;
+      await A.busy(b, () => A.undo(b.dataset.u));
+    };
+  }
+
+  return A;
+})();

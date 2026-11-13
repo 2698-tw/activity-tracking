@@ -1,0 +1,844 @@
+
+(function () {
+  const TYPES = ['Army', 'Navy', 'Air Force'];
+  const fold = s => String(s || '').normalize('NFKC').toLowerCase().replace(/о/g, 'o').replace(/[^\p{L}\p{N}]/gu, '');
+  const head = d => new Date(d + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const ago = ms => {
+    if (!ms) return '—';
+    const m = (Date.now() - ms) / 60000;
+    return m < 5 ? 'now' : m < 60 ? Math.round(m) + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago';
+  };
+  const day = s => s ? new Date(s * 1000).toISOString().slice(0, 10) : '';
+  const stamp = ms => { const d = new Date(ms); return `${d.getDate()} ${d.toLocaleString('en-GB', { month: 'short' })}, ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`; };
+  function updPill(tab, text, fresh, title) {
+    const b = tab.querySelector('.rhead b'); if (!b) return;
+    let p = b.nextElementSibling && b.nextElementSibling.classList.contains('upd') ? b.nextElementSibling : null;
+    if (!text) { if (p) p.remove(); return; }
+    if (!p) { p = document.createElement('span'); p.className = 'upd'; b.after(p); }
+    p.classList.toggle('old', !fresh); p.title = title || ''; p.innerHTML = `Updated <span>${text}</span>`;
+  }
+  const today = () => new Date().toISOString().slice(0, 10), isToday = ms => new Date(ms).toDateString() === new Date().toDateString();
+  const rankText = r => r >= 6 ? 'R4 ★' : r ? 'R' + r : '';
+  const parseNum = s => { const m = String(s).trim().replace(/[,\s]/g, '').match(/^(\d+(?:\.\d+)?)([kKmM]?)$/); return m ? +m[1] * ({ k: 1e3, m: 1e6 }[m[2].toLowerCase()] || 1) : NaN; };
+  const asTypes = (v, type) => v == null ? {} : typeof v === 'number' ? { [type || '']: v } : { ...v };
+  const allyTag = a => a ? `<span class="rtag t${esc(a)}">${esc(a)}</span>` : '<span class="rdim">—</span>';
+  const unitTag = t => t ? `<span class="unit u${t.replace(' ', '')}">${esc(t)}</span>` : '';
+  const dim = '<span class="rdim">—</span>';
+  const SKELETON = '<div class="rskel" aria-label="Loading">' + '<i></i>'.repeat(12) + '</div>';
+
+  let names = null, namesAt = 0;
+  const untag = n => { const x = /^(.*\D)\s?[2-9]$/.exec(n || '') || /^(.+)\.[A-Za-z]$/.exec(n || ''); return x ? x[1].trim() : ''; };
+  function nameMap(list) {
+    const m = new Map(), weakKeys = new Set();
+    for (const [name, ally, search, weak] of list || []) for (const k of [name + '|' + ally, name, '~' + fold(name) + '|' + ally, '~' + fold(name)]) {
+      if (weak && m.has(k) && !weakKeys.has(k)) continue;
+      m.set(k, search); weak ? weakKeys.add(k) : weakKeys.delete(k);
+    }
+    m.bare = new Map();
+    for (const [name, ally, search] of list || []) { const b = untag(name); if (b) for (const k of [b + '|' + ally, b]) m.bare.set(k, m.bare.has(k) && m.bare.get(k)[0] !== search ? [null] : [search, name]); }
+    return m;
+  }
+  const withAlly = (m, r) => { const a = r.alliance ?? r.ally; return m.get(r.name + '|' + a) || m.get('~' + fold(r.name) + '|' + a); };
+  const byName = (m, r) => m.get(r.name) || (fold(r.name) !== '' && m.get('~' + fold(r.name)));
+  const every10 = (get, at) => !get || Date.now() - at > 10 * 60 * 1000;
+  let joins = null, joinsAt = 0, joinsMap = null;
+  const joinsOf = j => {
+    const ro = (j && j.rows) || [], first = Math.min(...ro.map(x => x.firstAt || Infinity)), m = new Map();
+    twins = twinsOf(ro);
+    for (const x of ro) {
+      const at = x.firstAt && x.firstAt - first > 864e5 / 2 ? x.firstAt : 0;
+      for (const n of [x.name, ...(x.names || [])]) if (n) { m.set(n, at); if (fold(n)) m.set('~' + fold(n), at); }
+    }
+    return m;
+  };
+  function askJoins() {
+    if (every10(joins, joinsAt)) {
+      joinsAt = Date.now();
+      const L = Last.post(API_BASE + '/roster');
+      if (L.now && !joinsMap) joinsMap = joinsOf(L.now);
+      joins = L.next.then(j => { joinsMap = joinsOf(j); return !L.same; }).catch(() => { joinsAt = 0; return false; });
+    }
+    return joins;
+  }
+  function joinedAt(rows) {
+    const m = joinsMap || new Map();
+    for (const r of rows) {
+      const at = [r.name, ...(r.names || [])].map(n => m.get(n) ?? m.get('~' + fold(n))).find(v => v !== undefined);
+      r.joinedAt = at || 0;
+    }
+  }
+
+  let namesMap = null;
+  const namesOf = j => {
+    const seen = new Map(); sheetTwins = new Set();
+    for (const [n, a, s] of (j && j.roster) || []) for (const x of new Set([n, untag(n) || n])) { const k = x + '|' + a; if (seen.has(k) && seen.get(k) !== s) sheetTwins.add(k); seen.set(k, s); }
+    return [nameMap(j && j.roster), nameMap(j && j.raw)];
+  };
+  function askNames() {
+    if (every10(names, namesAt)) {
+      namesAt = Date.now();
+      const L = Last.post(API_BASE + '/search-names');
+      if (L.now && !namesMap) namesMap = namesOf(L.now);
+      names = L.next.then(j => { namesMap = namesOf(j); return !L.same; }).catch(() => { namesAt = 0; return false; });
+    }
+    return names;
+  }
+  const twinsOf = ro => {
+    const n = new Map(), m = new Map();
+    for (const x of ro || []) n.set(x.name, (n.get(x.name) || 0) + 1);
+    for (const x of ro || []) if (x.pid && x.search) m.set(x.pid, { search: x.search, shared: n.get(x.name) > 1, own: x.search !== x.name });
+    realNames = new Set(n.keys());
+    return m;
+  };
+  const bareOf = (m, r) => { for (const k of [r.name + '|' + (r.alliance ?? r.ally), r.name]) { const v = m.bare && m.bare.get(k); if (v) return v[0] && !realNames.has(v[1]) ? v[0] : ''; } return ''; };
+  let twins = new Map(), sheetTwins = new Set(), realNames = new Set();
+  function searchNames(rows, roster0) {
+    if (roster0) twins = twinsOf(roster0);
+    if (!namesMap) return;
+    const [roster, raw] = namesMap;
+    for (const r of rows) {
+      const t = r.pid && twins.get(r.pid);
+      const s = (t && (t.shared || sheetTwins.has(r.name + '|' + (r.alliance ?? r.ally))) && t.search) || withAlly(roster, r) || (t && t.own && t.search)
+        || bareOf(roster, r) || withAlly(raw, r) || byName(roster, r) || byName(raw, r);
+      if (s) r.search = s;
+    }
+  }
+
+  function makeCard(o) {
+    const W = { rows: null, dates: [], reads: {}, moves: [], view: 'list', ally: null, type: '', cls: '', rule: '', sort: null, asc: false, loading: false, err: '', flash: '' };
+    const sel = new Set();
+    const el = k => $(o.el + k);
+    const cfg = () => Admin.settings.cards[o.id];
+    const dated = o.id !== 'ro', allyKey = o.id === 'ro' ? 'alliance' : 'ally';
+    const fmt = v => {
+      const f = cfg().fmt;
+      return f === 'M' ? (o.id === 'ro' ? (v / 1e6).toFixed(1) : Math.round(v / 1e6)) + 'M' : f === 'k' ? Math.round(v / 1e3).toLocaleString('en-US') + 'k' : Math.round(v).toLocaleString('en-US');
+    };
+    const byId = id => (W.rows || []).find(r => r.id === id);
+
+    const bests = r => r.bests || [];
+    const cp = (r, n) => (bests(r)[n - 1] || [])[1] || 0, unit = (r, n) => (bests(r)[n - 1] || [])[0] || '';
+    const top = r => Math.max(0, ...bests(r).map(b => b[1]));
+    const dayTypes = (r, d) => asTypes(r.pts[d], r.type);
+
+    const awayDays = r => r.online ? 0 : r.last ? (Date.now() / 1000 - r.last) / 86400 : Infinity;
+    const DEF = {
+      name: { text: 1, val: r => r.name, edit: 'text',
+              cell: r => esc(r.name) +
+                ((r.names || []).length ? ` <span class="rwas" title="Formerly ${esc(r.names.slice().reverse().join(', '))}">↺</span>` : '') },
+      ally: { text: 1, val: r => r.ally, cell: r => allyTag(r.ally), edit: 'ally' },
+      alliance: { text: 1, val: r => r.alliance, cell: r => allyTag(r.alliance), edit: 'ally' },
+      rank: { val: r => r.rank || 0, cell: r => rankText(r.rank), edit: 'rank' },
+      power: { n: 1, val: r => r.power || 0, cell: r => r.power ? fmt(r.power) : '', edit: 'big' },
+      cls: { text: 1, val: r => r.cls || '', cell: r => r.cls || '—', cls: r => r.cls || 'rdim', edit: 'cls' },
+      join: { hs: 1, val: r => r.join || 0, cell: r => day(r.join), edit: 'date' },
+      last: { val: r => r.online || (!Admin.on && awayDays(r) < 3) ? Infinity : r.last || 0,
+              cell: r => !Admin.on && awayDays(r) < 3 ? '' : r.online ? '<span class="rdot"></span>now' : ago(r.last * 1000), edit: 'date' },
+      status: { text: 1, hs: 1, val: r => r.status, cell: r => r.status === 'Left' ? `Left ${day(r.leftAt / 1000)}` : 'Active', edit: 'status' },
+      best: { n: 1, val: r => Math.max(0, ...Object.values(r.pts || {})), cell: r => { const b = Math.max(0, ...Object.values(r.pts || {})); return b ? fmt(b) : dim; } },
+    };
+    for (const n of [1, 2, 3]) {
+      DEF['cp' + n] = { n: 1, val: r => cp(r, n), cell: r => cp(r, n) ? fmt(cp(r, n)) : dim, edit: 'big' };
+      DEF['u' + n] = { text: 1, val: r => unit(r, n), cell: r => unitTag(unit(r, n)) || (Admin.on ? dim : ''), edit: 'unit' };
+    }
+    const sc = (r, d) => (r.score || {})[d];
+    const onDay = (r, d) => r.pts[d] != null || sc(r, d) != null;
+    const dateDef = d => o.id === 'et'
+      ? { n: 1, val: r => sc(r, d) ?? (r.pts[d] != null ? 0 : -1), edit: 'score',
+          cell: r => sc(r, d) != null ? Math.round(sc(r, d)).toLocaleString('en-US') : r.pts[d] != null ? '<span class="yes">Yes</span>' : '<span class="rdim">No</span>' }
+      : o.id === 'st' || o.id === 'ma'
+      ? { n: 1, val: r => r.pts[d] != null ? 1 : 0, cell: r => r.pts[d] != null ? '<span class="yes">Yes</span>' : '<span class="rdim">No</span>', edit: 'toggle' }
+      : { n: 1, val: r => r.pts[d] ?? -1, cell: r => r.pts[d] == null ? dim : fmt(r.pts[d]), edit: 'num' };
+    const colHead = d => o.id === 'wb' ? 'Practice Round' : head(d);
+    const defOf = k => /^\d{4}-/.test(k) ? dateDef(k) : DEF[k];
+    const columns = () => {
+      const out = [];
+      for (const c of cfg().cols) if (c.show) {
+        if (c.k === '@dates') { if (dated) W.dates.forEach(d => out.push({ k: d, label: colHead(d), date: 1 })); }
+        else if (DEF[c.k]) out.push(c);
+      }
+      return out;
+    };
+
+    function take(j) {
+      W.rows = j.rows || []; W.dates = j.dates || []; W.at = j.at || 0; W.reads = j.reads || {}; W.moves = j.moves || []; W.err = '';
+      if (o.id === 'wb' && W.dates.length > 1) {
+        const d0 = W.dates[0];
+        for (const r of W.rows) { const v = Object.values(r.pts); r.pts = v.length ? { [d0]: Math.max(...v) } : {}; }
+        W.dates = [d0];
+      }
+      searchNames(W.rows, o.id === 'ro' ? W.rows : null);
+      if (o.id !== 'ro') joinedAt(W.rows);
+      for (const id of [...sel]) if (!byId(id)) sel.delete(id);
+    }
+    let lastJ = null;
+    async function load(manual) {
+      if (W.loading) return;
+      W.loading = true;
+      const L = Last.post(API_BASE + o.api), first = !W.rows;
+      const side = [askNames(), o.id !== 'ro' ? askJoins() : false];
+      if (first && L.now) { lastJ = L.now; take(L.now); draw(); if (dated) el('View').scrollLeft = 1e6; }
+      else if (first) draw();
+      try {
+        const [j, , n, r] = await Promise.all([L.next, Admin.ready, ...side]);
+        if (manual === true && L.same && !n && !r && !W.err) Admin.toast('Up to date');
+        if (!W.rows || !L.same || n || r || W.err) { lastJ = j; take(j); W.loading = false; draw(); if (first && dated && !W.flash) el('View').scrollLeft = 1e6; }
+      } catch (e) {
+        if (W.rows && lastJ) Admin.toast(`✗ The ${cfg().title} could not be refreshed: ` + (e.message || e));
+        else { W.err = `The ${cfg().title} could not be loaded: ` + (e.message || e); draw(); }
+      }
+      W.loading = false;
+    }
+    function defaults() {
+      const C = cfg();
+      if (W.ally === null) W.ally = C.filter;
+      if (W.sort === null) { W.sort = C.sort === 'last' ? W.dates[W.dates.length - 1] || 'name' : C.sort; W.asc = !!(DEF[W.sort] && DEF[W.sort].text); }
+    }
+
+    const DAY = 864e5;
+    const missedDays = r => W.dates.filter(d => !onDay(r, d)).length;
+    function seenDays(r) {
+      if (o.id === 'ro') {
+        const first = Math.min(...W.rows.map(x => x.firstAt || Infinity));
+        return r.firstAt && r.firstAt - first > DAY / 2 ? (Date.now() - r.firstAt) / DAY : Infinity;
+      }
+      return r.joinedAt ? (Date.now() - r.joinedAt) / DAY : Infinity;
+    }
+    const FV = {
+      cp: r => (o.id === 'ro' ? r.power || 0 : o.id === 'st' ? top(r) : DEF.best.val(r)) / 1e6,
+      pts: r => Math.max(0, ...Object.values(r.pts || {})),
+      missed: missedDays,
+      present: r => W.dates.filter(d => onDay(r, d)).length,
+      seen: seenDays,
+      ally: r => r[allyKey] || '',
+      unit: r => bests(r).map(b => b[0]),
+      name: r => r.name + ' ' + (r.search || ''),
+      rank: r => r.rank || 0,
+      last: r => r.online ? 0 : r.last ? (Date.now() / 1000 - r.last) / 86400 : Infinity,
+      joined: r => r.join ? (Date.now() / 1000 - r.join) / 86400 : Infinity,
+      cls: r => r.cls || '',
+      status: r => r.status === 'Left' ? 'Left' : 'Active',
+    };
+    const lc = v => String(v).toLowerCase();
+    function test(c, r) {
+      const x = FV[c.f](r);
+      if (c.f === 'unit') return c.op === 'not' ? !x.includes(c.v) : x.includes(c.v);
+      if (c.f === 'ally' && c.v === 'OTHER') { const other = !Admin.settings.alliances.includes(x); return c.op === 'not' ? !other : other; }
+      switch (c.op) {
+        case 'ge': return x >= +c.v; case 'le': return x <= +c.v; case 'eq': return Math.floor(x) === +c.v;
+        case 'bt': return x >= +c.v && x <= +c.v2;
+        case 'is': return lc(x) === lc(c.v); case 'not': return lc(x) !== lc(c.v); case 'has': return lc(x).includes(lc(c.v));
+      }
+      return false;
+    }
+    const rules = () => (Admin.settings.rules || []).filter(x => x.on && x.cards.includes(o.id) &&
+      x.all.every(c => FV[c.f] && (Admin.RULE_FIELDS[c.f] || { cards: [] }).cards.includes(o.id)));
+    const matches = (x, r) => x.all.every(c => test(c, r));
+    const firstRule = r => rules().find(x => matches(x, r));
+    function badges(r) {
+      return rules().filter(x => x.label && matches(x, r)).map(x => {
+        const n = x.all.some(c => c.f === 'missed') ? ' ' + missedDays(r) : '';
+        const why = x.all.map(c => { const v = FV[c.f](r), f = Admin.RULE_FIELDS[c.f];
+          return `${f.label}: ${Array.isArray(v) ? v.join(', ') : typeof v === 'number' ? (v === Infinity ? 'from the start' : Math.round(v * 10) / 10) : v}`; }).join(' · ');
+        return ` <span class="hl hl-${x.color}" title="${esc(x.name + ' — ' + why)}">${esc(x.label + n)}</span>`;
+      }).join('');
+    }
+
+    function draw() {
+      const box = el('View');
+      if (!box) return;
+      const C = cfg(), AL = Admin.settings.alliances, admin = Admin.on;
+      $(o.tab).querySelector('.rhead b').textContent = C.title;
+      $(o.tab).querySelector('.rapp').classList.toggle('admin', admin);
+      drawAdminBar();
+      if (W.rows) defaults();
+      const q = fold(el('Q').value);
+      const chipRule = W.rule && rules().find(x => x.chip && x.id === W.rule);
+      if (W.rule && !chipRule) W.rule = '';
+      const lastRead = Math.max(0, ...Object.values(W.reads || {}).filter(Boolean)), lastDay = W.dates[W.dates.length - 1];
+      if (o.id === 'ro') updPill($(o.tab), lastRead ? stamp(lastRead) : '', lastRead && isToday(lastRead), AL.map(a => `${a}: ${W.reads[a] ? stamp(W.reads[a]) : 'not read yet'}`).join('\n'));
+      else if (o.id === 'wb') updPill($(o.tab), W.at ? stamp(W.at) : lastDay ? head(lastDay) : '', W.at ? isToday(W.at) : lastDay === today());
+      else updPill($(o.tab), lastDay ? head(lastDay) : '', lastDay === today(), W.at ? 'Last read ' + stamp(W.at) : '');
+      el('Reads').innerHTML = o.id === 'ro'
+        ? (admin ? AL.map(a => `<span><span class="rtag t${esc(a)}">${esc(a)}</span> ${W.reads[a] ? stamp(W.reads[a]) : '<span class="rdim">not read yet</span>'} <button type="button" class="rgo mini" data-reset="${esc(a)}">Reset</button><button type="button" class="rgo mini" data-wipe="${esc(a)}">Wipe</button></span>`).join('') : '')
+        : W.rows ? `${W.rows.length} players · ${W.dates.length} ${W.dates.length === 1 ? 'day' : 'days'}` : '';
+      if (o.id === 'ro' && W.view !== 'list') return drawMoves(box, q);
+      const rows = (W.rows || []).filter(r => (!q || fold(r.name).includes(q) || (r.search && fold(r.search).includes(q)) || (r.names || []).some(n => fold(n).includes(q))) &&
+        (!W.ally || (W.ally === 'OTHER' ? !AL.includes(r[allyKey]) : r[allyKey] === W.ally)) &&
+        (!W.type || bests(r).some(b => b[0] === W.type)) && (!W.cls || r.cls === W.cls) && (!chipRule || matches(chipRule, r)));
+      el('Chips').innerHTML =
+        ['', ...AL, ...(o.id === 'ro' ? [] : ['OTHER'])].map(a => `<button type="button" class="rchip ${W.ally === a ? 'on' : ''}" data-a="${esc(a)}">${a === 'OTHER' ? 'Other' : esc(a) || (o.id === 'ro' ? 'All alliances' : 'Everyone')}</button>`).join('') +
+        (o.id === 'st' && C.unitFilters ? TYPES.map(t => `<button type="button" class="rchip ${W.type === t ? 'on' : ''}" data-t="${t}">${t}</button>`).join('') : '') +
+        (o.id === 'ro' ? ['CE', 'MM'].map(c => `<button type="button" class="rchip ${W.cls === c ? 'on' : ''}" data-c="${c}">${c}</button>`).join('') : '') +
+        rules().filter(x => x.chip).map(x => `<button type="button" class="rchip rulechip ${W.rule === x.id ? 'on' : ''}" data-rule="${esc(x.id)}"><i class="hld hl-${x.color}"></i>${esc(x.name)}</button>`).join('') +
+        (W.rows ? `<span class="rcount">${rows.length} of ${W.rows.length} players</span>` : '');
+      if (o.id === 'ro') el('Chips').insertAdjacentHTML('afterbegin', views());
+      drawBulk();
+      if (W.err) { box.innerHTML = `<p class="rnote">${esc(W.err)}</p>`; return; }
+      if (!W.rows) { box.innerHTML = SKELETON; return; }
+      if (!W.rows.length && !admin) { box.innerHTML = `<p class="rnote">${o.empty}</p>`; return; }
+      const cols = columns(), k = W.sort, dir = W.asc ? 1 : -1, d = defOf(k) || DEF.name;
+      rows.sort((a, b) => (d.text ? String(d.val(a) ?? '').localeCompare(String(d.val(b) ?? '')) : d.val(a) - d.val(b)) * dir || (o.id === 'st' ? top(b) - top(a) : o.id === 'et' || o.id === 'ma' ? DEF.best.val(b) - DEF.best.val(a) : 0));
+      const arrow = c => W.sort === c ? (W.asc ? ' ▲' : ' ▼') : '';
+      const game = admin && o.id === 'ro' ? { name: 1, alliance: 1, rank: 1, power: 1, join: 1, last: 1, status: 1 } : {};
+      box.innerHTML = `<table class="rtable wbtable"><thead><tr>${cols.map(c => {
+        const f = defOf(c.k);
+        return `<th class="${c.k === 'name' ? 'nm' : ''} ${f.n ? 'd' : ''} ${f.hs ? 'hs' : ''}" data-k="${c.k}">${esc(c.label)}${arrow(c.k)}` +
+          (game[c.k] ? '<span class="gamef" title="The next read from the game replaces an edit here">⚠</span>' : '') +
+          (admin && c.date ? `<button type="button" class="dedit" data-d="${c.k}" title="Change date, clear or remove">✎</button>` : '') + '</th>';
+      }).join('')}</tr></thead><tbody>${rows.map(r => `<tr data-id="${esc(r.id)}" class="${r.status === 'Left' ? 'left' : ''} ${sel.has(r.id) ? 'sel' : ''} ${W.flash === r.id ? 'flash' : ''} ${(x => x ? 'hlrow hl-' + x.color : '')(firstRule(r))}">${cols.map(c => {
+        const f = defOf(c.k), ed = admin && f.edit ? (f.edit === 'toggle' ? 'tog' : 'ed') : '';
+        if (c.k === 'name') return `<td class="nm ${ed}" data-k="name">${admin ? `<input type="checkbox" class="rsel" data-sel="${esc(r.id)}" ${sel.has(r.id) ? 'checked' : ''} aria-label="Select">` : ''}<span class="nmv">${f.cell(r)}</span>${badges(r)}${admin ? `<button type="button" class="rdots" data-row="${esc(r.id)}" title="Row actions">⋯</button>` : ''}</td>`;
+        return `<td class="${f.n ? 'n' : ''} ${f.hs ? 'hs' : ''} ${f.cls ? f.cls(r) : ''} ${ed}" data-k="${c.k}">${f.cell(r)}</td>`;
+      }).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length}" class="rdim">${W.rows.length ? 'No players match.' : 'No players yet: add one with + Player.'}</td></tr>`}</tbody></table>`;
+      if (W.flash) { const tr = box.querySelector('tr.flash'); if (tr) tr.scrollIntoView({ block: 'center' }); W.flash = ''; }
+    }
+
+    const views = () => `<span class="rseg">${[['list', 'Players'], ['moves', 'Alliance History'], ['names', 'Name log']].map(([v, l]) => `<button type="button" class="rchip ${W.view === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</span>`;
+    function drawMoves(box, q) {
+      const AL = Admin.settings.alliances, admin = Admin.on, names = W.view === 'names';
+      const searchOf = name => (W.rows.find(r => r.name === name) || {}).search;
+      const tag = a => a === null ? '<span class="rtag tNew">New</span>' : a === '' ? '<span class="rtag tLeft">No alliance</span>' : allyTag(a);
+      const inAlly = x => !W.ally || (names ? (W.ally === 'OTHER' ? !AL.includes(x.ally) : x.ally === W.ally) : x.from === W.ally || x.to === W.ally);
+      const mine = W.moves.filter(x => (x.kind === 'name') === names);
+      const list = mine.filter(x => inAlly(x) &&
+        (!q || [x.name, searchOf(x.name), ...(names ? [x.from, x.to] : [])].some(n => n && fold(n).includes(q))));
+      const n = list.length, what = names ? (n === 1 ? 'rename' : 'renames') : (n === 1 ? 'change' : 'changes');
+      el('Chips').innerHTML = views() + ['', ...AL, ...(names ? ['OTHER'] : [])].map(a => `<button type="button" class="rchip ${W.ally === a ? 'on' : ''}" data-a="${esc(a)}">${a === 'OTHER' ? 'Other' : esc(a) || 'All alliances'}</button>`).join('') +
+        (W.rows ? `<span class="rcount">${n} ${what}</span>` : '');
+      if (bulk) { bulk.classList.remove('on'); bulk.innerHTML = ''; }
+      if (W.err) { box.innerHTML = `<p class="rnote">${esc(W.err)}</p>`; return; }
+      if (!W.rows) { box.innerHTML = SKELETON; return; }
+      if (!mine.length) {
+        box.innerHTML = names ? '<p class="rnote">No name changes yet. Any read, of an alliance or an event, notes a player it knows under a new name here.</p>'
+          : '<p class="rnote">No alliance changes yet. Each read of an alliance adds who joined, moved or left since the last one.</p>';
+        return;
+      }
+      const when = at => { const d = new Date(at); return `${d.getDate()} ${d.toLocaleString('en-GB', { month: 'short' })}`; };
+      const x0 = admin ? '<th></th>' : '', del = x => admin ? `<td><button type="button" class="rgo mini" data-mv="${esc(x.m)}" title="Take this off the log">✕</button></td>` : '';
+      box.innerHTML = names
+        ? `<table class="rtable mvtable"><thead><tr><th>When</th><th class="nm">Old name</th><th class="nm">New name</th><th>Alliance</th>${x0}</tr></thead><tbody>${list.map(x =>
+            `<tr><td>${when(x.at)}</td><td class="nm">${esc(x.from)}</td><td class="nm"><span class="rdim">→</span> ${esc(x.to)}${x.name !== x.to ? ` <span class="rdim">(now ${esc(x.name)})</span>` : ''}</td>
+             <td>${x.ally ? allyTag(x.ally) : '<span class="rdim">—</span>'}</td>${del(x)}</tr>`).join('') || `<tr><td colspan="5" class="rdim">No renames match.</td></tr>`}</tbody></table>`
+        : `<table class="rtable mvtable"><thead><tr><th>When</th><th class="nm">Name</th><th>Change</th>${x0}</tr></thead><tbody>${list.map(x => {
+            return `<tr><td>${when(x.at)}</td><td class="nm">${esc(x.name)}</td>
+              <td>${tag(x.from)} <span class="rdim">→</span> ${tag(x.to)}</td>${del(x)}</tr>`;
+          }).join('') || '<tr><td colspan="4" class="rdim">No changes match.</td></tr>'}</tbody></table>`;
+    }
+
+    function addMove() {
+      const AL = Admin.settings.alliances, today = new Date().toISOString().slice(0, 10);
+      const opts = list => list.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+      const m = Admin.modal(`<h3>Add a change to the Log</h3>
+        <label>Name<input type="text" list="mvNames" maxlength="60" placeholder="In-game name"></label>
+        <datalist id="mvNames">${[...new Set(W.rows.map(r => r.name))].map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+        <label>From<select data-f>${opts([...AL.map(a => [a, a]), ['', 'No alliance'], ['new', 'New']])}</select></label>
+        <label>To<select data-t>${opts([['', 'No alliance'], ...AL.map(a => [a, a])])}</select></label>
+        <label>Date<input type="date" value="${today}" max="${today}"></label>
+        <p class="aerr" data-e></p>
+        <div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Add</button></div>`);
+      m.querySelector('[data-x]').onclick = m.close;
+      m.querySelector('[data-y]').onclick = () => {
+        const name = m.querySelector('input[type=text]').value.trim(), f = m.querySelector('[data-f]').value, to = m.querySelector('[data-t]').value;
+        const day = m.querySelector('input[type=date]').value, from = f === 'new' ? null : f, err = m.querySelector('[data-e]');
+        if (!name) { err.textContent = 'Type a name.'; return; }
+        if (from === to) { err.textContent = 'From and To are the same.'; return; }
+        if (!day) { err.textContent = 'Pick a date.'; return; }
+        const tx = a => a === null ? 'New' : a || 'No alliance';
+        m.close(); run('move-add', { name, from, to, day }, { what: 'Roster · added a change to the Log', from: '—', to: `${name}: ${tx(from)} → ${tx(to)}, ${head(day)}` });
+      };
+    }
+
+    let bar, bulk, note;
+    function drawAdminBar() {
+      const rapp = $(o.tab).querySelector('.rapp');
+      if (!bar) {
+        bar = document.createElement('span'); bar.className = 'radm';
+        el('Reload').before(bar);
+        bulk = document.createElement('div'); bulk.className = 'rbulk';
+        el('Chips').after(bulk);
+        note = document.createElement('div'); note.className = 'rfoot radmnote';
+        rapp.appendChild(note);
+      }
+      bar.innerHTML = Admin.on && W.view === 'names' ? '' : Admin.on && W.view === 'moves' ? '<button type="button" class="rgo pink" data-act="addmove">+ Change</button>' : Admin.on ? `<button type="button" class="rgo pink" data-act="add">+ Player</button>${dated ? '<button type="button" class="rgo pink" data-act="adddate">+ Date</button>' : ''}${o.id === 'ro' ? '<button type="button" class="rgo" data-act="sendro">Send to sheet</button>' : ''}<button type="button" class="rgo" data-act="csv">Export CSV</button>` : '';
+      note.hidden = !Admin.on;
+      note.innerHTML = 'Admin: click a cell to change it · ⋯ for a player · ✎ on a date for its column (and to send that day to the sheet again) · tick players to change several at once. Every change is in History and can be undone.' +
+        (o.id === 'ro' ? ' ⚠ columns come from the game: its next read of that alliance replaces an edit (MM/CE edits stay).' : ' Names come from the game: its next read replaces an edit. Alliances of players on the Alliance roster card come from there: changing one here changes it on the roster, and every card follows.');
+    }
+    function drawBulk() {
+      if (!bulk) return;
+      bulk.classList.toggle('on', Admin.on && sel.size > 0);
+      if (!Admin.on || !sel.size) { bulk.innerHTML = ''; return; }
+      bulk.innerHTML = `<b>${sel.size} selected</b>
+        <select data-bulk><option value="">Set alliance…</option>${Admin.settings.alliances.map(a => `<option>${esc(a)}</option>`).join('')}${o.id === 'ro' ? '' : '<option value="-">(no alliance)</option>'}</select>
+        ${o.id === 'ro' ? '' : `<button type="button" class="rgo" data-act="merge" ${sel.size < 2 ? 'disabled' : ''}>Merge</button>`}
+        <button type="button" class="rgo danger" data-act="bulkdel">Delete</button><button type="button" class="rgo" data-act="clear">Clear</button>`;
+    }
+
+    async function run(op, body, note) {
+      try { const res = await Admin.call(op, { card: o.id, ...body }, note); Admin.done(res); await load(); return res; }
+      catch (e) { Admin.toast('✗ ' + e.message); await load(); return null; }
+    }
+    const names = ids => ids.map(id => (byId(id) || {}).name).filter(Boolean);
+    const list = (xs, n = 3) => xs.length > n ? xs.slice(0, n).join(', ') + ` and ${xs.length - n} more` : xs.join(', ');
+
+    function edit(td) {
+      const tr = td.closest('tr'), r = byId(tr.dataset.id), k = td.dataset.k, f = defOf(k);
+      if (!r || !f || !f.edit || td.querySelector('.cellin')) return;
+      if (f.edit === 'toggle') return toggleDay(r, k);
+      if (f.edit === 'ally' && r.left) return Admin.toast(`${r.name} has left the alliances — change it on the Alliance roster card.`);
+      const AL = Admin.settings.alliances, opts = (list, cur) => `<select class="cellin">${list.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(cur) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+      const cur = k === 'name' ? r.name : f.val(r);
+      let html;
+      if (f.edit === 'ally') html = opts([...(o.id === 'ro' || r.roster ? [] : [['', '(no alliance)']]), ...AL.map(a => [a, a]), ...(cur && !AL.includes(cur) ? [[cur, cur]] : [])], cur || '');
+      else if (f.edit === 'unit') html = opts([['', '— (remove)'], ...TYPES.map(t => [t, t])], cur);
+      else if (f.edit === 'cls') html = opts([['', '—'], ['MM', 'MM'], ['CE', 'CE']], cur);
+      else if (f.edit === 'status') html = opts([['Active', 'Active'], ['Left', 'Left']], cur);
+      else if (f.edit === 'rank') html = opts([[1, 'R1'], [2, 'R2'], [3, 'R3'], [4, 'R4'], [5, 'R5'], [6, 'R4 ★']], cur);
+      else if (f.edit === 'date') html = `<input type="date" class="cellin" value="${k === 'last' ? day(r.last) : day(r.join)}">`;
+      else {
+        const shown = f.edit === 'big' ? (cur > 0 ? Math.round(cur / 1e6) + 'M' : '') : f.edit === 'num' ? (cur === -1 ? '' : cur) : f.edit === 'score' ? sc(r, k) ?? '' : cur;
+        html = `<input class="cellin" value="${esc(shown)}" placeholder="${f.edit === 'text' ? '' : 'empty = clear'}">`;
+      }
+      const target = k === 'name' ? td.querySelector('.nmv') : td, keep = target.innerHTML;
+      target.innerHTML = html;
+      const inp = target.firstChild;
+      inp.focus(); if (inp.select) inp.select();
+      let over = false;
+      const finish = async ok => {
+        if (over) return; over = true;
+        const v = inp.value.trim();
+        if (!ok || !(await commit(r, k, v, cur))) target.innerHTML = keep;
+      };
+      inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); finish(true); } if (e.key === 'Escape') finish(false); };
+      inp.onblur = () => finish(true);
+      if (inp.tagName === 'SELECT') inp.onchange = () => finish(true);
+      inp.onclick = e => e.stopPropagation();
+    }
+    async function commit(r, k, v, cur) {
+      const label = (cfg().cols.find(c => c.k === k) || {}).label || head(k), who = r.name;
+      const show = x => x === '' || x == null || x === -1 || x === 0 ? '—' : typeof x === 'number' && x >= 1e4 ? fmt(x) : String(x);
+      if (k === 'name') { if (!v || v === cur) return false; run('row-set', { id: r.id, field: 'name', value: v }, { what: `Renamed ${cur}`, from: cur, to: v }); return true; }
+      if (k === 'ally' || k === 'alliance') { if (v === (cur || '')) return false; run('row-set', { id: r.id, field: k, value: v }, { what: `${who} · alliance`, from: cur || '—', to: v || '—' }); return true; }
+      if (/^\d{4}-/.test(k) && o.id === 'et') {
+        const n = v === '' ? null : parseNum(v), was = sc(r, k) ?? null;
+        if (n !== null && !isFinite(n)) { Admin.toast('Not a number: ' + v); return false; }
+        if (n === was) return false;
+        const yn = r.pts[k] != null ? 'Yes' : 'No';
+        run('score-set', { id: r.id, day: k, value: n }, { what: `${who} · ${head(k)} points`, from: was ?? yn, to: n ?? yn }); return true;
+      }
+      if (/^\d{4}-/.test(k)) {
+        const n = v === '' ? null : parseNum(v);
+        if (n !== null && !isFinite(n)) { Admin.toast('Not a number: ' + v); return false; }
+        if ((n ?? -1) === cur) return false;
+        run('cell-set', { id: r.id, day: k, value: n }, { what: `${who} · ${head(k)}`, from: show(cur), to: show(n) }); return true;
+      }
+      if (/^cp\d$/.test(k) || /^u\d$/.test(k)) {
+        const i = +k.slice(-1) - 1, b = bests(r).map(x => x.slice());
+        if (k[0] === 'c') {
+          if (v === '') { if (!b[i]) return false; b.splice(i, 1); }
+          else {
+            let n = parseNum(v); if (!isFinite(n)) { Admin.toast('Not a number: ' + v); return false; }
+            if (n < 1e5) n *= 1e6;
+            if (b[i]) { if (n === b[i][1]) return false; b[i][1] = n; }
+            else { const t = TYPES.find(t => !b.some(x => x[0] === t)); if (!t) return false; b.push([t, n]); }
+          }
+        } else {
+          if (v === (b[i] || [])[0] || (!v && !b[i])) return false;
+          if (!v) b.splice(i, 1);
+          else if (b.some((x, j) => x[0] === v && j !== i)) { Admin.toast(`${who} already has a ${v} March CP: use ⋯ → Reorder`); return false; }
+          else if (b[i]) b[i][0] = v; else b.push([v, 0]);
+        }
+        const txt = list => list.map(x => fmt(x[1]) + ' ' + x[0]).join(', ') || '—';
+        run('bests-set', { id: r.id, bests: b }, { what: `${who} · ${label}`, from: txt(bests(r)), to: txt(b) }); return true;
+      }
+      if (k === 'power') {
+        let n = parseNum(v); if (!isFinite(n)) { Admin.toast('Not a number: ' + v); return false; }
+        if (n < 1e5) n *= 1e6; if (n === cur) return false;
+        run('row-set', { id: r.id, field: 'power', value: n }, { what: `${who} · Power`, from: show(cur), to: show(n) }); return true;
+      }
+      if (k === 'join' || k === 'last') {
+        if (!v || v === day(k === 'last' ? r.last : r.join)) return false;
+        const s = Math.floor(Date.parse(v + 'T12:00:00Z') / 1000); if (!isFinite(s)) return false;
+        run('row-set', { id: r.id, field: k, value: s }, { what: `${who} · ${label}`, from: day(r[k]) || '—', to: v }); return true;
+      }
+      if (k === 'rank') { if (+v === cur) return false; run('row-set', { id: r.id, field: 'rank', value: +v }, { what: `${who} · Rank`, from: rankText(cur) || '—', to: rankText(+v) }); return true; }
+      if (v === (cur || '')) return false;
+      run('row-set', { id: r.id, field: k, value: v }, { what: `${who} · ${label}`, from: cur || '—', to: v || '—' }); return true;
+    }
+    function toggleDay(r, d) {
+      if (o.id === 'ma') {
+        if (r.pts[d] != null) return run('cell-set', { id: r.id, day: d, value: null }, { what: `${r.name} · ${head(d)}`, from: 'Yes', to: 'No' });
+        const b = DEF.best.val(r);
+        if (!b) { Admin.toast(`Use ⋯ → Edit a day's March CP to give ${r.name} one`); return; }
+        return run('cell-set', { id: r.id, day: d, value: b }, { what: `${r.name} · ${head(d)}`, from: 'No', to: 'Yes' });
+      }
+      if (r.pts[d] != null) return run('days-set', { id: r.id, days: { [d]: null } }, { what: `${r.name} · ${head(d)}`, from: 'Yes', to: 'No' });
+      const b = bests(r)[0];
+      if (!b) { Admin.toast(`Give ${r.name} a March CP first, or use ⋯ → Edit day values`); return; }
+      run('days-set', { id: r.id, days: { [d]: { [b[0]]: b[1] } } }, { what: `${r.name} · ${head(d)}`, from: 'No', to: 'Yes' });
+    }
+
+    function etDay(r) {
+      if (!W.dates.length) return Admin.toast('There are no date columns yet');
+      const d0 = [...W.dates].reverse().find(d => r.pts[d] != null) || W.dates[W.dates.length - 1];
+      const val = d => r.pts[d] != null ? Math.round(r.pts[d] / 1e6) + 'M' : '';
+      const m = Admin.modal(`<h3>${esc(r.name)} · March CP on a day</h3>
+        <label>Day<select>${[...W.dates].reverse().map(d => `<option value="${d}" ${d === d0 ? 'selected' : ''}>${head(d)}</option>`).join('')}</select></label>
+        <label>March CP<input type="text" value="${val(d0)}" placeholder="e.g. 256M · empty = not there"></label>
+        <div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Save</button></div>`);
+      const sel = m.querySelector('select'), inp = m.querySelector('input');
+      sel.onchange = () => { inp.value = val(sel.value); };
+      m.querySelector('[data-x]').onclick = m.close;
+      m.querySelector('[data-y]').onclick = () => {
+        const d = sel.value, v = inp.value.trim();
+        let n = v === '' ? null : parseNum(v);
+        if (n !== null && !isFinite(n)) return Admin.toast('Not a number: ' + v);
+        if (n !== null && n < 1e5) n *= 1e6;
+        if ((n ?? null) === (r.pts[d] ?? null)) return m.close();
+        m.close(); run('cell-set', { id: r.id, day: d, value: n }, { what: `${r.name} · ${head(d)} March CP`, from: r.pts[d] != null ? fmt(r.pts[d]) : '—', to: n != null ? fmt(n) : '—' });
+      };
+    }
+
+    function rowMenu(btn) {
+      const r = byId(btn.dataset.row); if (!r) return;
+      const items = [{ label: '✏️ Rename', run: () => edit(btn.closest('td')) }];
+      if (o.id !== 'ro') items.push({ label: '🔀 Merge with another player…', run: () => mergeDialog([r.id]) });
+      if (o.id === 'et' || o.id === 'ma') items.push('-', { label: "📅 Edit a day's March CP…", run: () => etDay(r) });
+      if (o.id === 'st') items.push('-',
+        { label: '📅 Edit day values…', run: () => dayValues(r) },
+        { label: '↕️ Reorder March CP 1–3…', run: () => reorder(r) },
+        { label: '↺ Work out March CP from the days', run: () => {
+          const b = recalc(r), txt = list => list.map(x => fmt(x[1]) + ' ' + x[0]).join(', ') || '—';
+          run('bests-set', { id: r.id, bests: b }, { what: `${r.name} · March CP from the days`, from: txt(bests(r)), to: txt(b) });
+        } });
+      if (o.id === 'ro') items.push('-', { label: r.status === 'Left' ? '↩︎ Mark Active' : '🚪 Mark as Left', run: () => commit(r, 'status', r.status === 'Left' ? 'Active' : 'Left', r.status) });
+      items.push('-', { label: '🗑 Delete player', danger: true, run: async () => {
+        if (await Admin.confirm(`Delete ${esc(r.name)}?`, `Removes ${esc(r.name)}${dated ? ' and all their days' : ''} from the ${esc(cfg().title)} card.${o.id === 'ro' ? ' The next read of their alliance adds them back if they are still in it.' : ''} History can undo it.`, 'Delete'))
+          run('row-delete', { ids: [r.id] }, { what: `Deleted ${r.name}`, from: r.name, to: '—' });
+      } });
+      Admin.popover(btn, items);
+    }
+    function recalc(r) {
+      const b = [];
+      for (const d of W.dates) for (const [t, v] of Object.entries(dayTypes(r, d))) {
+        if (!TYPES.includes(t)) continue;
+        const x = b.find(y => y[0] === t); if (x) x[1] = Math.max(x[1], v); else b.push([t, v]);
+      }
+      return b;
+    }
+    function mergeDialog(ids) {
+      const pick = ids.map(byId).filter(Boolean), many = pick.length > 1;
+      const opt = x => `<option value="${esc(x.id)}">${esc(x.name)} (${esc(x[allyKey] || '—')})</option>`;
+      const pool = W.rows.filter(x => !ids.includes(x.id)).sort((a, b) => a.name.localeCompare(b.name));
+      const m = Admin.modal(`<h3>Merge players</h3>
+        <p>${many ? `Make these ${pick.length} into one.` : `Make <b>${esc(pick[0].name)}</b> and another player one.`} Their days are joined; where both have a value the higher one stays. Later reads of either count for the one kept.</p>
+        ${many ? `<p>${esc(list(pick.map(x => x.name), 6))}</p>` : `<label>Merge with<input type="search" data-f placeholder="Search a name"><select data-w size="6">${pool.map(opt).join('')}</select></label>`}
+        <label>Keep the name of<select data-n></select></label>
+        <div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Merge</button></div>`);
+      const w = m.querySelector('[data-w]'), n = m.querySelector('[data-n]');
+      const group = () => many ? pick : [pick[0], byId(w.value)].filter(Boolean);
+      const fill = () => { n.innerHTML = group().map(opt).join(''); };
+      if (!many) {
+        w.selectedIndex = 0; w.onchange = fill;
+        m.querySelector('[data-f]').oninput = e => { const q = fold(e.target.value); w.innerHTML = pool.filter(x => !q || fold(x.name).includes(q)).map(opt).join(''); w.selectedIndex = 0; fill(); };
+      }
+      fill();
+      m.querySelector('[data-x]').onclick = m.close;
+      m.querySelector('[data-y]').onclick = () => {
+        const g = group(), keep = byId(n.value);
+        if (g.length < 2 || !keep) return Admin.toast('Pick a player to merge with');
+        const others = g.filter(x => x !== keep);
+        m.close(); sel.clear();
+        run('merge', { keep: keep.id, ids: others.map(x => x.id) }, { what: `Merged ${list(others.map(x => x.name))} into ${keep.name}`, from: g.map(x => x.name).join(' + '), to: keep.name });
+      };
+    }
+    function dayValues(r) {
+      if (!W.dates.length) return Admin.toast('There are no date columns yet');
+      const m = Admin.modal(`<h3>${esc(r.name)} · day values</h3><p>March CP per unit type on each day, e.g. 340M. Empty: not on a train that day with that type.</p>
+        <div class="agridw"><table class="agrid"><tr><th>Date</th>${TYPES.map(t => `<th>${t}</th>`).join('')}</tr>
+        ${W.dates.map(d => `<tr><td>${head(d)}</td>${TYPES.map(t => { const v = dayTypes(r, d)[t]; return `<td><input data-d="${d}" data-t="${t}" value="${v ? Math.round(v / 1e6) + 'M' : ''}" inputmode="decimal"></td>`; }).join('')}</tr>`).join('')}</table></div>
+        <label class="acheck"><input type="checkbox" data-re checked> Also work out March CP 1–3 again from these days</label>
+        <div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Save</button></div>`, true);
+      m.querySelector('[data-x]').onclick = m.close;
+      m.querySelector('[data-y]').onclick = () => {
+        const days = {};
+        for (const d of W.dates) days[d] = null;
+        for (const i of m.querySelectorAll('[data-d]')) {
+          if (!i.value.trim()) continue;
+          let n = parseNum(i.value); if (!isFinite(n)) return Admin.toast('Not a number: ' + i.value);
+          if (n < 1e5) n *= 1e6;
+          (days[i.dataset.d] = days[i.dataset.d] || {})[i.dataset.t] = n;
+        }
+        const was = W.dates.filter(d => r.pts[d] != null).length, now = Object.values(days).filter(Boolean).length;
+        m.close();
+        run('days-set', { id: r.id, days, recalc: m.querySelector('[data-re]').checked }, { what: `${r.name} · day values`, from: `${was} days`, to: `${now} days` });
+      };
+    }
+    function reorder(r) {
+      let b = bests(r).map(x => x.slice());
+      if (b.length < 2) return Admin.toast(`${r.name} has one March CP: nothing to reorder`);
+      const m = Admin.modal(`<h3>${esc(r.name)} · March CP order</h3><p>Which unit type shows as March CP 1, 2 and 3.</p><div class="alist" data-l></div>
+        <div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Save</button></div>`);
+      const paint = () => { m.querySelector('[data-l]').innerHTML = b.map((x, i) => `<div class="ali"><b class="alab">March CP ${i + 1}</b>${unitTag(x[0])} ${fmt(x[1])}<span style="flex:1"></span>
+        <button type="button" class="abtn sm" data-up="${i}" ${i ? '' : 'disabled'}>↑</button><button type="button" class="abtn sm" data-dn="${i}" ${i < b.length - 1 ? '' : 'disabled'}>↓</button></div>`).join(''); };
+      paint();
+      m.querySelector('[data-l]').onclick = e => {
+        const u = e.target.dataset.up, d = e.target.dataset.dn;
+        if (u) { [b[u - 1], b[u]] = [b[u], b[u - 1]]; paint(); }
+        if (d) { [b[+d + 1], b[d]] = [b[d], b[+d + 1]]; paint(); }
+      };
+      m.querySelector('[data-x]').onclick = m.close;
+      m.querySelector('[data-y]').onclick = () => { m.close(); run('bests-set', { id: r.id, bests: b }, { what: `${r.name} · March CP order`, from: bests(r).map(x => x[0]).join(' › '), to: b.map(x => x[0]).join(' › ') }); };
+    }
+
+    const SEND = { wb: ['/game-ranking', 'ranking'], st: ['/game-snowtrain', 'snowtrain'], et: ['/game-energytower', 'energytower'], ma: ['/game-mammoth', 'mammoth'] };
+    const ours = r => Admin.settings.alliances.includes(r[allyKey]);
+    const allyOrder = r => { const i = Admin.settings.alliances.indexOf(r[allyKey]); return i < 0 ? 99 : i; };
+    const inGroup = who => r => who === 'all' || (who === 'ours') === ours(r);
+    function dayRows(d, who) {
+      const pts = r => o.id === 'st' ? Math.max(0, ...Object.values(dayTypes(r, d))) : r.pts[d];
+      const M = v => Math.round(v / 1e6) + 'M', nm = r => r.name.slice(0, 80), al = r => String(r.ally || '').slice(0, 20);
+      const pairs = W.rows.filter(r => o.id !== 'wb' || r.pts[d] != null).filter(inGroup(who))
+        .sort((a, b) => allyOrder(a) - allyOrder(b) || String(a.ally).localeCompare(String(b.ally)) || (pts(b) || 0) - (pts(a) || 0) || (sc(b, d) || 0) - (sc(a, d) || 0))
+        .flatMap(r => (o.id === 'wb' ? [[nm(r), r.pts[d], al(r)]]
+          : o.id === 'et' ? [[nm(r), r.pts[d] != null ? M(r.pts[d]) : '', al(r), sc(r, d) ?? (r.pts[d] != null ? '' : 0)]]
+          : o.id === 'ma' ? [r.pts[d] != null ? [nm(r), M(r.pts[d]), al(r), 'Yes'] : [nm(r), '', al(r), 'No']]
+          : r.pts[d] == null ? [[nm(r), '', al(r), TYPES.includes(r.type) ? r.type : '', 'No']]
+          : Object.entries(dayTypes(r, d)).map(([t, v]) => [nm(r), M(v), al(r), TYPES.includes(t) ? t : '', 'Yes'])).map(x => [x, r.pid || '']));
+      return { rows: pairs.map(p => p[0]), ids: pairs.map(p => p[1]) };
+    }
+    async function sendRows(m, path, body, title) {
+      const y = m.querySelector('[data-y]'), err = m.querySelector('[data-e]');
+      y.disabled = true; y.textContent = 'Sending…'; err.textContent = '';
+      try {
+        const r = await fetch(API_BASE + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(() => { try { const p = localStorage.getItem('adminPass'); return p ? { 'x-kartz-pass': p } : {}; } catch { return {}; } })() }, body: JSON.stringify(body) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error((j.error && j.error.message) || j.error || 'the sheet did not accept it (' + r.status + ')');
+        const link = j.link || `https://docs.google.com/spreadsheets/d/${j.id}/edit#gid=${j.gid}`;
+        const each = (j.sent || [{ to: title + ' sheet', rows: j.rows, link }]).map(x => `<li>${esc(x.to)}: ${Number(x.rows).toLocaleString('en-US')} ${Number(x.rows) === 1 ? 'row' : 'rows'}${x.replaced ? ` (in place of ${Number(x.replaced).toLocaleString('en-US')} sent before for that date)` : ''} · <a href="${esc(x.link)}" target="_blank" rel="noopener">Open ↗</a>${x.summaryError ? ` · <span class="aerr">Summary not sorted: ${esc(x.summaryError)}</span>` : ''}</li>`).join('');
+        const not = [...(j.skipped || []), ...(j.errors || [])].map(x => `<li class="aerr">${esc(x)}</li>`).join('');
+        m.innerHTML = `<h3>Sent</h3><p>Dated ${esc(j.date || '')}:</p><ul>${each}${not}</ul>
+          <div class="arow"><button type="button" class="abtn pri" data-x>Done</button></div>`;
+        m.querySelector('[data-x]').onclick = m.close;
+      } catch (e) { err.textContent = "✗ Couldn't send: " + (e.message || e); y.disabled = false; y.textContent = 'Send to sheet'; }
+    }
+    function sendDay(d) {
+      const [path, sheet] = SEND[o.id], title = cfg().title, t = Admin.settings.sheets[sheet], orig = !!(t && t.id), roundable = o.id !== 'wb';
+      const have = W.rows.filter(r => r.pts[d] != null), n = who => (o.id === 'wb' ? have : W.rows).filter(inGroup(who)).length;
+      if (!have.length) return Admin.toast(`Nobody in ${head(d)}`);
+      const m = Admin.modal(`<h3>Send ${head(d)} to the sheets</h3>
+        <label class="acheck"><input type="checkbox" data-to="original"${orig ? ' checked' : ' disabled'}> ${esc(title)} sheet ${orig ? '<small>adds the rows below the ones there: check the day isn\'t there already</small>' : '<small>no sheet set (Admin → Sheets & backup)</small>'}</label>
+        ${roundable ? '<label class="acheck"><input type="checkbox" data-to="round" disabled> <span data-rn>Practice Round sheet: checking…</span></label>' : ''}
+        <label>Players<select>${[['ours', 'Our alliances'], ['other', 'Everyone else'], ['all', 'Everyone']].map(([v, l]) => `<option value="${v}">${l} (${n(v)})</option>`).join('')}</select></label>
+        <p class="aerr" data-e></p>
+        <div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Send</button></div>`);
+      m.querySelector('[data-x]').onclick = m.close;
+      if (roundable) fetch(API_BASE + '/round-of', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ day: d }) })
+        .then(r => r.json()).then(j => {
+          const box = m.querySelector('[data-to="round"]'), lab = m.querySelector('[data-rn]'); if (!box) return;
+          if (!j.round) { lab.innerHTML = 'Practice Round sheet <small>this date goes to none (Admin → Sheets & backup)</small>'; return; }
+          if (!j.sheet) { lab.innerHTML = `Practice Round ${j.round} <small>no sheet set for it (Admin → Sheets & backup)</small>`; return; }
+          box.disabled = false; box.checked = true;
+          lab.innerHTML = `Practice Round ${j.round} <small>${j.set ? 'as set for this date' : 'from the schedule'}; replaces any rows sent before for ${esc(d)}</small>`;
+        }).catch(() => { const lab = m.querySelector('[data-rn]'); if (lab) lab.textContent = 'Practice Round sheet: could not be checked'; });
+      m.querySelector('[data-y]').onclick = () => {
+        const to = { original: !!m.querySelector('[data-to="original"]:checked'), round: !!m.querySelector('[data-to="round"]:checked') };
+        if (!to.original && !to.round) { m.querySelector('[data-e]').textContent = 'Tick a sheet to send to.'; return; }
+        const { rows, ids } = dayRows(d, m.querySelector('select').value);
+        if (!rows.length) { m.querySelector('[data-e]').textContent = 'Nobody to send in that group.'; return; }
+        sendRows(m, path, { rows, ids, date: d, to }, title);
+      };
+    }
+    function sendRoster() {
+      const AL = Admin.settings.alliances, list = W.rows.filter(r => r.status !== 'Left' && AL.includes(r.alliance));
+      if (!list.length) return Admin.toast('Nobody to send');
+      const R = Admin.settings.rounds || {};
+      const m = Admin.modal(`<h3>Send the roster to the sheets</h3>
+        <label class="acheck"><input type="checkbox" data-to="cp" checked> Base CP <small>adds ${list.length} ${list.length === 1 ? 'row' : 'rows'}, every Active player's Base CP, to Alliance Rosters › RawData-CP, dated now</small></label>
+        <label class="acheck"><input type="checkbox" data-to="round" checked> Input-Roster of <select data-rr>${[2, 3, 4].map(n => `<option value="${n}"${R[n] ? '' : ' disabled'}>Practice Round ${n}${R[n] ? '' : ' (no sheet set)'}</option>`).join('')}</select> <small>updated in place: each player keeps their row, new players at the end</small></label>
+        <p class="aerr" data-e></p>
+        <div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Send</button></div>`);
+      m.querySelector('[data-x]').onclick = m.close;
+      const sel = m.querySelector('[data-rr]'), firstSet = [2, 3, 4].find(n => R[n]);
+      if (firstSet) sel.value = String(firstSet); else { m.querySelector('[data-to="round"]').checked = false; m.querySelector('[data-to="round"]').disabled = true; }
+      fetch(API_BASE + '/round-of', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ day: new Date().toISOString().slice(0, 10) }) })
+        .then(r => r.json()).then(j => { if (j && j.round && R[j.round]) sel.value = String(j.round); }).catch(() => {});
+      m.querySelector('[data-y]').onclick = async () => {
+        const cp = m.querySelector('[data-to="cp"]').checked, round = m.querySelector('[data-to="round"]').checked, n = Number(sel.value);
+        if (!cp && !round) { m.querySelector('[data-e]').textContent = 'Tick a sheet to send to.'; return; }
+        const at = new Date(), p = x => String(x).padStart(2, '0');
+        const stamp = `${at.getMonth() + 1}/${at.getDate()}/${at.getFullYear()} ${p(at.getHours())}:${p(at.getMinutes())}:${p(at.getSeconds())}`;
+        const rows = list.slice().sort((a, b) => allyOrder(a) - allyOrder(b) || b.power - a.power)
+          .map(r => [stamp, 'Data Extractor', (r.search || r.name).slice(0, 80), r.name.slice(0, 80), r.alliance, Math.round(r.power / 1e6)]);
+        if (cp && !round) return sendRows(m, '/game-cp', { rows }, 'Base CP');
+        if (round && !cp) return sendRows(m, '/roster-send', { round: n }, `Practice Round ${n}`);
+        const y = m.querySelector('[data-y]'), err = m.querySelector('[data-e]');
+        y.disabled = true; y.textContent = 'Sending…'; err.textContent = '';
+        const go = (path, body) => fetch(API_BASE + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(() => { try { const p = localStorage.getItem('adminPass'); return p ? { 'x-kartz-pass': p } : {}; } catch { return {}; } })() }, body: JSON.stringify(body) })
+          .then(async r => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error((j.error && j.error.message) || j.error || r.status); return j; });
+        const line = (to, f) => f.then(j => `<li>${esc(to)}: ${Number(j.rows).toLocaleString('en-US')} rows · <a href="${esc(j.link || `https://docs.google.com/spreadsheets/d/${j.id}/edit#gid=${j.gid}`)}" target="_blank" rel="noopener">Open ↗</a></li>`)
+          .catch(e => `<li class="aerr">${esc(to)}: ✗ ${esc(e.message || e)}</li>`);
+        const out = [await line('Base CP', go('/game-cp', { rows })), await line(`Practice Round ${n} › Input-Roster`, go('/roster-send', { round: n }))];
+        m.innerHTML = `<h3>Sent</h3><ul>${out.join('')}</ul><div class="arow"><button type="button" class="abtn pri" data-x>Done</button></div>`;
+        m.querySelector('[data-x]').onclick = m.close;
+      };
+    }
+
+    function dateMenu(btn) {
+      const d = btn.dataset.d, title = cfg().title;
+      Admin.popover(btn, [
+        ...(SEND[o.id] ? [{ label: '📤 Send this day to sheet…', run: () => sendDay(d) }, '-'] : []),
+        { label: '📅 Change date…', run: () => {
+          const m = Admin.modal(`<h3>Change ${head(d)} ${d.slice(0, 4)}</h3><p>If the new date already has a column, the two become one (each player's higher value stays).</p>
+            <label>New date<input type="date" value="${d}"></label><div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Change date</button></div>`);
+          m.querySelector('[data-x]').onclick = m.close;
+          m.querySelector('[data-y]').onclick = () => {
+            const to = m.querySelector('input').value;
+            if (!to || to === d) return Admin.toast('Pick a different date');
+            m.close(); run('day-move', { day: d, to }, { what: `${title} · moved a column`, from: head(d), to: head(to) });
+          };
+        } },
+        { label: '🧹 Clear every value in it', run: async () => {
+          if (await Admin.confirm(`Clear ${head(d)}?`, `Keeps the column but empties it.${o.id === 'st' ? ' March CP 1–3 are worked out again from the days left.' : ''}`, 'Clear'))
+            run('day-clear', { day: d }, { what: `${title} · cleared ${head(d)}`, from: 'values', to: 'empty' });
+        } },
+        '-',
+        { label: '🗑 Remove column', danger: true, run: async () => {
+          if (await Admin.confirm(`Remove ${head(d)}?`, `Removes the ${head(d)} column from the ${esc(title)} card.${o.id === 'st' ? ' March CP 1–3 are worked out again from the days left.' : ''} History can undo it.`))
+            run('day-delete', { day: d }, { what: `${title} · removed a column`, from: head(d), to: '—' });
+        } }]);
+    }
+
+    function exportCsv() {
+      const cols = columns(), q = v => /[",\n]/.test(v) ? `"${String(v).replace(/"/g, '""')}"` : v;
+      const rows = [...el('View').querySelectorAll('tbody tr[data-id]')].map(tr => byId(tr.dataset.id)).filter(Boolean);
+      const cell = (r, k) => {
+        const f = defOf(k), v = f.val(r);
+        if (/^\d{4}-/.test(k)) return o.id === 'et' ? sc(r, k) ?? (r.pts[k] != null ? 'Yes' : 'No') : o.id === 'st' || o.id === 'ma' ? (v ? 'Yes' : 'No') : v === -1 ? '' : v;
+        if (k === 'join' || k === 'last') return k === 'last' && r.online ? 'now' : day(k === 'last' ? r.last : r.join);
+        if (k === 'rank') return rankText(r.rank);
+        if (k === 'status') return f.cell(r);
+        return v === 0 && /^cp/.test(k) ? '' : v ?? '';
+      };
+      const csv = [cols.map(c => q(c.date ? c.k : c.label)).join(',')].concat(rows.map(r => cols.map(c => q(cell(r, c.k))).join(','))).join('\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' }));
+      a.download = `${cfg().title.replace(/[^\w]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      Admin.toast(`Downloaded ${rows.length} rows`);
+    }
+    function addPlayer() {
+      const AL = Admin.settings.alliances;
+      const m = Admin.modal(`<h3>Add a player</h3><p>${dated ? 'They start with no days; click their cells to fill them in.' : 'The next read of their alliance marks them Left if the game does not list them.'}</p>
+        <label>Name<input type="text" data-n maxlength="60"></label>
+        <label>Alliance<select data-a>${o.id === 'ro' ? '' : '<option value="">(no alliance)</option>'}${AL.map(a => `<option>${esc(a)}</option>`).join('')}</select></label>
+        <div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Add</button></div>`);
+      m.querySelector('[data-x]').onclick = m.close;
+      const go = async () => {
+        const name = m.querySelector('[data-n]').value.trim(), ally = m.querySelector('[data-a]').value;
+        if (!name) return Admin.toast('Type a name');
+        m.close();
+        el('Q').value = ''; el('Q').dispatchEvent(new Event('input')); W.ally = '';
+        const res = await run('row-add', { name, ally }, { what: `${cfg().title} · added ${name}`, from: '—', to: name });
+        if (res && res.id) { W.flash = res.id; draw(); }
+      };
+      m.querySelector('[data-y]').onclick = go;
+      m.querySelector('[data-n]').onkeydown = e => { if (e.key === 'Enter') go(); };
+    }
+    function addDate() {
+      const m = Admin.modal(`<h3>Add a date column</h3><p>An empty column; click its cells to fill them in.</p>
+        <label>Date (UTC)<input type="date" value="${new Date().toISOString().slice(0, 10)}"></label>
+        <div class="arow"><button type="button" class="abtn" data-x>Cancel</button><button type="button" class="abtn pri" data-y>Add</button></div>`);
+      m.querySelector('[data-x]').onclick = m.close;
+      m.querySelector('[data-y]').onclick = () => {
+        const d = m.querySelector('input').value;
+        if (!d) return; if (W.dates.includes(d)) return Admin.toast('That date already has a column');
+        m.close(); run('day-add', { day: d }, { what: `${cfg().title} · added a column`, from: '—', to: head(d) });
+      };
+    }
+
+    const rapp = $(o.tab).querySelector('.rapp');
+    rapp.addEventListener('click', async e => {
+      const t = e.target, b = t.closest('button'), d = b ? b.dataset : {};
+      if (b && b.classList.contains('rchip')) {
+        if ('v' in d) { W.view = d.v; W.ally = W.view !== 'list' ? '' : null; defaults(); }
+        else if ('a' in d) W.ally = d.a; else if ('t' in d) W.type = W.type === d.t ? '' : d.t;
+        else if ('c' in d) W.cls = W.cls === d.c ? '' : d.c; else if ('rule' in d) W.rule = W.rule === d.rule ? '' : d.rule;
+        return draw();
+      }
+      if (Admin.on) {
+        if (t.dataset.sel) { t.checked ? sel.add(t.dataset.sel) : sel.delete(t.dataset.sel); t.closest('tr').classList.toggle('sel', t.checked); return drawBulk(); }
+        if (d.row) return rowMenu(b);
+        if (d.d) { e.stopPropagation(); return dateMenu(b); }
+        if (d.reset) return run('roster-reads', { ally: d.reset, action: 'reset' }, { what: `Roster · ${d.reset} read time reset`, from: W.reads[d.reset] ? stamp(W.reads[d.reset]) : 'not read yet', to: 'not read yet' });
+        if (d.wipe) {
+          const n = W.rows.filter(r => r.alliance === d.wipe).length;
+          if (await Admin.confirm(`Wipe ${esc(d.wipe)}?`, `Removes all ${n} ${esc(d.wipe)} players from the roster card, so the next read starts it afresh. History can undo it.`, 'Wipe'))
+            run('roster-reads', { ally: d.wipe, action: 'wipe' }, { what: `Roster · wiped ${d.wipe}`, from: `${n} players`, to: '0' });
+          return;
+        }
+        if (d.act === 'add') return addPlayer();
+        if (d.act === 'adddate') return addDate();
+        if (d.act === 'csv') return exportCsv();
+        if (d.act === 'sendro') return sendRoster();
+        if (d.act === 'addmove') return addMove();
+        if (d.mv) {
+          const x = W.moves.find(y => y.m === d.mv), tx = a => a === null ? 'New' : a || 'No alliance';
+          if (x && await Admin.confirm('Take this off the Log?', `${esc(x.name)}: ${esc(tx(x.from))} → ${esc(tx(x.to))}, from the Alliance roster card's Log. History (admin) can undo it.`, 'Remove'))
+            run('move-delete', { m: x.m }, { what: `Roster · removed a change from the Log`, from: `${x.name}: ${tx(x.from)} → ${tx(x.to)}`, to: '—' });
+          return;
+        }
+        if (d.act === 'clear') { sel.clear(); return draw(); }
+        if (d.act === 'merge') return mergeDialog([...sel]);
+        if (d.act === 'bulkdel') {
+          const ids = [...sel], nm = names(ids);
+          if (await Admin.confirm(`Delete ${ids.length} players?`, `${esc(list(nm, 6))}: removed from the ${esc(cfg().title)} card. History can undo it.`, 'Delete')) {
+            sel.clear(); run('row-delete', { ids }, { what: `${cfg().title} · deleted ${ids.length} players`, from: list(nm), to: '—' });
+          }
+          return;
+        }
+        const td = t.closest('td');
+        if (td && !b && (td.classList.contains('ed') || td.classList.contains('tog')) && t.tagName !== 'INPUT' && t.tagName !== 'SELECT') return edit(td);
+      }
+      const th = t.closest('th');
+      if (th && !b && th.dataset.k) {
+        const c = th.dataset.k, f = defOf(c);
+        W.asc = W.sort === c ? !W.asc : !!(f && f.text); W.sort = c; draw();
+      }
+    });
+    rapp.addEventListener('change', e => {
+      const s = e.target; if (!('bulk' in s.dataset) || !s.value) return;
+      const ally = s.value === '-' ? '' : s.value, ids = [...sel], nm = names(ids);
+      sel.clear();
+      run('bulk-ally', { ids, ally }, { what: `${cfg().title} · ${ids.length} players to ${ally || 'no alliance'}`, from: list(nm), to: ally || '—' });
+    });
+    const q = el('Q'), clear = document.createElement('button');
+    clear.type = 'button'; clear.className = 'rclear'; clear.textContent = '✕'; clear.title = 'Clear the search'; clear.setAttribute('aria-label', 'Clear the search'); clear.hidden = true;
+    q.after(clear);
+    let typing = 0;
+    q.oninput = () => { clear.hidden = !q.value; clearTimeout(typing); typing = setTimeout(draw, 120); };
+    clear.onclick = e => { e.preventDefault(); clearTimeout(typing); q.value = ''; clear.hidden = true; draw(); q.focus(); };
+    el('Reload').onclick = () => load(true);
+    const visible = () => location.hash === o.hash;
+    Admin.subscribe(kind => {
+      if (kind === 'settings') { W.sort = null; W.ally = null; }
+      if (kind === 'admin' && !Admin.on) sel.clear();
+      if (kind === 'data' && visible()) load(); else draw();
+    });
+    const maybe = () => { if (visible()) load(); };
+    addEventListener('hashchange', maybe);
+    maybe();
+  }
+
+  makeCard({ id: 'wb', el: 'wb', tab: 'tab-wb', api: '/wb', hash: '#whitebeard',
+    empty: 'Nothing yet. Read the Whitebeard ranking with the 2698 Data Extractor bookmark in the game, and it appears here.' });
+  makeCard({ id: 'st', el: 'st', tab: 'tab-st', api: '/st', hash: '#snowtrain',
+    empty: 'Nothing yet. Open a Snow Train\'s Unit Details in the game and tap Read on the 2698 Data Extractor bookmark, and it appears here.' });
+  makeCard({ id: 'et', el: 'et', tab: 'tab-et', api: '/et', hash: '#energytower',
+    empty: 'Nothing yet. Tap Read under Energy Tower on the 2698 Data Extractor bookmark in the game, and it appears here.' });
+  makeCard({ id: 'ma', el: 'ma', tab: 'tab-ma', api: '/ma', hash: '#mammoth',
+    empty: 'Nothing yet. Open the Mammoth Assault\'s View Queues in the game and tap Read garrison on the 2698 Data Extractor bookmark, and it appears here.' });
+  makeCard({ id: 'ro', el: 'roster', tab: 'tab-roster', api: '/roster', hash: '#roster',
+    empty: 'Nothing yet. Read an alliance with the 2698 Data Extractor bookmark in the game, and its members appear here.' });
+})();

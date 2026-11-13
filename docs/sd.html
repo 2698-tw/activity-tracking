@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Storm Duel</title>
+<link rel="icon" href="icon.png">
+<style>
+@font-face{font-family:Selawik;font-style:normal;font-weight:400;font-display:swap;src:url(fonts/selawik-400.woff2) format('woff2')}@font-face{font-family:Selawik;font-style:normal;font-weight:600;font-display:swap;src:url(fonts/selawik-600.woff2) format('woff2')}@font-face{font-family:Selawik;font-style:normal;font-weight:700 900;font-display:swap;src:url(fonts/selawik-700.woff2) format('woff2')}
+:root{--bg:#eef4f9;--card:#fff;--ink:#14212e;--dim:#62748a;--line:#dbe5ee;--head:#f4f8fb;--acc:#1789a8;--us:#e8f6ea;--usink:#1f7a3a;--bad:#b42318;
+  --band1:#0b3b57;--band2:#1789a8;--band3:#8fd6e6}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0d151d;--card:#15212c;--ink:#e6eef5;--dim:#8ea2b5;--line:#243444;--head:#1a2835;--acc:#5cc6d6;--us:#173322;--usink:#7fd99a;--bad:#ff8a80}}
+:root[data-theme="dark"]{--bg:#0d151d;--card:#15212c;--ink:#e6eef5;--dim:#8ea2b5;--line:#243444;--head:#1a2835;--acc:#5cc6d6;--us:#173322;--usink:#7fd99a;--bad:#ff8a80}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.4 Selawik,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+.band{background:linear-gradient(135deg,var(--band1),var(--band2) 60%,var(--band3));color:#fff;padding:22px 16px 18px}
+.band .in,.wrap{max-width:1280px;margin:0 auto}
+.band h1{margin:0;font-size:24px;letter-spacing:.01em}
+.band p{margin:4px 0 0;opacity:.85}
+.band a{color:#fff}
+.homelink{display:inline-flex;align-items:center;gap:6px;margin:0 0 10px;padding:4px 12px 4px 10px;border-radius:999px;font-size:13px;font-weight:600;
+  text-decoration:none;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35)}
+.homelink:hover{background:rgba(255,255,255,.26)}
+.wrap{padding:16px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+.bar .grow{flex:1}
+@media (max-width:640px){.bar .status{order:3;flex-basis:100%}.bar #csv{margin-left:auto}}
+button,.btn{font:inherit;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
+button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+button:disabled{opacity:.55;cursor:default}
+.status{color:var(--dim)}
+.status.bad{color:var(--bad)}
+.days{display:flex;gap:4px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;margin:0 0 14px;box-shadow:inset 0 -1px 0 var(--line)}
+.days::-webkit-scrollbar{display:none}
+.days button{flex:none;border:0;border-bottom:3px solid transparent;border-radius:0;padding:8px 14px;background:transparent;color:var(--dim);font-size:15px}
+.days button.on{color:var(--ink);border-bottom-color:var(--acc)}
+.days[hidden]{display:none}
+:root{--won:#1f9d55;--wonbg:#e3f5ea;--lose:#d64545;--losebg:#fbe7e7;--oth:#6b7f94;--othbg:#eef2f6}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--won:#5fd38d;--wonbg:#16301f;--lose:#ff7a7a;--losebg:#3a1d22;--oth:#9fb1c4;--othbg:#1d2a37}}
+:root[data-theme="dark"]{--won:#5fd38d;--wonbg:#16301f;--lose:#ff7a7a;--losebg:#3a1d22;--oth:#9fb1c4;--othbg:#1d2a37}
+h2.sec{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:18px 2px 8px}
+h2.sec:first-child{margin-top:0}
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width:820px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.tile .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);font-weight:700}
+.tile .v{font-size:24px;font-weight:800;margin-top:2px}
+.tile .v small{font-size:14px;color:var(--dim)}
+.tile .s{font-size:12.5px;color:var(--dim)}
+.rapp{color-scheme:dark;color:#f3f3f7;background:rgba(22,22,30,.97);border-radius:18px;box-shadow:0 12px 40px rgba(0,0,0,.25),inset 0 0 0 2px rgba(224,69,123,.55);overflow:hidden}
+.rhead{display:flex;align-items:center;gap:10px;padding:12px 14px 8px;flex-wrap:wrap}
+.rhead b{font-size:15.5px}
+.rsearch{flex:1;min-width:160px;display:flex;gap:8px;align-items:center;background:rgba(255,255,255,.08);border-radius:999px;padding:6px 14px;margin:0}
+.rsearch:focus-within{box-shadow:inset 0 0 0 2px rgba(224,69,123,.85)}
+.rsearch input{flex:1;min-width:0;border:0;outline:0;background:none;color:#fff;font:inherit;font-size:15px;padding:0;caret-color:#fff}
+.rreads{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 14px 8px;font-size:12.5px;color:rgba(235,235,245,.65)}
+.rbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 14px 10px}
+.rchip{border:0;background:rgba(255,255,255,.08);color:#f3f3f7;border-radius:999px;padding:5px 12px;font:inherit;font-size:12.5px;font-weight:400;cursor:pointer}
+.rchip.on{background:rgba(195,20,65,.35);box-shadow:inset 0 0 0 1px #e0457b}
+.rcount{margin-left:auto;font-size:12.5px;color:rgba(235,235,245,.5)}
+.rbody{overflow:auto;padding:0 14px 14px}
+.rtable{width:100%;border-collapse:collapse;font-size:13.5px}
+.rtable th{position:sticky;top:0;background:#20212c;text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:rgba(235,235,245,.6);padding:8px 10px;font-weight:600;white-space:nowrap}
+.rtable th.n,.rtable td.n{text-align:right;font-variant-numeric:tabular-nums}
+.rtable td{padding:7px 10px;border-top:1px solid rgba(255,255,255,.08);white-space:nowrap;color:#f3f3f7}
+.rtable tr.us td{background:rgba(126,226,168,.12);color:#8ff0b5;font-weight:700}
+.rtable td.up{color:#8ff0b5;font-size:12.5px}
+.rtable .rdim{color:rgba(235,235,245,.45)}
+.tabs[hidden]{display:none}
+.rclear{flex:none;width:22px;height:22px;display:grid;place-items:center;border:0;border-radius:50%;padding:0;background:rgba(255,255,255,.16);color:#fff;font-size:12px;line-height:1;cursor:pointer}
+.rclear:hover{background:rgba(255,255,255,.28)}
+.rclear[hidden]{display:none}
+.empty{padding:14px 11px;color:var(--dim)}
+.skel{height:200px;border-radius:10px;background:linear-gradient(90deg,var(--card),var(--head),var(--card));background-size:200% 100%;animation:sk 1.4s linear infinite;border:1px solid var(--line)}
+.skl{display:grid;gap:6px;padding:14px;border-radius:18px;background:rgba(22,22,30,.97)}
+.skl i{display:block;height:34px;border-radius:8px;background:linear-gradient(90deg,rgba(255,255,255,.04),rgba(255,255,255,.09),rgba(255,255,255,.04));background-size:200% 100%;animation:sk 1.4s linear infinite}
+@keyframes sk{to{background-position:-200% 0}}
+.rtable td.n{color:#f3f3f7}
+.rtable td.n.rdim{color:rgba(235,235,245,.45)}
+.tiles{margin:0 0 18px}
+.lv{margin:0 0 18px}
+.cities{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;align-items:start}
+.city{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.city.us{border-color:color-mix(in srgb,var(--won) 55%,transparent);background:var(--wonbg)}
+.city.lost{border-color:color-mix(in srgb,var(--lose) 55%,transparent);background:var(--losebg)}
+.city h3{margin:0 0 4px;font-size:15px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.tag{font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;color:#fff}
+.tag.won{background:var(--won)}.tag.lost{background:var(--lose)}
+.own{font-size:13px;color:var(--dim);margin-bottom:4px}.own b{color:var(--ink)}
+.city ol{margin:0;padding-left:22px;font-size:13px}
+.city ol li.me{font-weight:700;color:var(--usink)}
+.city h4{margin:8px 0 3px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);font-weight:700}
+.decl{display:flex;flex-wrap:wrap;gap:4px}
+.decl span{font-size:12px;padding:1px 7px;border-radius:6px;background:var(--head);border:1px solid var(--line);font-variant-numeric:tabular-nums}
+.decl span.me{font-weight:700;color:var(--usink);border-color:color-mix(in srgb,var(--usink) 45%,transparent)}
+.decl span.no{color:var(--dim)}
+.gi{display:inline-block;object-fit:contain;vertical-align:middle;flex:none}
+h2.sec .gi{width:30px;height:30px;margin:-8px 8px -6px 0}
+.rchip .gi{width:18px;height:18px;margin:-3px 5px -2px -2px}
+.cities{align-items:start}
+.city{display:flex;flex-direction:column;padding:12px 13px}
+.city h3{font-size:16px;margin-bottom:2px}
+.city .own{margin-bottom:9px}
+.res{display:grid;grid-template-columns:1fr 1fr;border-radius:9px;background:var(--card);border:1px solid var(--line);margin:0 0 10px;overflow:hidden;min-height:98px}
+.city:not(.us):not(.lost) .res{background:var(--head)}
+.res>div{padding:6px 10px;min-width:0}
+.res>div:nth-child(even){border-left:1px solid var(--line)}
+.res>div:nth-child(n+3){border-top:1px solid var(--line)}
+.res .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);font-weight:700;white-space:nowrap}
+.res .v{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;line-height:1.25}
+.res .v.won{color:var(--won)}.res .v.lose{color:var(--lose)}
+.res.none{display:flex;align-items:center;justify-content:center;text-align:center;color:var(--dim);font-size:13px}
+.res.none>div{border:0!important}
+.city .top3{list-style:none;margin:0;padding:0;font-size:14px}
+.top3 li{display:flex;align-items:center;gap:8px;padding:3px 0;min-height:27px;font-variant-numeric:tabular-nums}
+.top3 li+li{border-top:1px dashed var(--line)}
+.top3 li.gap{visibility:hidden}
+.md{flex:none;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:800;background:var(--head);color:var(--dim)}
+.md1{background:#f3c94a;color:#4a3500}.md2{background:#c9d0da;color:#2c3340}.md3{background:#d9a273;color:#472707}
+.top3 li.me{font-weight:800;color:var(--usink)}
+.city details{padding-top:9px}
+.city summary{display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;list-style:none;user-select:none;min-height:27px;
+  font-size:12.5px;font-weight:600;color:var(--dim);border-top:1px solid var(--line);padding-top:8px}
+.city summary::-webkit-details-marker{display:none}
+.city summary::after{content:"▾";font-size:12px}
+.city details[open] summary::after{content:"▴"}
+.city summary:hover{color:var(--ink)}
+.city details h4{margin:10px 0 4px}
+.city .more{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,1fr);gap:2px 10px;font-size:13px;font-variant-numeric:tabular-nums}
+.more li span{display:inline-block;width:22px;color:var(--dim)}
+.more li.me{font-weight:700;color:var(--usink)}
+.decl span.no{opacity:.55;border-style:dashed}
+.city .nobat{border-top:1px solid var(--line);margin-top:9px;padding-top:8px;min-height:27px;font-size:12.5px;color:var(--dim)}
+.rchip small{opacity:.6;margin-left:4px}
+.rtag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;background:#3a3a3a;color:#ddd}
+.rtag.tLeft{background:transparent;color:#8a8f99;box-shadow:inset 0 0 0 1px #4a4f58}.rtag.t698N{background:#22324f;color:#9ec5ff}.rtag.t698S{background:#3b2340;color:#e9a8ff}.rtag.t698W{background:#203d33;color:#7ee2a8}.rtag.t698C{background:#45321b;color:#ffc078}
+.rapp{font:14px/1.45 Selawik,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;min-height:560px}
+.rsearch{padding-right:6px;transition:box-shadow .15s ease}
+.rsearch input{border-radius:0;line-height:22px;width:auto}
+.rgo{width:auto;flex:none;border:0;border-radius:999px;padding:7px 14px;font:inherit;font-weight:700;color:#fff;cursor:pointer;background:rgba(255,255,255,.12)}
+.rgo:hover{background:rgba(255,255,255,.2)}
+.rsheet{flex:none;display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:7px 13px;font-weight:700;font-size:13.5px;text-decoration:none;color:#fff;background:rgba(255,255,255,.12)}
+.rsheet:hover{background:rgba(255,255,255,.2)}
+.rsheet svg{width:15px;height:15px}
+.rreads{gap:6px 14px}
+.rchip{font-weight:400}
+.rbody{flex:1}
+.rtable th{cursor:pointer;border:0}
+.rtable td{border-top:0;border-bottom:1px solid rgba(255,255,255,.08)}
+.wbtable{border-collapse:separate;border-spacing:0;min-width:100%;width:auto}
+.wbtable th.n{text-align:right}
+.wbtable td{background:#1a1a23}
+.wbtable th:first-child,.wbtable td:first-child{position:sticky;left:0;z-index:1}
+.rbody{clip-path:inset(0 14px)}
+@media (max-width:640px){.wbtable td:first-child{white-space:normal;min-width:110px;max-width:42vw;overflow-wrap:anywhere;line-height:1.3}.wbtable td:first-child .hl{margin-left:0;margin-top:2px}}
+.wbtable th:first-child{z-index:3}
+.wbtable td:first-child{box-shadow:1px 0 0 rgba(255,255,255,.08),-2px 0 0 #1a1a23}
+.wbtable th:first-child{box-shadow:-2px 0 0 #20212c}
+.wbtable tr.us td{background:#1d2a23}
+.wbtable tr.us td:first-child{box-shadow:1px 0 0 rgba(255,255,255,.08),-2px 0 0 #1d2a23}
+.bar[hidden]{display:none}
+@media (max-width:640px){.rapp{border-radius:14px}}
+.rtag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;background:#3a3a3a;color:#ddd}
+.rtag.tLeft{background:transparent;color:#8a8f99;box-shadow:inset 0 0 0 1px #4a4f58}.rtag.t698N{background:#22324f;color:#9ec5ff}.rtag.t698S{background:#3b2340;color:#e9a8ff}.rtag.t698W{background:#203d33;color:#7ee2a8}.rtag.t698C{background:#45321b;color:#ffc078}
+.upd{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px 3px 8px;font-size:12px;font-weight:600;white-space:nowrap;
+  background:rgba(126,226,168,.12);color:#7ee2a8;box-shadow:inset 0 0 0 1px rgba(126,226,168,.28)}
+.upd::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.upd.old{background:rgba(255,255,255,.07);color:rgba(235,235,245,.7);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
+.upd span{font-weight:400;opacity:.85}
+.rreads:empty{display:none}
+.upd.lt{background:var(--wonbg);color:var(--won);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--won) 35%,transparent)}
+.upd.lt.old{background:var(--othbg);color:var(--oth);box-shadow:inset 0 0 0 1px var(--line)}
+
+:root{--band1:#2a1052;--band2:#6a32c0;--band3:#b48cf0;--acc:#7c4ddb}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--acc:#b69cf5}}
+:root[data-theme="dark"]{--acc:#b69cf5}
+.tile .v.res img{height:30px;display:block;margin-top:4px}
+.match{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.sides{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:start}
+.side h3{margin:0 0 6px;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim)}
+.side.r{text-align:right}
+.srv{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:9px;background:var(--head);border:1px solid var(--line);margin-bottom:5px;min-width:0}
+.side.r .srv{flex-direction:row-reverse}
+.srv b{font-variant-numeric:tabular-nums}
+.srv small{color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.stag{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;border-radius:5px;padding:1px 6px;flex:none;color:#fff}
+.side.l .stag{background:#3b6fd8}.side.r .stag{background:#d64545}
+.srv.us{background:var(--wonbg);border-color:color-mix(in srgb,var(--won) 55%,transparent)}
+.srv.us b,.srv.us small{color:var(--usink)}
+.vs img{width:56px;display:block;align-self:center}
+.vs{align-self:center}
+.score{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;margin:14px 0 4px}
+.score .n{font-size:26px;font-weight:900;font-variant-numeric:tabular-nums}
+.score .l{color:#3b6fd8}.score .r{color:#d64545}
+.split{height:12px;border-radius:999px;overflow:hidden;display:flex;background:var(--line)}
+.split i{display:block;height:100%}.split .a{background:#3b6fd8}.split .d{background:#d64545}
+.pct{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--dim)}
+.verd{font-weight:800;font-size:12px;border-radius:999px;padding:2px 10px;margin-left:6px;background:var(--wonbg);color:var(--won)}
+.verd.lost{background:var(--losebg);color:var(--lose)}
+.facts{width:100%;border-collapse:collapse;margin-top:10px;font-size:13.5px}
+.facts td{padding:7px 6px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+.facts td.k{text-align:center;color:var(--dim);font-weight:400;font-size:12.5px;white-space:normal}
+.facts td.d{text-align:right}.facts td.best{color:var(--won)}
+.facts img{width:18px;height:18px;vertical-align:-4px;margin:0 6px}
+.kills{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,84px);justify-content:center;gap:10px;height:260px;align-items:end;margin-top:10px}
+.kc{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;min-width:0}
+.kc i{display:block;width:min(44px,80%);border-radius:6px 6px 0 0;flex:none}
+.kc.a i{background:linear-gradient(#7fa6f0,#3b6fd8)}.kc.d i{background:linear-gradient(#f08f8f,#d64545)}
+.kc .kv{font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums;margin-bottom:3px;white-space:nowrap}
+.kc .ks{font-size:11px;font-weight:700;margin-top:5px;padding-top:4px;border-top:1px solid var(--line);width:100%;text-align:center;white-space:nowrap}
+.kc.a .ks{color:#3b6fd8}.kc.d .ks{color:#d64545}.kc.us .ks,.kc.us .kv{color:var(--won)}
+.sub{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);font-weight:700;margin:16px 2px 0}
+@media (max-width:640px){.sides{grid-template-columns:1fr}.side.r{text-align:left}.side.r .srv{flex-direction:row}.vs{justify-self:center}.vs img{width:42px}.kills{gap:3px;height:200px;grid-auto-columns:minmax(0,1fr);justify-content:stretch}.kc .kv{font-size:10px}.kc .ks{font-size:9.5px}}
+.bfpills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.bfpill{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;font:inherit;font-size:14px;font-weight:600;padding:8px 16px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+.bfpill.on{border-color:var(--acc);color:var(--acc)}
+.bfpill b{font-size:12.5px;background:var(--head);border-radius:999px;padding:1px 8px}
+.bfpill svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.5;transition:transform .15s}
+.bfpill.on svg{transform:rotate(180deg)}
+.bfl{display:grid;gap:6px}
+.bf{display:grid;grid-template-columns:minmax(0,1fr) 92px 34px 92px minmax(0,1fr);align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:7px 10px}
+:root{--tl:#2c56b0;--tr:#b23434}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--tl:#8fb0ff;--tr:#ff8e8e}}
+:root[data-theme="dark"]{--tl:#8fb0ff;--tr:#ff8e8e}
+.bfs{display:flex;flex-direction:column;gap:1px;min-width:0;font-variant-numeric:tabular-nums}.bfs.r{align-items:flex-end;text-align:right}
+.bfs .core{font-size:17px;font-weight:800;line-height:1.2}
+.bfs.l .core{color:var(--tl)}.bfs.r .core{color:var(--tr)}
+.bfs small{font-size:12px;color:var(--dim);font-weight:500}
+.bfs small span{white-space:nowrap}
+.bfs small span:not(:last-child)::after{content:" ·"}
+.bfsc{display:flex;flex-direction:column;align-items:flex-start;gap:1px}.bfsc.r{align-items:flex-end}
+.bfsc b{font-size:16px;font-variant-numeric:tabular-nums;color:var(--dim)}.bfsc b.w{color:var(--ink)}
+.bfsc img{height:14px}.bfsc.r img{order:2;margin-right:-11px}
+.bfvs{width:30px}
+@media (max-width:640px){.bf{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);grid-template-areas:"ls vs rs" "l . r";row-gap:6px}
+ .bf .bfs.l{grid-area:l}.bf .bfs.r{grid-area:r}.bf .bfsc{grid-area:ls}.bf .bfsc.r{grid-area:rs}.bf .bfvs{grid-area:vs;width:26px}}
+.ally .meter{height:5px;border-radius:999px;background:var(--line);margin:7px 0 5px;overflow:hidden}
+.ally .meter i{display:block;height:100%;background:var(--acc)}
+.ally .v small{font-size:13px;color:var(--dim);font-weight:600}
+.rtag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;background:#3a3a3a;color:#ddd}
+.rtag.t698N{background:#22324f;color:#9ec5ff}.rtag.t698S{background:#3b2340;color:#e9a8ff}.rtag.t698W{background:#203d33;color:#7ee2a8}.rtag.t698C{background:#45321b;color:#ffc078}
+
+.bar[hidden]{display:none}
+.tile .v img{height:30px;display:block;margin-top:4px}
+</style>
+</head>
+<body>
+<div class="band"><div class="in">
+  <a class="homelink" id="homeLink" href="./"><span aria-hidden="true">←</span>Home</a>
+  <h1>Storm Duel</h1>
+</div></div>
+<div class="wrap">
+  <div class="days" id="days" role="tablist" hidden></div>
+  <div class="bar" id="bar" hidden>
+    <span class="status" id="status">Loading…</span><span id="upd" class="grow"></span>
+    <button type="button" id="csv" disabled>Download CSV</button>
+  </div>
+  <div id="out"></div>
+</div>
+<script src="last.js?v=2"></script>
+<script>
+if (window.frameElement) document.getElementById('homeLink').remove();
+</script>
+<script>
+(function () {
+  const API = location.hostname.endsWith('.workers.dev') ? '/api' : 'https://data-collection.jk06nm04.workers.dev/api';
+  const US = 2698, ALL = 'all', ART = 'art/';
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const fmt = n => Number(n || 0).toLocaleString('en-US');
+  const cut = (n, d) => String(Math.floor(n * 10 ** d) / 10 ** d);
+  const short = n => !n ? '0' : n >= 1e7 ? cut(n / 1e6, 1) + 'M' : n >= 1e6 ? cut(n / 1e6, 2) + 'M' : n >= 1e5 ? cut(n / 1e3, 0) + 'K' : n >= 1e3 ? cut(n / 1e3, 1) + 'K' : String(n);
+  const fold = s => String(s || '').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+  const dayName = d => new Date(d + 'T00:00:00Z').toLocaleDateString([], { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const stamp = ms => { const d = new Date(ms); return `${d.getDate()} ${d.toLocaleString('en-GB', { month: 'short' })}`; };
+  const pill = ms => ms ? `<span class="upd lt${new Date(ms).toDateString() === new Date().toDateString() ? '' : ' old'}">Updated <span>${stamp(ms)}</span></span>` : '';
+  const AL = (() => { try { const a = JSON.parse(localStorage.getItem('site.settings')).alliances; if (Array.isArray(a) && a.length) return a; } catch {} return ['698N', '698S', '698W', '698C', '698X', '698E']; })();
+  const allyTag = a => a ? `<span class="rtag t${esc(a)}">${esc(a)}</span>` : '<span class="rdim">—</span>';
+
+  let snames = [new Map(), new Map()];
+  function nameMap(list) {
+    const m = new Map(), weakKeys = new Set();
+    for (const [name, , search, weak] of list || []) for (const k of [name, '~' + fold(name)]) {
+      if (weak && m.has(k) && !weakKeys.has(k)) continue;
+      m.set(k, search); weak ? weakKeys.add(k) : weakKeys.delete(k);
+    }
+    return m;
+  }
+  const searchOf = name => { for (const m of snames) { const x = m.get(name) || (fold(name) !== '' && m.get('~' + fold(name))); if (x) return x; } return ''; };
+  const hit = (name, f) => !f || fold(name).includes(f) || fold(searchOf(name)).includes(f);
+  let days = {}, day = ALL, q = '', al = '', bf = '';
+  const dates = () => Object.keys(days).filter(d => (days[d].players || []).length).sort();
+  const inAl = a => !al || (al === 'OTHER' ? !AL.includes(a) : a === al);
+
+  function show(j) {
+    days = (j && j.days) || {};
+    if (day !== ALL && !days[day]) day = ALL;
+    if (!dates().length) {
+      $('bar').hidden = false; $('status').textContent = 'Nothing read yet.';
+      $('out').innerHTML = '<div class="empty">After a Storm Duel battle, open the game and tap <b>Read Storm Duel</b> in the 2698 Data Extractor bookmark.</div>';
+      return;
+    }
+    $('days').hidden = false; $('csv').disabled = false; draw();
+  }
+  async function load() {
+    const L = Last.post(API + '/sd-read'), Ln = Last.post(API + '/search-names');
+    const names = j => { if (j) snames = [nameMap(j.roster), nameMap(j.raw)]; };
+    names(Ln.now);
+    Ln.next.then(j => { names(j); if (!Ln.same && q && dates().length) day === ALL ? drawAll() : drawDay(); }).catch(() => {});
+    if (L.now) show(L.now); else $('out').innerHTML = '<div class="skl">' + '<i></i>'.repeat(14) + '</div>';
+    try { const j = await L.next; if (!L.now || !L.same) show(j); }
+    catch (e) {
+      if (L.now) return;
+      $('bar').hidden = false; $('status').className = 'status grow bad'; $('status').textContent = '✗ ' + (e.message || e); $('out').innerHTML = '';
+    }
+  }
+
+  function draw() {
+    $('days').innerHTML = [ALL, ...dates()].map(d => `<button type="button" role="tab" data-day="${esc(d)}" class="${d === day ? 'on' : ''}" aria-selected="${d === day}">${d === ALL ? 'All' : esc(dayName(d))}</button>`).join('');
+    $('bar').hidden = day === ALL;
+    if (day !== ALL) { const rd = days[day]; $('status').className = 'status'; $('status').textContent = `${rd.round ? 'Round ' + rd.round + ' · ' : ''}Storm Duel`; $('upd').innerHTML = pill(rd.at); }
+    day === ALL ? drawAll() : drawDay();
+  }
+
+  function list(title, rows, cols, one) {
+    const f = fold(q), shown = rows.filter(r => inAl(r.ally) && hit(r.name, f));
+    return `<div class="rapp"><div class="rhead"><b>${title}</b>
+        <label class="rsearch"><span aria-hidden="true">🔍</span><input id="q" type="text" placeholder="Search a name" autocomplete="off" value="${esc(q)}"></label>
+        ${one ? '' : '<button type="button" class="rgo" data-csv>Export CSV</button>'}</div>
+      <div class="rbar">${['', ...AL, 'OTHER'].map(a => `<button type="button" class="rchip${al === a ? ' on' : ''}" data-al="${esc(a)}">${a === 'OTHER' ? 'Other' : esc(a) || 'Everyone'}</button>`).join('')}<span class="rcount">${fmt(shown.length)} of ${fmt(rows.length)} players</span></div>
+      <div class="rbody"><table class="rtable wbtable"><thead><tr><th>Name</th><th>Alliance</th>${one ? '<th class="n">Points</th>' : cols.map(d => `<th class="n">${esc(dayName(d))}</th>`).join('')}</tr></thead><tbody>
+      ${shown.map(r => `<tr><td>${esc(r.name)}</td><td>${allyTag(r.ally)}</td>${(one ? [one] : cols).map(d => r.on[d] != null ? `<td class="n">${fmt(r.on[d])}</td>` : '<td class="n rdim">—</td>').join('')}</tr>`).join('')
+        || `<tr><td colspan="${(one ? 1 : cols.length) + 2}" class="rdim">No player matches.</td></tr>`}</tbody></table></div></div>`;
+  }
+  function allRows() {
+    const ds = dates(), by = new Map();
+    for (const d of ds) for (const [name, pts, ally, pid] of days[d].players) {
+      const k = pid || 'n:' + name, r = by.get(k) || { name, ally: '', on: {}, sum: 0 };
+      r.name = name; r.ally = ally || r.ally; r.on[d] = pts; r.sum += pts; by.set(k, r);
+    }
+    return { ds, rows: [...by.values()].sort((a, b) => b.sum - a.sum) };
+  }
+  function drawAll() { const { ds, rows } = allRows(); $('out').innerHTML = list('Storm Duel players', rows, ds); focusQ(); }
+
+  function drawDay() {
+    const rd = days[day], o = rd.our, t = rd.their, won = o.win === 1, pct = o.score + t.score ? Math.round(o.score / (o.score + t.score) * 100) : 50;
+    const ps = (rd.players || []).map(([name, pts, ally]) => ({ name, ally, on: { [day]: pts }, pts })), total = ps.reduce((a, r) => a + r.pts, 0);
+    const top = ps.slice().sort((a, b) => b.pts - a.pts)[0];
+    const tile = (v, k, s) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
+    const srv = (s, core) => `<div class="srv${s.sid === US ? ' us' : ''}"><span class="stag">${core ? 'Core' : 'Allied'}</span><b>S${s.sid}</b><small>${esc(s.king)}</small></div>`;
+    const fact = (k, a, b, cmp = true) => `<tr><td class="${cmp && a > b ? 'best' : ''}">${cmp ? fmt(a) : a}</td><td class="k">${k}</td><td class="d${cmp && b > a ? ' best' : ''}">${cmp ? fmt(b) : b}</td></tr>`;
+    const kills = rd.kills || [], max = Math.max(1, ...kills.map(x => x.n));
+    const al2 = {}; ps.forEach(r => { const a = al2[r.ally || '—'] ||= { n: 0, pts: 0, top: r }; a.n++; a.pts += r.pts; });
+    const alls = Object.entries(al2).sort((a, b) => b[1].pts - a[1].pts), maxA = alls.length ? alls[0][1].pts || 1 : 1;
+    const others = (rd.fields || []).filter(f => !f.l.includes(US) && !f.r.includes(US));
+    const lists = [['duel', 'Other Storm Duel battlefields', others.filter(f => f.duel)], ['trial', 'Storm Trial battlefields', others.filter(f => !f.duel)]].filter(x => x[2].length);
+    const vic = `<img src="${ART}sd-victory.png" alt="Victory">`;
+    const row = f => { const lw = f.win === 1, side = (ids, c) => `<div class="bfs ${c}"><b class="core">S${ids[0] || ''}</b>${ids.length > 1 ? `<small>${ids.slice(1).map(id => `<span>S${id}</span>`).join(' ')}</small>` : ''}</div>`;
+      return `<div class="bf">${side(f.l, 'l')}<div class="bfsc"><b class="${lw ? 'w' : ''}">${fmt(f.ls)}</b>${lw ? vic : ''}</div><img class="bfvs" src="${ART}sd-vs.png" alt="VS"><div class="bfsc r">${lw ? '' : vic}<b class="${lw ? '' : 'w'}">${fmt(f.rs)}</b></div>${side(f.r, 'r')}</div>`; };
+    const caret = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>', open = lists.find(x => x[0] === bf);
+    $('out').innerHTML = `<div class="tiles">
+        ${tile(`<img src="${ART}sd-${won ? 'victory' : 'defeat'}.png" alt="${won ? 'Victory' : 'Defeat'}">`, 'Result')}
+        ${tile(fmt(ps.length), 'S2698 players who scored')}
+        ${tile(short(total), 'S2698 points', fmt(total))}
+        ${tile(top ? esc(top.name) : '—', 'Top S2698 player', top ? `${esc(top.ally)} · ${fmt(top.pts)}` : '')}
+      </div>
+      <h2 class="sec">The battle</h2>
+      <div class="match">
+        <div class="sides"><div class="side l"><h3>Our side</h3>${srv(o.core, 1)}${o.allies.map(s => srv(s)).join('')}</div>
+          <div class="vs"><img src="${ART}sd-vs.png" alt="VS"></div>
+          <div class="side r"><h3>Enemy side</h3>${srv(t.core, 1)}${t.allies.map(s => srv(s)).join('')}</div></div>
+        <div class="score"><span class="n l">${fmt(o.score)}</span><div class="split"><i class="a" style="width:${pct}%"></i><i class="d" style="width:${100 - pct}%"></i></div><span class="n r">${fmt(t.score)}</span></div>
+        <div class="pct"><span>Camp score · ${pct}%<span class="verd ${won ? '' : 'lost'}">${won ? 'Victory' : 'Defeat'}</span></span><span>${100 - pct}% · Camp score</span></div>
+        <table class="facts">
+          <tr><td class="${o.players > t.players ? 'best' : ''}"><img src="${ART}sd-person-blue.png" alt="">${fmt(o.players)}</td><td class="k">Players in the battle</td><td class="d${t.players > o.players ? ' best' : ''}">${fmt(t.players)}<img src="${ART}sd-person-red.png" alt=""></td></tr>
+          ${fact('Enemy Ruins held at the end', o.ruins, t.ruins)}${fact('Enemy Capital held at the end', o.capital ? 'Yes' : 'No', t.capital ? 'Yes' : 'No', false)}${fact('Points per minute at the end', '+' + fmt(o.perMin), '+' + fmt(t.perMin), false)}
+        </table>
+        ${kills.length ? `<div class="sub">Prolific Slayer · kills by server</div>
+        <div class="kills">${kills.map(x => `<div class="kc ${x.our ? 'a' : 'd'}${x.sid === US ? ' us' : ''}" title="S${x.sid}: ${fmt(x.n)}"><span class="kv">${short(x.n)}</span><i style="height:calc((100% - 40px) * ${Math.max(.02, x.n / max).toFixed(3)})"></i><span class="ks">S${x.sid}</span></div>`).join('')}</div>` : ''}
+      </div>
+      ${lists.length ? `<h2 class="sec">Other battlefields</h2>
+      <div class="bfpills">${lists.map(([k, l, xs]) => `<button type="button" class="bfpill${bf === k ? ' on' : ''}" data-bf="${k}" aria-expanded="${bf === k}">${l} <b>${xs.length}</b>${caret}</button>`).join('')}</div>
+      ${open ? `<div class="bfl">${open[2].map(row).join('')}</div>` : ''}` : ''}
+      <h2 class="sec">S2698 points by alliance</h2>
+      <div class="tiles">${alls.map(([tag, a]) => `<div class="tile ally"><div class="k">${allyTag(tag === '—' ? '' : tag)}</div><div class="v">${short(a.pts)} <small>points</small></div><div class="meter"><i style="width:${a.pts / maxA * 100}%"></i></div><div class="s">${a.n} players · ${total ? Math.round(a.pts / total * 100) : 0}% · best: ${esc(a.top.name)}</div></div>`).join('')}</div>
+      <h2 class="sec">S2698 players</h2>
+      ${list('Storm Duel players', ps.sort((a, b) => b.pts - a.pts), [day], day)}`;
+    focusQ();
+  }
+  let typing = false;
+  function focusQ() { const i = $('q'); if (i && typing) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }
+  $('out').addEventListener('input', e => { if (e.target.id === 'q') { q = e.target.value; typing = true; day === ALL ? drawAll() : drawDay(); } });
+  $('out').addEventListener('click', e => {
+    typing = false;
+    if (e.target.closest('[data-csv]')) return $('csv').click();
+    const c = e.target.closest('[data-al]'); if (c) { al = c.dataset.al; return day === ALL ? drawAll() : drawDay(); }
+    const b = e.target.closest('[data-bf]'); if (b) { bf = bf === b.dataset.bf ? '' : b.dataset.bf; drawDay(); }
+  });
+  $('days').onclick = e => { const b = e.target.closest('[data-day]'); if (b && (b.dataset.day === ALL || days[b.dataset.day])) { day = b.dataset.day; q = ''; bf = ''; typing = false; draw(); } };
+
+  $('csv').onclick = () => {
+    const cell = v => /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : v;
+    let rows, file;
+    if (day === ALL) {
+      const { ds, rows: l } = allRows();
+      rows = [['Rank', 'Name', 'Alliance', ...ds, 'Total']].concat(l.map((r, i) => [i + 1, r.name, r.ally, ...ds.map(d => r.on[d] != null ? r.on[d] : ''), r.sum]));
+      file = `storm-duel-s${US}-all.csv`;
+    } else {
+      rows = [['Rank', 'Name', 'Alliance', 'Points']].concat(days[day].players.slice().sort((a, b) => b[1] - a[1]).map((p, i) => [i + 1, p[0], p[2] || '', p[1]]));
+      file = `storm-duel-${day}.csv`;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob(['﻿' + rows.map(r => r.map(cell).join(',')).join('\n')], { type: 'text/csv' }));
+    a.download = file; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  load();
+})();
+</script>
+</body>
+</html>
