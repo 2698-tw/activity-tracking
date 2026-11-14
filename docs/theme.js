@@ -3,13 +3,14 @@
   const KEY = 'kartz.theme', root = document.documentElement;
   const valid = t => LIST.some(x => x[0] === t) ? t : 'dark';
   const read = () => { try { return valid(JSON.parse(localStorage.getItem(KEY))); } catch { return 'dark'; } };
+  const ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.8 1.8-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3z"/><circle cx="7.5" cy="11" r="1.2" fill="currentColor"/><circle cx="10" cy="7.2" r="1.2" fill="currentColor"/><circle cx="14.5" cy="7.2" r="1.2" fill="currentColor"/></svg>';
   const btns = [];
   let menu = null, owner = null;
   const apply = t => { root.dataset.theme = t; paint(); };
   function paint() {
     const t = LIST.find(x => x[0] === root.dataset.theme) || LIST[1];
     for (const b of btns) {
-      b.innerHTML = `<i class="thdot" style="background:${t[2]}"></i>`;
+      if (!b.firstChild) b.innerHTML = ICON;
       b.title = 'Background: ' + t[1];
       b.setAttribute('aria-label', b.title);
     }
@@ -41,12 +42,14 @@
   function mount(b) {
     if (!b) return;
     btns.push(b);
+    b.classList.add('thpink');
     b.setAttribute('aria-haspopup', 'menu');
     b.onclick = e => { e.stopPropagation(); owner === b ? close() : open(b); };
     paint();
   }
   const css = document.createElement('style');
-  css.textContent = '.thdot{display:block;width:18px;height:18px;border-radius:50%;box-shadow:inset 0 0 0 1.5px color-mix(in srgb,currentColor 45%,transparent)}'
+  css.textContent = 'button.themebtn.thpink{background:linear-gradient(135deg,#c31441,#e0457b);border-color:transparent;color:#fff;box-shadow:0 4px 16px rgba(195,20,65,.35)}'
+    + 'button.themebtn.thpink svg{display:block;width:18px;height:18px}'
     + '.thmenu{position:fixed;z-index:1000;background:var(--panel,#fff);color:var(--ink,#15181f);border:1px solid var(--line,#dfe3ea);border-radius:12px;padding:5px;min-width:180px;box-shadow:0 10px 30px rgba(0,0,0,.25)}'
     + '.thmenu[hidden]{display:none}'
     + '.thm{display:flex;align-items:center;gap:10px;width:100%;padding:8px 10px;border:0;background:none;color:inherit;font:inherit;font-size:14px;line-height:1.3;border-radius:8px;cursor:pointer;text-align:left}'
