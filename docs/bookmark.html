@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>2698 Ranking Bookmark</title>
+<script src="theme.js?v=2"></script>
+<link rel="icon" type="image/png" href="icon.png">
+<style>
+:root{--bg:#f4f5f8;--panel:#fff;--ink:#15181f;--muted:#666e7d;--line:#dfe3ea;--accent:#3b5bdb;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme]){--bg:#12141a;--panel:#1a1d25;--ink:#e8eaef;--muted:#98a0b0;--line:#2b303c;--accent:#748ffc;color-scheme:dark}}
+:root:is([data-theme="dark"],[data-theme="ash"]){--bg:#12141a;--panel:#1a1d25;--ink:#e8eaef;--muted:#98a0b0;--line:#2b303c;--accent:#748ffc;color-scheme:dark}
+:root[data-theme="banana"]{--bg:#fff1a8;--panel:#fffbe3;--ink:#2b2510;--muted:#75682f;--line:#eedd88;--accent:#8a5a00;color-scheme:light}
+:root[data-theme="ash"]{--bg:#323339;--panel:#3a3b41;--ink:#eceef1;--muted:#a0a5ad;--line:#46474e;--accent:#8c95f5;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:16px 16px 64px}
+.wrap{max-width:720px;margin:0 auto}
+h1{font-size:22px;margin:8px 0 4px;letter-spacing:-.3px}
+.sub{color:var(--muted);margin:0 0 18px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:12px}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0 0 10px;font-weight:600}
+.drag{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:999px;text-decoration:none;font-weight:700;color:#fff;cursor:grab;
+  background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b);box-shadow:0 2px 8px rgba(195,20,65,.25)}
+ol{margin:0;padding-left:20px}
+li{margin:4px 0}
+.muted{color:var(--muted);font-size:13.5px}
+code{background:var(--bg);border-radius:5px;padding:1px 5px;font-size:13px}
+button{font:inherit;font-size:13px;border:1px solid var(--line);background:transparent;color:var(--accent);border-radius:8px;padding:6px 12px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Ranking bookmark</h1>
+  <p class="sub">One click on a Top War ranking screen adds Date, Name, Points and Alliance to the Game rankings sheet — the four main alliances, or everyone else.</p>
+
+  <section>
+    <h2>1 · Install (once, on a computer)</h2>
+    <p style="margin:0 0 12px">Drag this onto your bookmarks bar:</p>
+    <a class="drag" id="bm" href="#">Whitebeard Extractor</a>
+    <p class="muted" style="margin:12px 0 0">No bookmarks bar? Press Ctrl+Shift+B (Mac: Cmd+Shift+B) to show it.
+      Can't drag? <button type="button" id="copy">Copy the bookmark code</button>, then make a new bookmark and paste it as the URL.</p>
+  </section>
+
+  <section>
+    <h2>2 · Use</h2>
+    <ol>
+      <li>Open <a href="https://h5.topwargame.com/h5game/" target="_blank" rel="noopener">the Top War web game</a> and the Whitebeard ranking.</li>
+      <li>Click <b>Whitebeard Extractor</b> in the bookmarks bar. The game only loads about 30 rows at first: press <b>Load all</b> in the panel to load the rest (or scroll to the bottom yourself).</li>
+      <li>In the panel, pick 698N, W, S, C or Other, check the count, and press <b>Send to sheet</b>.</li>
+    </ol>
+    <p class="muted" style="margin:10px 0 0">Each send is added below the lists already in the sheet, dated by the game's day (UTC). The bookmark only reads what the game has
+      already loaded on your screen: it sends nothing to the game.</p>
+  </section>
+</div>
+
+<script type="text/plain" id="src">
+(function run() {
+  const API = 'https://data-collection.jk06nm04.workers.dev/api/game-ranking';
+  const SHEET = 'https://docs.google.com/spreadsheets/d/12m3Eh6Xd-LWJ9mFakmEejKNpYYqm2ll-3UCx_TeBxyc/edit#gid=0';
+  if (!window.cc || !cc.director || !cc.director.getScene) {
+    alert('Whitebeard Extractor: open the Top War web game (h5.topwargame.com) and a ranking screen first.');
+    return;
+  }
+
+  const lists = [], labels = [];
+  const walk = n => {
+    if (!n || !n.activeInHierarchy) return;
+    for (const c of n._components || []) {
+      if (c instanceof cc.Label && c.string) labels.push([n.name, c.string]);
+      for (const k of Object.keys(c)) {
+        const v = c[k];
+        if (Array.isArray(v) && v.length && v[0] && typeof v[0] === 'object' && 'rank' in v[0] && 'score' in v[0]) lists.push([v, c]);
+      }
+    }
+    (n.children || []).forEach(walk);
+  };
+  walk(cc.director.getScene());
+  const title = (labels.filter(([n, s]) => n === 'TITLE' && !/^ranking$/i.test(s.trim())).pop() || [, 'Ranking'])[1];
+  const entrants = (labels.map(([, s]) => s.match(/^([\d,]+)\s+Commanders/)).find(Boolean) || [])[1];
+  const [list, owner] = lists.sort((a, b) => b[0].length - a[0].length)[0] || [[], null];
+  const scroller = owner && owner.node.getComponentInChildren(cc.ScrollView);
+  const name = e => {
+    try { const p = typeof e.playerInfo === 'string' ? JSON.parse(e.playerInfo) : e.playerInfo || {}; return String(p.username || p.nickname || e.name || ''); }
+    catch { return String(e.name || ''); }
+  };
+  const rows = list.map(e => [Number(e.rank), name(e).slice(0, 80), Number(e.score), String(e.allianceTag || '').slice(0, 20)])
+    .filter(r => Number.isFinite(r[0]) && Number.isFinite(r[2])).sort((a, b) => a[0] - b[0]);
+  const MAIN = ['698N', '698W', '698S', '698C'];
+  const last = rows.length ? rows[rows.length - 1][0] : 0;
+  const gaps = rows.length && (rows[0][0] !== 1 || last !== rows.length);
+  const short = entrants && rows.length < Number(entrants.replace(/,/g, ''));
+
+  document.getElementById('rank2698')?.remove();
+  const host = Object.assign(document.createElement('div'), { id: 'rank2698' });
+  host.style.cssText = 'position:fixed;top:16px;right:16px;z-index:2147483647';
+  const root = host.attachShadow({ mode: 'open' });
+  root.innerHTML = `<style>
+    .p{all:initial;display:block;text-align:left;width:300px;max-width:calc(100vw - 32px);box-sizing:border-box;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f3f3f7;
+      background:rgba(24,24,32,.94);border-radius:18px;padding:14px 16px;box-shadow:0 10px 30px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.12)}
+    .h{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+    .h b{flex:1;font-size:15px}
+    .x{background:rgba(255,255,255,.1);border:0;color:#bbb;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:15px;line-height:1}
+    .t{color:rgba(235,235,245,.65);font-size:12.5px;margin-bottom:8px}
+    .n{font-size:22px;font-weight:700}
+    .f{display:block;width:100%;margin:8px 0 2px;padding:7px 10px;border-radius:10px;border:0;font:inherit;font-size:13.5px;
+      color:#f3f3f7;background:rgba(255,255,255,.1);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
+    .f option{color:#111}
+    .w{background:rgba(255,159,67,.15);color:#ffc078;border-radius:10px;padding:7px 10px;font-size:12.5px;margin:8px 0}
+    table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
+    td{padding:3px 0;border-bottom:1px solid rgba(255,255,255,.08)} td:first-child{width:34px;color:rgba(235,235,245,.6)} td:last-child{text-align:right}
+    .a{display:flex;gap:8px;margin-top:10px}
+    .a button{flex:1;border:0;border-radius:999px;padding:9px 10px;font:inherit;font-weight:700;cursor:pointer}
+    .s{background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b);color:#fff}
+    .s:disabled{opacity:.55;cursor:default}
+    .c{background:rgba(255,255,255,.12);color:#fff}
+    .l{display:block;margin-top:7px;border:0;border-radius:999px;padding:6px 12px;font:inherit;font-weight:700;font-size:12.5px;
+      cursor:pointer;color:#2a1600;background:#ffc078}
+    .l:disabled{opacity:.6;cursor:default}
+    .m{margin-top:8px;font-size:12.5px;min-height:1em}
+    .m a{display:inline-block;margin-top:4px;color:#9ec5ff;font-weight:600}
+  </style>
+  <div class="p">
+    <div class="h"><b>Whitebeard Extractor</b><button class="x" title="Close">×</button></div>
+    <div class="t"></div>
+    <div><span class="n"></span> players</div>
+    <select class="f" aria-label="Alliance"></select>
+    <div class="w" hidden></div>
+    <table></table>
+    <div class="a"><button class="s">Send to sheet</button><button class="c">Copy</button></div>
+    <div class="m"></div>
+  </div>`;
+  const $ = s => root.querySelector(s);
+  $('.t').textContent = title;
+  const four = rows.filter(r => MAIN.includes(r[3])).length;
+  const opts = [['ALL4', `698N, W, S, C (${four})`], ['OTHER', `Other (${rows.length - four})`]];
+  opts.forEach(([v, t]) => $('.f').appendChild(Object.assign(document.createElement('option'), { value: v, textContent: t })));
+  const allyOrder = t => t ? (MAIN.indexOf(t) + 1 || 99) : 100;
+  const chosen = () => {
+    const f = $('.f').value;
+    return (f === 'ALL4' ? rows.filter(r => MAIN.includes(r[3])) : rows.filter(r => !MAIN.includes(r[3])))
+      .slice().sort((a, b) => allyOrder(a[3]) - allyOrder(b[3]) || a[3].localeCompare(b[3]) || a[0] - b[0])
+      .map(([, name, points, ally]) => [name, points, ally]);
+  };
+  const warn = !rows.length ? 'No ranking list found. Open a ranking screen, then click the bookmark again.'
+    : gaps || short ? `Only ranks ${rows[0][0]}–${last} are loaded${entrants ? ` of ${entrants}` : ''}. `
+      + (scroller ? 'Press Load all to get the rest.' : 'Scroll to the bottom of the list, then click the bookmark again.')
+    : '';
+  if (warn) { $('.w').hidden = false; $('.w').textContent = warn; }
+  if ((gaps || short) && scroller) {
+    const btn = $('.w').appendChild(Object.assign(document.createElement('button'), { className: 'l', textContent: 'Load all' }));
+    btn.onclick = async () => {
+      btn.disabled = true;
+      const want = entrants ? Number(entrants.replace(/,/g, '')) : Infinity;
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      const between = (lo, hi) => lo + Math.random() * (hi - lo);
+      for (let stuck = 0; list.length < want && stuck < 2 && host.isConnected; ) {
+        const before = list.length, glide = between(0.2, 0.45);
+        scroller.scrollToBottom(glide);
+        await wait(glide * 1000 + 50);
+        if (!host.isConnected) break;
+        scroller.node.emit('scroll-to-bottom', scroller);
+        for (const t0 = Date.now(); list.length === before && Date.now() - t0 < 6000; ) await wait(150);
+        stuck = list.length === before ? stuck + 1 : 0;
+        btn.textContent = `Loading… ${list.length.toLocaleString('en-US')}${entrants ? ' of ' + entrants : ''}`;
+        await wait(Math.random() < 0.12 ? between(1000, 2000) : between(250, 900));
+      }
+      if (host.isConnected) run();
+    };
+  }
+  const show = () => {
+    const sel = chosen();
+    $('.n').textContent = sel.length.toLocaleString('en-US');
+    $('table').textContent = '';
+    const numbered = sel.map((r, i) => Object.assign(r.slice(), { n: i + 1 }));
+    const pick = numbered.length > 6 ? [...numbered.slice(0, 3), null, ...numbered.slice(-2)] : numbered;
+    for (const r of pick) {
+      const tr = document.createElement('tr');
+      (r ? [r.n, r[0], r[1].toLocaleString('en-US')] : ['', '…', '']).forEach(v => tr.appendChild(document.createElement('td')).textContent = v);
+      $('table').appendChild(tr);
+    }
+    if (rows.length) { $('.s').disabled = !sel.length; $('.s').textContent = 'Send to sheet'; }
+  };
+  $('.f').onchange = show;
+  show();
+  if (!rows.length) { $('.s').disabled = true; $('.c').disabled = true; }
+  $('.x').onclick = () => host.remove();
+  $('.c').onclick = async () => {
+    const date = new Date().toISOString().slice(0, 10);
+    const tsv = ['Date\tName\tPoints\tAlliance', ...chosen().map(([n, points, ally]) => [date, n, points, ally].join('\t'))].join('\n');
+    try { await navigator.clipboard.writeText(tsv); $('.m').textContent = 'Copied — paste into Sheets.'; }
+    catch { $('.m').textContent = 'Copying was blocked by the browser.'; }
+  };
+  $('.s').onclick = async () => {
+    if (warn && !confirm(warn + '\n\nSend the rows that are loaded anyway?')) return;
+    $('.s').disabled = true; $('.m').textContent = 'Sending…';
+    try {
+      const r = await fetch(API, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ rows: chosen() }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `the sheet did not accept it (${r.status})`);
+      $('.s').textContent = 'Sent ✓';
+      $('.m').innerHTML = `✓ ${Number(j.rows).toLocaleString('en-US')} rows added, dated ${j.date}.<br><a target="_blank" rel="noopener">Open in Sheets ↗</a>`;
+      $('.m a').href = j.link || SHEET;
+    } catch (e) {
+      $('.m').textContent = '✗ ' + (e.message || e);
+      $('.s').disabled = false;
+    }
+  };
+  document.body.appendChild(host);
+})();
+</script>
+<script>
+const src = document.getElementById('src').textContent.trim();
+const href = 'javascript:' + encodeURIComponent(src);
+const bm = document.getElementById('bm');
+bm.href = href;
+bm.onclick = e => { e.preventDefault(); alert('Drag this onto your bookmarks bar, then click it on a Top War ranking screen.'); };
+document.getElementById('copy').onclick = async () => {
+  try { await navigator.clipboard.writeText(href); document.getElementById('copy').textContent = 'Copied ✓'; }
+  catch { prompt('Copy this and paste it as the bookmark URL:', href); }
+};
+</script>
+</body>
+</html>

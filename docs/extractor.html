@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>2698 Data Extractor</title>
+<script src="theme.js?v=2"></script>
+<link rel="icon" type="image/png" href="icon.png">
+<style>
+:root{--bg:#f4f5f8;--panel:#fff;--ink:#15181f;--muted:#666e7d;--line:#dfe3ea;--accent:#3b5bdb;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme]){--bg:#12141a;--panel:#1a1d25;--ink:#e8eaef;--muted:#98a0b0;--line:#2b303c;--accent:#748ffc;color-scheme:dark}}
+:root:is([data-theme="dark"],[data-theme="ash"]){--bg:#12141a;--panel:#1a1d25;--ink:#e8eaef;--muted:#98a0b0;--line:#2b303c;--accent:#748ffc;color-scheme:dark}
+:root[data-theme="banana"]{--bg:#fff1a8;--panel:#fffbe3;--ink:#2b2510;--muted:#75682f;--line:#eedd88;--accent:#8a5a00;color-scheme:light}
+:root[data-theme="ash"]{--bg:#323339;--panel:#3a3b41;--ink:#eceef1;--muted:#a0a5ad;--line:#46474e;--accent:#8c95f5;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding:16px 16px 64px}
+.wrap{max-width:720px;margin:0 auto}
+h1{font-size:22px;margin:8px 0 4px;letter-spacing:-.3px}
+.sub{color:var(--muted);margin:0 0 18px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:12px}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0 0 10px;font-weight:600}
+.drag{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:999px;text-decoration:none;font-weight:700;color:#fff;cursor:grab;
+  background:linear-gradient(135deg,#7b1a31,#c31441 60%,#e0457b);box-shadow:0 2px 8px rgba(195,20,65,.25)}
+ol{margin:0;padding-left:20px}
+li{margin:4px 0}
+.muted{color:var(--muted);font-size:13.5px}
+code{background:var(--bg);border-radius:5px;padding:1px 5px;font-size:13px}
+button{font:inherit;font-size:13px;border:1px solid var(--line);background:transparent;color:var(--accent);border-radius:8px;padding:6px 12px;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>2698 Data Extractor</h1>
+
+  <section>
+    <h2>1 · Install (once, on a computer)</h2>
+    <p style="margin:0 0 12px">Drag this onto your bookmarks bar:</p>
+    <a class="drag" id="bm" href="#">2698 Data Extractor</a>
+    <p class="muted" style="margin:12px 0 0">No bookmarks bar? Press Ctrl+Shift+B (Mac: Cmd+Shift+B) to show it.
+      Can't drag? <button type="button" id="copy">Copy the bookmark code</button>, then make a new bookmark and paste it as the URL.</p>
+    <p class="muted" style="margin:8px 0 0">The bookmark only loads the extractor from this site, so new features arrive without installing it again.</p>
+  </section>
+</div>
+<script>
+const src = "(function(){if(!/(^|\\.)topwargame\\.com$/.test(location.hostname)){var u='https://2698-tw.github.io/activity-tracking/';if(!window.open(u,'_blank'))location.href=u;return;}var h=document.getElementById('x2698');if(h&&h.style.display!=='none'&&window.__x2698){window.__x2698.toggle();return;}var s=document.createElement('script');s.src='https://data-collection.jk06nm04.workers.dev/extractor.js?_='+Date.now();s.onerror=function(){alert('2698 Data Extractor could not load. Check your connection and try again.');};document.body.appendChild(s);})();";
+const href = 'javascript:' + encodeURIComponent(src);
+const bm = document.getElementById('bm');
+bm.href = href;
+bm.onclick = e => { e.preventDefault(); alert('Drag this onto your bookmarks bar, then click it in the Top War web game.'); };
+document.getElementById('copy').onclick = async () => {
+  try { await navigator.clipboard.writeText(href); document.getElementById('copy').textContent = 'Copied ✓'; }
+  catch { prompt('Copy this and paste it as the bookmark URL:', href); }
+};
+</script>
+</body>
+</html>
