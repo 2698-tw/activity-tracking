@@ -214,10 +214,10 @@ window.Admin = (function () {
     if (!h || !h.cards || !h.cards.length) return;
     const t = document.getElementById('bandTitle'); if (t) t.textContent = h.title; if (h.title) document.title = h.title;
     const t2 = document.querySelector('.top .brand h1'); if (t2) t2.textContent = h.title;
-    const prev = new Map();
+    const prev = new Map(), listed = new Set(h.cards.map(c => c.id));
     for (const c of h.cards) {
       const el = document.querySelector(`.hcard[data-card="${c.id}"]`); if (!el) continue;
-      const box = el.parentElement, p = prev.get(box), at = p ? p.nextElementSibling : box.firstElementChild;
+      const box = el.parentElement, p = prev.get(box), at = p ? p.nextElementSibling : [...box.children].find(x => listed.has(x.dataset.card));
       if (at !== el) box.insertBefore(el, at);
       prev.set(box, el);
       if (el.hidden !== !c.show) el.hidden = !c.show;
