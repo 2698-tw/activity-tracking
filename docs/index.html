@@ -18,7 +18,7 @@ if (location.hash === '#kartz') location.replace('kartz.html');
 try { const s = JSON.parse(localStorage.getItem('site.settings')); if (!(s && s.cards && s.cards.ma && s.home && s.home.cards && s.home.cards.length)) throw 0; }
 catch { document.documentElement.classList.add('homewait'); setTimeout(() => document.documentElement.classList.remove('homewait'), 4000); }
 document.documentElement.classList.toggle('evonly', location.hash === '#events');
-if (!/^#(roster|whitebeard|snowtrain|energytower|mammoth|frost|nc|player|stormduel|practice|admin)$/.test(location.hash)) document.documentElement.classList.add('athome');
+if (!/^#(roster|whitebeard|snowtrain|energytower|mammoth|frost|nc|player|stormduel|fame|practice|admin)$/.test(location.hash)) document.documentElement.classList.add('athome');
 else document.documentElement.dataset.view = location.hash.slice(1);
 </script>
 <style>
@@ -167,7 +167,7 @@ details summary{cursor:pointer;font-size:13px;color:var(--muted)}
 .athome #app{display:none}
 html[data-view] #tab-kartz{display:none}
 html[data-view=cp] #tab-cp,html[data-view=roster] #tab-roster,html[data-view=whitebeard] #tab-wb,html[data-view=snowtrain] #tab-st,
-html[data-view=energytower] #tab-et,html[data-view=mammoth] #tab-ma,html[data-view=frost] #tab-frost,html[data-view=nc] #tab-nc,html[data-view=player] #tab-player,html[data-view=practice] #tab-practice,html[data-view=stormduel] #tab-sd,html[data-view=admin] #tab-admin{display:block}
+html[data-view=energytower] #tab-et,html[data-view=mammoth] #tab-ma,html[data-view=frost] #tab-frost,html[data-view=nc] #tab-nc,html[data-view=player] #tab-player,html[data-view=practice] #tab-practice,html[data-view=stormduel] #tab-sd,html[data-view=fame] #tab-fm,html[data-view=admin] #tab-admin{display:block}
 html[data-view=frost] #app,body:has(#tab-frost:not(.hide)) #app,html[data-view=nc] #app,body:has(#tab-nc:not(.hide)) #app,html[data-view=stormduel] #app,body:has(#tab-sd:not(.hide)) #app{max-width:1320px}
 .frostframe{display:block;width:100%;height:80vh;border:0;border-radius:12px;background:var(--panel);opacity:0;transition:opacity .2s ease}
 .frostframe.in{opacity:1}
@@ -233,6 +233,17 @@ html[data-view=frost] #app,body:has(#tab-frost:not(.hide)) #app,html[data-view=n
 .hcard.player .go{color:#3a1630}
 .hcard.sd{background:linear-gradient(135deg,#2a1052,#6a32c0 55%,#b48cf0)}
 .hcard.sd .go{color:#3b1a7a}
+.hcard.fm{background:linear-gradient(135deg,#4a2a00,#a8740a 55%,#f2c94c)}
+.hcard.fm .go{color:#4a2a00}
+.fmtable td.pct{color:rgb(var(--tdim) / .7)}
+.fmtable td.tot{font-weight:700;color:var(--tstrong)}
+.fmtable th{cursor:pointer}
+.fmtable th.rk,.fmtable td.rk{position:sticky;left:0;z-index:1;min-width:44px;width:44px;max-width:44px;text-align:right;padding-right:8px;white-space:nowrap}
+.fmtable td.rk{color:rgb(var(--tdim) / .7);font-variant-numeric:tabular-nums;box-shadow:none}
+.fmtable th.rk{z-index:3}
+.fmtable th.nm,.fmtable td.nm{position:sticky;left:44px;z-index:1}
+.fmtable th.nm{z-index:3}
+.fmtable td.nm{white-space:normal;min-width:110px;max-width:42vw;overflow-wrap:anywhere;line-height:1.3;box-shadow:1px 0 0 rgb(var(--tfg) / .08)}
 .events{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 14px 10px}
 .events h2{display:flex;align-items:baseline;gap:8px;margin:0 0 10px}
 .events h2 .r{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:500}
@@ -601,7 +612,7 @@ html:not(.isadmin) .rsheet{display:none!important}
 (function () {
   const home = document.getElementById('home'), title = document.getElementById('bandTitle');
   try { const t = JSON.parse(localStorage.getItem('site.settings')).home.title; if (t) title.textContent = t; } catch {}
-  const atHome = () => !/^#(kartz|cp|roster|whitebeard|snowtrain|energytower|mammoth|frost|nc|player|stormduel|practice|admin)$/.test(location.hash);
+  const atHome = () => !/^#(kartz|cp|roster|whitebeard|snowtrain|energytower|mammoth|frost|nc|player|stormduel|fame|practice|admin)$/.test(location.hash);
   function write() {
     home.classList.remove('writing');
     title.parentNode.style.setProperty('--w', title.offsetWidth + 'px');
@@ -700,6 +711,16 @@ html:not(.isadmin) .rsheet{display:none!important}
 </div>
 </div>
 
+<div id="tab-fm" class="hide">
+<div class="rapp">
+  <div class="rhead"><b>Fame &amp; Merits</b>
+    <label class="rsearch"><span aria-hidden="true">🔍</span><input id="fmQ" type="text" placeholder="Search a name" autocomplete="off"></label>
+  </div>
+  <div class="rbar" id="fmChips"></div>
+  <div class="rbody" id="fmView"></div>
+</div>
+</div>
+
 <div id="tab-sd" class="hide framebox"><iframe id="sdFrame" class="frostframe" title="Storm Duel" scrolling="no"></iframe></div>
 
 <div id="tab-frost" class="hide framebox"><iframe id="frostFrame" class="frostframe" title="Frost Crystal Contest" scrolling="no"></iframe></div>
@@ -716,6 +737,7 @@ html:not(.isadmin) .rsheet{display:none!important}
     <div class="hcard frost" data-card="frost"><b>Frost Crystal Contest</b><a class="go" href="#frost">Open</a></div>
     <div class="hcard nc" data-card="nc"><b>Neutral City</b><a class="go" href="#nc">Open</a></div>
     <div class="hcard sd" data-card="sd"><b>Storm Duel</b><a class="go" href="#stormduel">Open</a></div>
+    <div class="hcard fm" data-card="fm"><b>Fame &amp; Merits</b><a class="go" href="#fame">Open</a></div>
   </div>
 </div>
 
@@ -754,8 +776,9 @@ $('toBottom').onclick = () => scrollTo({ top: document.documentElement.scrollHei
 </script>
 <script src="last.js?v=2"></script>
 <script src="hit.js?v=1"></script>
-<script src="nav.js?v=1"></script>
-<script src="admin.js?v=19"></script>
+<script src="nav.js?v=2"></script>
+<script src="admin.js?v=20"></script>
 <script src="cards.js?v=28"></script>
+<script src="fame.js?v=2"></script>
 </body>
 </html>
