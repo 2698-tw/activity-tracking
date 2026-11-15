@@ -21,7 +21,7 @@ window.Admin = (function () {
     sheets: {},
     rounds: { 2: '', 3: '', 4: '' },
     dayRound: {},
-    bookmark: { members: true, wb: true, st: true, et: true, ma: true, ev: true, frost: true, nc: true, sd: true },
+    bookmark: { members: true, wb: true, st: true, et: true, ma: true, ev: true, frost: true, nc: true, sd: true, steel: true },
     rules: [
       { id: 'missed', name: 'Missed days', label: 'missed', on: true, color: 'red', chip: false, cards: ['wb', 'st', 'et', 'ma'], all: [{ f: 'missed', op: 'ge', v: 2 }] },
       { id: 'away', name: 'Away', label: 'away', on: true, color: 'amber', chip: true, cards: ['ro'], all: [{ f: 'last', op: 'ge', v: 3 }, { f: 'status', op: 'is', v: 'Active' }] },
@@ -46,9 +46,9 @@ window.Admin = (function () {
     status: { label: 'Status', kind: 'opt', cards: ['ro'], opts: () => ['Active', 'Left'] },
   };
   const RULE_OPS = { num: [['ge', 'at least'], ['le', 'at most'], ['eq', 'exactly'], ['bt', 'between']], opt: [['is', 'is'], ['not', 'is not']], text: [['has', 'contains'], ['is', 'is']] };
-  const SHEET_NAMES = { fame: 'Fame (bookmark Send)', kartz: 'Kartz ranking (Send on the Kartz page)', cp: 'Base CP (Alliance Rosters, RawData-CP)', ranking: 'Whitebeard ranking (bookmark Send)', snowtrain: 'Snow Train (bookmark Send)', energytower: 'Energy Tower (bookmark Send)', mammoth: 'Mammoth Assault (bookmark Send)', neutral: 'Neutral City (bookmark Send)' };
+  const SHEET_NAMES = { fame: 'Fame (bookmark Send)', kartz: 'Kartz ranking (Send on the Kartz page)', cp: 'Base CP (Alliance Rosters, RawData-CP)', ranking: 'Whitebeard ranking (bookmark Send)', snowtrain: 'Snow Train (bookmark Send)', energytower: 'Energy Tower (bookmark Send)', mammoth: 'Mammoth Assault (bookmark Send)', neutral: 'Neutral City (bookmark Send)', steel: 'Steel Rush enemy marches (bookmark Read)' };
   const HOME_NAMES = { kartz: 'Kartz ranking', cp: 'Alliance roster', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault', frost: 'Frost Crystal Contest', nc: 'Neutral City', player: 'Player Summary', sd: 'Storm Duel' };
-  const BOOKMARK_NAMES = { members: 'Alliance members', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault', ev: 'Events (home page)', frost: 'Frost Crystal Contest', nc: 'Neutral City', sd: 'Storm Duel' };
+  const BOOKMARK_NAMES = { members: 'Alliance members', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault', ev: 'Events (home page)', frost: 'Frost Crystal Contest', nc: 'Neutral City', sd: 'Storm Duel', steel: 'Steel Rush (enemy marches)' };
   const CARD_NAMES = { wb: 'Whitebeard', st: 'Snow Train', ro: 'Alliance roster', et: 'Energy Tower', ma: 'Mammoth Assault' };
 
   const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -251,9 +251,9 @@ window.Admin = (function () {
     frost: { name: 'Frost Crystal Contest', go: '#frost', tab: 'Crystal' }, nc: { name: 'Neutral City', go: '#nc', tab: 'NC', sheet: 'neutral' },
     sd: { name: 'Storm Duel', go: '#stormduel', tab: 'Storm Duel' },
   };
-  const SHEET_SHORT = { ranking: 'Whitebeard ranking', snowtrain: 'Snow Train', energytower: 'Energy Tower', mammoth: 'Mammoth Assault', neutral: 'Neutral City', fame: 'Fame', cp: 'Base CP', kartz: 'Kartz ranking' };
-  const SHEET_FROM = { kartz: 'The Kartz page', cp: 'Bookmark (alliance reads)' };
-  const OTHER_SHEETS = ['cp', 'kartz'];
+  const SHEET_SHORT = { ranking: 'Whitebeard ranking', snowtrain: 'Snow Train', energytower: 'Energy Tower', mammoth: 'Mammoth Assault', neutral: 'Neutral City', fame: 'Fame', cp: 'Base CP', kartz: 'Kartz ranking', steel: 'Steel Rush' };
+  const SHEET_FROM = { kartz: 'The Kartz page', cp: 'Bookmark (alliance reads)', steel: 'Bookmark (Read enemy marches)' };
+  const OTHER_SHEETS = ['cp', 'kartz', 'steel'];
   const groupOf = k => GROUPS.find(g => g.sheets.includes(k) || g.events.includes(k));
   function shell(groups, cur, content) {
     const item = ([k, l, ct, cls]) => `<button type="button" class="ani ${k === cur ? 'on' : ''} ${cls || ''}" data-sec="${esc(k)}">${cls === 'ok' || cls === 'warn' ? `<span class="adot ${cls}"></span>` : ''}${esc(l)}${ct ? `<span class="ct">${esc(ct)}</span>` : ''}</button>`;
