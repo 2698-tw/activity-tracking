@@ -238,6 +238,7 @@ html[data-view=frost] #app,body:has(#tab-frost:not(.hide)) #app,html[data-view=n
 .fmtable td.pct{color:rgb(var(--tdim) / .7)}
 .fmtable td.tot{font-weight:700;color:var(--tstrong)}
 .fmtable th{cursor:pointer}
+.fmnote{margin:0;padding:0 14px 10px;font-size:13px;color:rgb(var(--tdim) / .75)}
 .fmtable th.rk,.fmtable td.rk{position:sticky;left:0;z-index:1;min-width:44px;width:44px;max-width:44px;text-align:right;padding-right:8px;white-space:nowrap}
 .fmtable td.rk{color:rgb(var(--tdim) / .7);font-variant-numeric:tabular-nums;box-shadow:none}
 .fmtable th.rk{z-index:3}
@@ -717,6 +718,7 @@ html:not(.isadmin) .rsheet{display:none!important}
     <label class="rsearch"><span aria-hidden="true">🔍</span><input id="fmQ" type="text" placeholder="Search a name" autocomplete="off"></label>
   </div>
   <div class="rbar" id="fmChips"></div>
+  <p class="fmnote">The list below shows everyone who scored more than 10 merit in all 4 rounds combined.</p>
   <div class="rbody" id="fmView"></div>
 </div>
 </div>
