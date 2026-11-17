@@ -69,7 +69,7 @@ let practiceWarm = false;
 function warmPractice() {
   if (practiceWarm) return; practiceWarm = true;
   try { Last.warm(['/wb', '/st', '/et', '/ma', '/frost-read', '/frost-battle', '/nc-read', '/sd-read', '/search-names', '/roster'].map(p => API_BASE + p), 10 * 60 * 1000); } catch {}
-  prefetch(['frost.html', 'nc.html', 'sd.html', 'who.js?v=7', 'sendday.js?v=3', 'fame-data.js?v=1', 'points-data.js?v=1']);
+  prefetch(['frost.html', 'nc.html', 'sd.html', 'who.js?v=7', 'sendday.js?v=3', 'fame-data.js?v=1', 'points-data.js?v=2']);
 }
 showTab(viewFromAddress());
 (function () {

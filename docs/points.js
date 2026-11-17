@@ -29,7 +29,7 @@
     TOPFAME = Math.max(...P.map(p => p[9])) || 1;
     rows = P.map((p, i) => {
       const r = [p[4], p[5], p[6], p[7]], rps = r.map(rp);
-      return { rank: i + 1, name: p[0], search: p[1], ally: p[2], r, rps, wb: p[8], fame: p[9], merits: p[10], tier: p[11], swap: p[12], score: rps.reduce((a, b) => a + b, 0) + p[8] };
+      return { rank: i + 1, name: p[0], search: p[1], ally: p[2], r, rps, wb: p[8], fame: p[9], merits: p[10], tier: p[11], swap: p[12], wblv: p[13], score: rps.reduce((a, b) => a + b, 0) + p[8] };
     });
   }
   const short = n => n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 1 : 2) + 'M' : n >= 1e4 ? Math.round(n / 1e3) + 'K' : fmt(n);
@@ -40,14 +40,14 @@
       const r = x.r[i], ev = i < 2 ? EV12 : EV34;
       if (!r) return `<div class="rc off"><div class="rh"><b>Round ${i + 1}</b><span class="pill">—</span></div><div class="miss">Not on the roster this round</div></div>`;
       const full = x.rps[i] === MAXR[i];
-      return `<div class="rc"><div class="rh"><b>Round ${i + 1}</b><span class="pill${full ? ' ok' : ''}">${x.rps[i]}/${MAXR[i]}</span></div><ul>` + ev.map((e, j) => {
+      return `<div class="rc"><div class="rh"><b>Round ${i + 1}</b><span class="pill${full ? ' ok' : ' bad'}">${x.rps[i]}/${MAXR[i]}</span></div><ul>` + ev.map((e, j) => {
         const v = r[j], ok = v > 0, val = ok && !GARRISON.has(e) ? `<em title="${fmt(v)} pts">${short(v)}</em>` : '';
         return `<li class="${ok ? 'y' : 'n'}"><i>${ok ? '✓' : '✕'}</i><span>${SHORT[e] ? `<b class="lf">${LABEL[e] || e}</b><b class="ls">${SHORT[e]}</b>` : LABEL[e] || e}</span>${val}</li>`;
       }).join('') + `</ul><div class="rf"><span>Fame</span><b>${fmt(r[r.length - 1])}</b></div></div>`;
     };
     const stat = (k, v) => `<div class="st"><span>${k}</span><b>${v}</b></div>`;
     return `<div class="detin"><div class="rg">${[0, 1, 2, 3].map(card).join('')}</div><div class="sum">` +
-      stat('Whitebeard', x.wb) + stat('Total fame', fmt(x.fame)) + stat('% of top', (x.fame / TOPFAME * 100).toFixed(1) + '%') +
+      stat('Whitebeard', `<span class="wblv${x.wblv >= 100 ? ' ok' : ' bad'}">${x.wblv == null ? 'Not in ranking' : 'Lv ' + x.wblv}</span>`) + stat('Total fame', fmt(x.fame)) + stat('% of top', (x.fame / TOPFAME * 100).toFixed(1) + '%') +
       stat('Merits', `<span title="${fmt(x.merits)}">${short(x.merits)}</span>`) + (x.tier ? stat('Reward', tierTag(x.tier)) : '') + `</div></div>`;
   }
   function draw() {
@@ -78,7 +78,7 @@
     loading = true;
     $('ptView').innerHTML = '<p class="rdim">Loading…</p>';
     const s = document.createElement('script');
-    s.src = 'points-data.js?v=1';
+    s.src = 'points-data.js?v=2';
     s.onload = () => { setup(window.PTS || []); draw(); };
     s.onerror = () => { loading = false; $('ptView').innerHTML = '<p class="rdim">Could not load the list. Try again.</p>'; };
     document.head.appendChild(s);
