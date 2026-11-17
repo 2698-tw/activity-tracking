@@ -32,7 +32,6 @@
       return { rank: i + 1, name: p[0], search: p[1], ally: p[2], r, rps, wb: p[8], fame: p[9], merits: p[10], tier: p[11], swap: p[12], wblv: p[13], score: rps.reduce((a, b) => a + b, 0) + p[8] };
     });
   }
-  const short = n => n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 1 : 2) + 'M' : n >= 1e4 ? Math.round(n / 1e3) + 'K' : fmt(n);
   const LABEL = { 'Mammoth Assault': 'Mammoth', 'Frost Crystal': 'Crystal' };
   const SHORT = { 'Neutral City': 'NC', 'Energy Tower': 'ET' };
   function detail(x) {
@@ -41,14 +40,14 @@
       if (!r) return `<div class="rc off"><div class="rh"><b>Round ${i + 1}</b><span class="pill">—</span></div><div class="miss">Not on the roster this round</div></div>`;
       const full = x.rps[i] === MAXR[i];
       return `<div class="rc"><div class="rh"><b>Round ${i + 1}</b><span class="pill${full ? ' ok' : ' bad'}">${x.rps[i]}/${MAXR[i]}</span></div><ul>` + ev.map((e, j) => {
-        const v = r[j], ok = v > 0, val = ok && !GARRISON.has(e) ? `<em title="${fmt(v)} pts">${short(v)}</em>` : '';
+        const v = r[j], ok = v > 0, val = ok && !GARRISON.has(e) ? `<em>${fmt(v)}</em>` : '';
         return `<li class="${ok ? 'y' : 'n'}"><i>${ok ? '✓' : '✕'}</i><span>${SHORT[e] ? `<b class="lf">${LABEL[e] || e}</b><b class="ls">${SHORT[e]}</b>` : LABEL[e] || e}</span>${val}</li>`;
       }).join('') + `</ul><div class="rf"><span>Fame</span><b>${fmt(r[r.length - 1])}</b></div></div>`;
     };
     const stat = (k, v) => `<div class="st"><span>${k}</span><b>${v}</b></div>`;
     return `<div class="detin"><div class="rg">${[0, 1, 2, 3].map(card).join('')}</div><div class="sum">` +
       stat('Whitebeard', `<span class="wblv${x.wblv >= 100 ? ' ok' : ' bad'}">${x.wblv == null ? 'Not in ranking' : 'Lv ' + x.wblv}</span>`) + stat('Total fame', fmt(x.fame)) + stat('% of top', (x.fame / TOPFAME * 100).toFixed(1) + '%') +
-      stat('Merits', `<span title="${fmt(x.merits)}">${short(x.merits)}</span>`) + (x.tier ? stat('Reward', tierTag(x.tier)) : '') + `</div></div>`;
+      stat('Merits', fmt(x.merits)) + (x.tier ? stat('Reward', tierTag(x.tier)) : '') + `</div></div>`;
   }
   function draw() {
     if (!rows) return;
@@ -65,9 +64,9 @@
       (list.map(x => {
         const open = S.open === x.rank;
         return `<tr class="pr${open ? ' open' : ''}" data-r="${x.rank}"><td class="rk">${x.rank}</td><td class="nm"><span class="nmv">${esc(x.name)}</span><br>${tag(x.ally)}${x.swap ? ` <span class="swap">${esc(x.swap)}</span>` : ''}</td><td class="ac">${tag(x.ally)}</td>` +
-          x.rps.map((v, i) => `<td class="rp hs ${!x.r[i] ? 'none' : v === MAXR[i] ? 'full' : ''}">${x.r[i] ? v : '—'}</td>`).join('') +
+          x.rps.map((v, i) => `<td class="rp hs ${!x.r[i] ? 'none' : v === MAXR[i] ? 'full' : 'part'}">${x.r[i] ? v : '—'}</td>`).join('') +
           `<td class="wbv hs ${x.wb ? '' : 'rdim'}">${x.wb}</td>` +
-          `<td class="sc"><span class="v">${x.score}</span><span class="of">/19</span><div class="bar"><i style="width:${x.score / 19 * 100}%"></i></div>${tierTag(x.tier)}</td>` +
+          `<td class="sc"><span class="v">${x.score}</span><span class="of">/19</span>${tierTag(x.tier)}</td>` +
           `<td class="fm wd">${fmt(x.fame)}</td><td class="pc wd">${(x.fame / TOPFAME * 100).toFixed(1)}%</td>` +
           `<td class="tc">${tierTag(x.tier)}</td></tr>` + (open ? `<tr class="det"><td colspan="${COLS.length}">${detail(x)}</td></tr>` : '');
       }).join('') || `<tr><td colspan="${COLS.length}" class="rdim">No players match.</td></tr>`) + `</tbody></table>`;
