@@ -32,18 +32,23 @@
       return { rank: i + 1, name: p[0], search: p[1], ally: p[2], r, rps, wb: p[8], fame: p[9], merits: p[10], tier: p[11], swap: p[12], score: rps.reduce((a, b) => a + b, 0) + p[8] };
     });
   }
+  const short = n => n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 1 : 2) + 'M' : n >= 1e4 ? Math.round(n / 1e3) + 'K' : fmt(n);
+  const LABEL = { 'Mammoth Assault': 'Mammoth', 'Frost Crystal': 'Crystal' };
+  const SHORT = { 'Neutral City': 'NC', 'Energy Tower': 'ET' };
   function detail(x) {
     const card = i => {
       const r = x.r[i], ev = i < 2 ? EV12 : EV34;
-      if (!r) return `<div class="rc off"><b>Round ${i + 1}<span>—</span></b><div class="ev n"><span class="k">–</span>Not on the roster this round</div></div>`;
-      return `<div class="rc"><b>Round ${i + 1}<span>${x.rps[i]} / ${MAXR[i]}</span></b>` + ev.map((e, j) => {
-        const v = r[j], ok = v > 0;
-        const extra = GARRISON.has(e) ? (ok ? 'garrisoned' : '') : (ok ? fmt(v) + ' pts' : '');
-        return `<div class="ev ${ok ? 'y' : 'n'}"><span class="k">${ok ? '✓' : '–'}</span>${e}<span class="x">${extra}</span></div>`;
-      }).join('') + `<div class="ev n" style="margin-top:2px"><span class="k"></span>Fame<span class="x">${fmt(r[r.length - 1])}</span></div></div>`;
+      if (!r) return `<div class="rc off"><div class="rh"><b>Round ${i + 1}</b><span class="pill">—</span></div><div class="miss">Not on the roster this round</div></div>`;
+      const full = x.rps[i] === MAXR[i];
+      return `<div class="rc"><div class="rh"><b>Round ${i + 1}</b><span class="pill${full ? ' ok' : ''}">${x.rps[i]}/${MAXR[i]}</span></div><ul>` + ev.map((e, j) => {
+        const v = r[j], ok = v > 0, val = ok && !GARRISON.has(e) ? `<em title="${fmt(v)} pts">${short(v)}</em>` : '';
+        return `<li class="${ok ? 'y' : 'n'}"><i>${ok ? '✓' : '✕'}</i><span>${SHORT[e] ? `<b class="lf">${LABEL[e] || e}</b><b class="ls">${SHORT[e]}</b>` : LABEL[e] || e}</span>${val}</li>`;
+      }).join('') + `</ul><div class="rf"><span>Fame</span><b>${fmt(r[r.length - 1])}</b></div></div>`;
     };
-    return `<div class="detin"><div class="rg">${[0, 1, 2, 3].map(card).join('')}</div>` +
-      `<div class="sum"><span>Whitebeard <b>${x.wb}</b></span><span>Total fame <b>${fmt(x.fame)}</b> (${(x.fame / TOPFAME * 100).toFixed(1)}% of top)</span><span>Merits <b>${fmt(x.merits)}</b></span>${x.tier ? `<span>Reward ${tierTag(x.tier)}</span>` : ''}</div></div>`;
+    const stat = (k, v) => `<div class="st"><span>${k}</span><b>${v}</b></div>`;
+    return `<div class="detin"><div class="rg">${[0, 1, 2, 3].map(card).join('')}</div><div class="sum">` +
+      stat('Whitebeard', x.wb) + stat('Total fame', fmt(x.fame)) + stat('% of top', (x.fame / TOPFAME * 100).toFixed(1) + '%') +
+      stat('Merits', `<span title="${fmt(x.merits)}">${short(x.merits)}</span>`) + (x.tier ? stat('Reward', tierTag(x.tier)) : '') + `</div></div>`;
   }
   function draw() {
     if (!rows) return;
