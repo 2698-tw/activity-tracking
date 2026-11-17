@@ -63,10 +63,10 @@
     $('ptView').innerHTML = `<table class="rtable wbtable pttable"><thead><tr>${COLS.map(k => `<th class="${k.cls} ${k.cls === 'hs' || k.cls === 'wd' || k.k === 'score' ? 'd' : ''}" data-k="${k.k}">${k.label}${arrow(k.k)}</th>`).join('')}</tr></thead><tbody>` +
       (list.map(x => {
         const open = S.open === x.rank;
-        return `<tr class="pr${open ? ' open' : ''}" data-r="${x.rank}"><td class="rk">${x.rank}</td><td class="nm"><span class="nmv">${esc(x.name)}</span><br>${tag(x.ally)}${x.swap ? ` <span class="swap">${esc(x.swap)}</span>` : ''}</td><td class="ac">${tag(x.ally)}</td>` +
+        return `<tr class="pr${open ? ' open' : ''}" data-r="${x.rank}"><td class="rk">${x.rank}</td><td class="nm"><span class="nmv">${esc(x.name)}</span>${x.swap ? `<br><span class="swap">${esc(x.swap)}</span>` : ''}</td><td class="ac">${tag(x.ally)}</td>` +
           x.rps.map((v, i) => `<td class="rp hs ${!x.r[i] ? 'none' : v === MAXR[i] ? 'full' : 'part'}">${x.r[i] ? v : '—'}</td>`).join('') +
           `<td class="wbv hs ${x.wb ? '' : 'rdim'}">${x.wb}</td>` +
-          `<td class="sc"><span class="v">${x.score}</span><span class="of">/19</span>${tierTag(x.tier)}</td>` +
+          `<td class="sc"><span class="v">${x.score}</span><span class="of">/19</span></td>` +
           `<td class="fm wd">${fmt(x.fame)}</td><td class="pc wd">${(x.fame / TOPFAME * 100).toFixed(1)}%</td>` +
           `<td class="tc">${tierTag(x.tier)}</td></tr>` + (open ? `<tr class="det"><td colspan="${COLS.length}">${detail(x)}</td></tr>` : '');
       }).join('') || `<tr><td colspan="${COLS.length}" class="rdim">No players match.</td></tr>`) + `</tbody></table>`;
