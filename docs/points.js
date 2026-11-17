@@ -94,6 +94,9 @@
     S.open = S.open === +tr.dataset.r ? null : +tr.dataset.r; draw();
   };
   $('ptQ').oninput = draw;
+  const how = $('ptHow');
+  try { if (localStorage.getItem('ptHow') === '0') how.open = false; } catch (e) {}
+  how.ontoggle = () => { try { localStorage.setItem('ptHow', how.open ? '1' : '0'); } catch (e) {} };
   addEventListener('viewchange', e => { if (e.detail === 'points') load(); });
   if (location.hash === '#points') load();
 })();
