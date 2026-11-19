@@ -47,7 +47,7 @@ window.Admin = (function () {
   };
   const RULE_OPS = { num: [['ge', 'at least'], ['le', 'at most'], ['eq', 'exactly'], ['bt', 'between']], opt: [['is', 'is'], ['not', 'is not']], text: [['has', 'contains'], ['is', 'is']] };
   const SHEET_NAMES = { fame: 'Fame (bookmark Send)', kartz: 'Kartz ranking (Send on the Kartz page)', cp: 'Base CP (Alliance Rosters, RawData-CP)', ranking: 'Whitebeard ranking (bookmark Send)', snowtrain: 'Snow Train (bookmark Send)', energytower: 'Energy Tower (bookmark Send)', mammoth: 'Mammoth Assault (bookmark Send)', neutral: 'Neutral City (bookmark Send)', steel: 'Steel Rush enemy marches (bookmark Read)' };
-  const HOME_NAMES = { kartz: 'Kartz ranking', cp: 'Alliance roster', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault', frost: 'Frost Crystal Contest', nc: 'Neutral City', player: 'Player Summary', sd: 'Storm Duel' };
+  const HOME_NAMES = { kartz: 'Kartz scores', cp: 'Alliance roster', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault', frost: 'Frost Crystal Contest', nc: 'Neutral City', player: 'Player Summary', sd: 'Storm Duel' };
   const BOOKMARK_NAMES = { members: 'Alliance members', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault', ev: 'Events (home page)', frost: 'Frost Crystal Contest', nc: 'Neutral City', sd: 'Storm Duel', steel: 'Steel Rush (enemy marches)' };
   const CARD_NAMES = { wb: 'Whitebeard', st: 'Snow Train', ro: 'Alliance roster', et: 'Energy Tower', ma: 'Mammoth Assault' };
 
@@ -631,7 +631,7 @@ window.Admin = (function () {
     };
   }
 
-  const VIEW_NAMES = { home: 'Home', practice: 'Practice Round menu', roster: 'Alliance roster', whitebeard: 'Whitebeard', snowtrain: 'Snow Train', energytower: 'Energy Tower', mammoth: 'Mammoth Assault', frost: 'Frost Crystal Contest', nc: 'Neutral City', player: 'Player Summary', stormduel: 'Storm Duel', points: 'Final Rewards', kartz: 'Kartz' };
+  const VIEW_NAMES = { home: 'Home', practice: 'Practice Round menu', roster: 'Alliance roster', whitebeard: 'Whitebeard', snowtrain: 'Snow Train', energytower: 'Energy Tower', mammoth: 'Mammoth Assault', frost: 'Frost Crystal Contest', nc: 'Neutral City', player: 'Player Summary', stormduel: 'Storm Duel', points: 'Final Rewards', kartz: 'Kartz', kartzscores: 'Kartz scores' };
   const RANGES = [['1', 'Today'], ['7', '7 days'], ['event', 'This event'], ['30', '30 days']];
   let vRange = '7', vData = null;
   const num = n => Number(n || 0).toLocaleString('en-US');

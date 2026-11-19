@@ -16,13 +16,14 @@ function showTab(name) {
   $('tab-sd').classList.toggle('hide', name !== 'stormduel');
   if (name === 'stormduel') frostFrame('sdFrame', 'sd.html');
   $('tab-pt').classList.toggle('hide', name !== 'points');
+  $('tab-kz').classList.toggle('hide', name !== 'kartzscores');
   $('tab-practice').classList.toggle('hide', name !== 'practice');
   if (name === 'practice') {
     warmPractice();
     const t = $('tab-practice'); t.classList.remove('cardsin'); void t.offsetWidth; t.classList.add('cardsin');
   }
   $('tab-admin').classList.toggle('hide', name !== 'admin');
-  const shown = { home: 'home', roster: 'tab-roster', whitebeard: 'tab-wb', snowtrain: 'tab-st', energytower: 'tab-et', mammoth: 'tab-ma', frost: 'tab-frost', nc: 'tab-nc', player: 'tab-player', stormduel: 'tab-sd', points: 'tab-pt', practice: 'tab-practice', admin: 'tab-admin' }[name];
+  const shown = { home: 'home', roster: 'tab-roster', whitebeard: 'tab-wb', snowtrain: 'tab-st', energytower: 'tab-et', mammoth: 'tab-ma', frost: 'tab-frost', nc: 'tab-nc', player: 'tab-player', stormduel: 'tab-sd', points: 'tab-pt', kartzscores: 'tab-kz', practice: 'tab-practice', admin: 'tab-admin' }[name];
   if (shownView && shownView !== name && $(shown)) { const v = $(shown); v.classList.remove('viewin'); void v.offsetWidth; v.classList.add('viewin'); }
   shownView = name;
   document.documentElement.classList.remove('athome');
@@ -32,7 +33,7 @@ function showTab(name) {
   hl.setAttribute('href', inPractice ? '#practice' : './');
   dispatchEvent(new CustomEvent('viewchange', { detail: name }));
 }
-const viewFromAddress = () => ({ '#roster': 'roster', '#whitebeard': 'whitebeard', '#snowtrain': 'snowtrain', '#energytower': 'energytower', '#mammoth': 'mammoth', '#frost': 'frost', '#nc': 'nc', '#player': 'player', '#stormduel': 'stormduel', '#points': 'points', '#practice': 'practice', '#admin': 'admin' })[location.hash] || 'home';
+const viewFromAddress = () => ({ '#roster': 'roster', '#whitebeard': 'whitebeard', '#snowtrain': 'snowtrain', '#energytower': 'energytower', '#mammoth': 'mammoth', '#frost': 'frost', '#nc': 'nc', '#player': 'player', '#stormduel': 'stormduel', '#points': 'points', '#kartzscores': 'kartzscores', '#practice': 'practice', '#admin': 'admin' })[location.hash] || 'home';
 function frostFrame(id = 'frostFrame', page = 'frost.html') {
   const f = $(id);
   if (f.src) return;
