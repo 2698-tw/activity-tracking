@@ -631,7 +631,7 @@ window.Admin = (function () {
     };
   }
 
-  const VIEW_NAMES = { home: 'Home', practice: 'Practice Round menu', roster: 'Alliance roster', whitebeard: 'Whitebeard', snowtrain: 'Snow Train', energytower: 'Energy Tower', mammoth: 'Mammoth Assault', frost: 'Frost Crystal Contest', nc: 'Neutral City', player: 'Player Summary', stormduel: 'Storm Duel', fame: 'Fame & Merits', points: 'Final Rewards', kartz: 'Kartz' };
+  const VIEW_NAMES = { home: 'Home', practice: 'Practice Round menu', roster: 'Alliance roster', whitebeard: 'Whitebeard', snowtrain: 'Snow Train', energytower: 'Energy Tower', mammoth: 'Mammoth Assault', frost: 'Frost Crystal Contest', nc: 'Neutral City', player: 'Player Summary', stormduel: 'Storm Duel', points: 'Final Rewards', kartz: 'Kartz' };
   const RANGES = [['1', 'Today'], ['7', '7 days'], ['event', 'This event'], ['30', '30 days']];
   let vRange = '7', vData = null;
   const num = n => Number(n || 0).toLocaleString('en-US');
