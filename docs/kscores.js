@@ -5,7 +5,7 @@
   const DAYS = ['Day 1', 'Day 4', 'Day 7'];
   const MON = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
   const S = { ally: '', sort: 'm0', asc: false, open: null };
-  let rows = null, months = [], loading = false;
+  let rows = null, months = [], loading = false, avail = 600;
   const fold = s => String(s || '').normalize('NFKC').toLowerCase();
   const tag = a => a ? `<span class="rtag t${esc(a)}">${esc(a)}</span>` : '<span class="rdim">—</span>';
   const monKey = m => { const x = /^([A-Z][a-z]{2})(\d\d)$/.exec(m); return x ? (2000 + +x[2]) * 12 + MON[x[1]] : 0; };
@@ -49,24 +49,48 @@
     const pill = $('kzUpd');
     if (latest) { const d = new Date(latest); pill.hidden = false; pill.innerHTML = `Updated <span>${d.getDate()} ${d.toLocaleString('en-GB', { month: 'short' })}</span>`; }
   }
-  const fin = m => m ? (m.s[2] ?? m.s[1] ?? m.s[0]) : null;
+  const fin = m => m ? m.s[2] : null;
   const val = (x, k) => k === 'name' ? x.name : k === 'ally' ? x.ally : fin(x.m[months[+k.slice(1)]]);
   function cell(m) {
     if (!m) return `<td class="ks hs0 none">—</td>`;
     const c = m.s[2];
     return `<td class="ks"><span class="kv${c == null ? ' nod7' : ''}">${c ?? '—'}</span></td>`;
   }
+  const short = m => { const x = /^([A-Z][a-z]{2})(\d\d)$/.exec(m); return x ? x[1] + ' ' + x[2] : m; };
+  let gid = 0;
+  function chart(x) {
+    const M = [...months].reverse(), me = M.map(mon => fin(x.m[mon]));
+    const narrow = innerWidth < 640, W = narrow ? Math.max(Math.min(avail - 24, 600), M.length * 46) : Math.max(300, M.length * 88), H = narrow ? 150 : 170, L = 14, R = 14, T = 24, B = 26;
+    const got = me.filter(v => v != null), hi = Math.max(0, ...got), lo = Math.min(hi, ...got), span = Math.max(hi - lo, hi * 0.15, 20);
+    const floor = Math.max(0, lo - span * 0.7), top = hi + span * 0.3, base = H - B;
+    const X = i => M.length === 1 ? W / 2 : L + 24 + i * (W - L - R - 48) / (M.length - 1), Y = v => T + (base - T) * (1 - (v - floor) / (top - floor || 1));
+    const gap = M.length > 1 ? (W - L - R - 48) / (M.length - 1) : W, room = gap >= 82;
+    const segs = []; let cur = [];
+    me.forEach((v, i) => { if (v == null) { if (cur.length) segs.push(cur); cur = []; } else cur.push([X(i), Y(v)]); });
+    if (cur.length) segs.push(cur);
+    const curve = sg => sg.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join('');
+    const id = 'kzg' + (++gid);
+    let prev = null;
+    const labels = me.map((v, i) => {
+      if (v == null) return `<text x="${X(i)}" y="${base - 6}" class="m">—</text>`;
+      const ch = prev == null ? null : v - prev; prev = v;
+      const tag = room && ch ? `<tspan class="${ch > 0 ? 'up' : 'down'}" dx="4">(${ch > 0 ? '▲ ' + ch : '▼ ' + -ch})</tspan>` : '';
+      return `<circle cx="${X(i)}" cy="${Y(v)}" r="${i === me.length - 1 ? 5 : 3.5}" class="me"/><text x="${X(i)}" y="${Y(v) - 10}" class="v">${v}${tag}</text>`;
+    }).join('');
+    return `<div class="kchart"><svg viewBox="0 0 ${W} ${H}" style="min-width:${narrow ? W : Math.min(W, 520)}px">` +
+      `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2fb59a" stop-opacity=".35"/><stop offset="1" stop-color="#2fb59a" stop-opacity="0"/></linearGradient></defs>` +
+      segs.map(sg => `<path d="${curve(sg)}L${sg[sg.length - 1][0].toFixed(1)} ${base}L${sg[0][0].toFixed(1)} ${base}Z" fill="url(#${id})" class="fill"/><path d="${curve(sg)}" class="me"/>`).join('') +
+      labels + M.map((mon, i) => `<text x="${X(i)}" y="${H - 7}" class="m">${short(mon)}</text>`).join('') + `</svg></div>`;
+  }
   function detail(x) {
-    const played = months.filter(mon => x.m[mon]);
+    const scored = months.filter(mon => fin(x.m[mon]) != null);
     let best = null;
-    for (const mon of played) { const v = fin(x.m[mon]); if (v != null && (!best || v > best[0])) best = [v, mon]; }
-    const stat = (k, v) => `<div class="st"><span>${k}</span><b>${v}</b></div>`;
-    const td = (v, i) => `<span${i === 2 ? ' class="f"' : ''}>${v ?? '<i>–</i>'}</span>`;
-    const tab = `<div class="kmon"><b>Month</b>${DAYS.map(d => `<b>${d}</b>`).join('')}` +
-      [...months].reverse().map(mon => { const m = x.m[mon]; return `<span class="mo${m ? '' : ' off'}">${monName(mon)}</span>${m ? m.s.map(td).join('') : '<span class="none">No scores</span>'}`; }).join('') + `</div>`;
-    return `<div class="detin">${tab}<div class="sum">` +
-      stat('Best', best ? `${best[0]} <span class="rdim">${monName(best[1])}</span>` : '—') + stat('Months played', `${played.length} of ${months.length}`) +
-      `</div></div>`;
+    for (const mon of scored) { const v = fin(x.m[mon]); if (!best || v > best[0]) best = [v, mon]; }
+    const last = scored[0], prev = scored[1], lv = last ? fin(x.m[last]) : null, ch = prev ? lv - fin(x.m[prev]) : null;
+    const badge = !ch ? '' : `<span class="kch ${ch > 0 ? 'up' : 'down'}">${ch > 0 ? '▲ ' + ch : '▼ ' + -ch}</span>`;
+    const head = `<div class="khead"><div class="kbig"><b>${lv ?? '—'}</b>${badge}<small>${last ? monName(last) : 'No Day 7 score yet'}</small></div>` +
+      (best ? `<div class="kbest"><b>${best[0]}</b><span>Best score · ${monName(best[1])}</span></div>` : '') + `</div>`;
+    return `<div class="detin" style="width:${avail}px">${head}${chart(x)}</div>`;
   }
   function draw() {
     if (!rows) return;
@@ -79,7 +103,9 @@
     list.sort((a, b) => cmp(a, b) || months.reduce((s, _, i) => s || (val(b, 'm' + i) ?? -1) - (val(a, 'm' + i) ?? -1), 0) || a.name.localeCompare(b.name));
     const arrow = k => S.sort === k ? (S.asc ? ' ▲' : ' ▼') : '';
     const cols = 3 + months.length;
-    const view = $('kzView'), keep = view.scrollLeft, order = months.map((mon, i) => [mon, i]).reverse();
+    const view = $('kzView'), keep = view.scrollLeft;
+    avail = Math.max(260, view.clientWidth - 28);
+    const order = months.map((mon, i) => [mon, i]).reverse();
     view.innerHTML = `<table class="rtable wbtable pttable kztable"><thead><tr><th class="rk">#</th><th class="nm" data-k="name">Player${arrow('name')}</th><th class="ac" data-k="ally">Alliance${arrow('ally')}</th>` +
       order.map(([mon, i]) => `<th class="d" data-k="m${i}">${monName(mon)}${arrow('m' + i)}</th>`).join('') + `</tr></thead><tbody>` +
       (list.map((x, i) => {
