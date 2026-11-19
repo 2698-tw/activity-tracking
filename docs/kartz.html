@@ -712,7 +712,10 @@ async function pullRoster(link) {
   if (/^\s*<(!doctype|html)/i.test(text)) throw new Error('Google returned a sign-in page — the sheet is not link-readable.');
   const rows = parseCsv(text);
   const all = rows.map(c => ({ search: (c[0]||'').trim(), ingame: (c[1]||c[0]||'').trim(),
-                               alliance: (c[2]||'').trim() }))
+                               alliance: (c[2]||'').trim(),
+                               base: Number(String(c[3]||'').replace(/[^\d.]/g, '')) || 0,
+                               cp: Number(String(c[6]||'').replace(/[^\d.]/g, '')) || 0,
+                               pid: /^[0-9a-f]{16}$/.test((c[9]||'').trim()) ? c[9].trim() : '' }))
                   .filter(r => r.search && !/^search\s*name/i.test(r.search));
   if (!all.length) throw new Error('No roster rows found in that tab.');
   return { all };
@@ -1166,9 +1169,43 @@ let rows = [], index = [], skipIndex = [], aliases = {};
 
 let lastRoster = [];
 let allianceAll = '';
+function rankPlayers(list) {
+  const a = $('alliance').value;
+  return list.slice().sort((x, y) => ((y.alliance === a) - (x.alliance === a)) || (y.base || 0) - (x.base || 0) || (y.cp || 0) - (x.cp || 0));
+}
+const choosePlayer = list => rankPlayers(list)[0] || null;
+function sameName(entry) {
+  const keys = new Set([fold(entry.search), fold(entry.ingame)].filter(Boolean));
+  return fullRoster().filter(x => keys.has(fold(x.search)) || keys.has(fold(x.ingame)));
+}
+function sameNameOfRow(r) {
+  if (r.match) return sameName(r.match);
+  const keys = new Set([fold(r.plain), fold(r.name)].filter(Boolean));
+  return fullRoster().filter(x => keys.has(fold(x.search)) || keys.has(fold(x.ingame)));
+}
+function assignSameNames() {
+  const groups = new Map();
+  for (const r of rows) {
+    if (r.dropped || r.skipped || r.editing || (r.confirmed && !r.match)) continue;
+    const list = sameNameOfRow(r);
+    if (list.length < 2) continue;
+    const k = list.map(x => x.search + '\n' + x.alliance).sort().join('\t');
+    if (!groups.has(k)) groups.set(k, { list, rows: [] });
+    groups.get(k).rows.push(r);
+  }
+  for (const { list, rows: rs } of groups.values()) {
+    const players = rankPlayers(list);
+    rs.sort((x, y) => (y.points || 0) - (x.points || 0)).forEach((r, i) => {
+      const p = players[i];
+      if (p) { r.match = p; r.pick = p.ingame || p.search; r.score = 1; }
+      else { r.match = null; r.pick = ''; }
+    });
+  }
+}
 function render(roster) {
   lastRoster = roster;
   allianceAll = $('alliance').value;
+  assignSameNames();
   for (const r of rows) {
     if (allianceAll) r.alliancePick = allianceAll;
     else delete r.alliancePick;
@@ -1380,23 +1417,23 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt
 function outPlayer(r) {
   if (r.match) {
     const ingame = r.match.ingame || r.match.search;
-    return { search: r.match.search || ingame, ingame };
+    return { search: r.match.search || ingame, ingame, pid: r.match.pid || '' };
   }
   if (r.pick) {
     const all = fullRoster();
-    const hit = all.find(x => (x.ingame || x.search) === r.pick)
-             || all.find(x => x.search === r.pick)
-             || all.find(x => fold(x.search) === fold(r.pick) && fold(r.pick));
-    if (hit) return { search: hit.search || hit.ingame, ingame: hit.ingame || hit.search };
-    return { search: r.pick, ingame: r.pick };
+    const hit = choosePlayer(all.filter(x => (x.ingame || x.search) === r.pick))
+             || choosePlayer(all.filter(x => x.search === r.pick))
+             || choosePlayer(all.filter(x => fold(x.search) === fold(r.pick) && fold(r.pick)));
+    if (hit) return { search: hit.search || hit.ingame, ingame: hit.ingame || hit.search, pid: hit.pid || '' };
+    return { search: r.pick, ingame: r.pick, pid: '' };
   }
   const n = r.name || r.plain;
-  return { search: n, ingame: n };
+  return { search: n, ingame: n, pid: '' };
 }
 const outName = r => outPlayer(r).ingame;
 
 const OUT_HEADERS = ['kartz_load_date', 'kartz_submitter', 'kartz_search_name', 'kartz_ign_name',
-  'kartz_alliance', 'kartz_month', 'kartz_day', 'kartz_rank', 'kartz_score'];
+  'kartz_alliance', 'kartz_month', 'kartz_day', 'kartz_rank', 'kartz_score', 'kartz_player_id'];
 function loadStamp(at = new Date()) {
   const p = n => String(n).padStart(2, '0');
   return `${at.getMonth() + 1}/${at.getDate()}/${at.getFullYear()} `
@@ -1412,7 +1449,7 @@ function outRows() {
   return rows.filter(r => !r.dropped && !r.skipped).map(r => {
     const p = outPlayer(r);
     return [stamp, $('submitter').value.trim(), p.search, p.ingame, $('alliance').value,
-            month, $('kday').value, r.rank, r.points];
+            month, $('kday').value, r.rank, r.points, p.pid];
   });
 }
 
@@ -1552,7 +1589,7 @@ $('send').onclick = async () => {
   let sentOk = false;
   try {
     const body = JSON.stringify({ target: 'kartz',
-                                  values: values.map(r => r.map((v, i) => i === 5 ? "'" + v : v)) });
+                                  values: values.map(r => r.map((v, i) => (i === 5 || (i === 9 && v)) ? "'" + v : v)) });
     const r = await fetch(API_BASE + '/append', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body,
       keepalive: body.length < 60000 });
@@ -1633,7 +1670,7 @@ $('toBottom').onclick = () => scrollTo({ top: document.documentElement.scrollHei
 loadSetup();
 </script>
 <script src="decode.js?v=4"></script>
-<script src="kartz.js?v=6"></script>
+<script src="kartz.js?v=7"></script>
 <script src="hit.js?v=1" data-page="kartz"></script>
 </body>
 </html>

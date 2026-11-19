@@ -143,7 +143,7 @@ $('go').onclick = async () => {
     (clean.notes || []).forEach(log);
     const fill = await kzFill(sightings, images.map(p => p.t), frames.duration, videoFile, usage);
     sightings = sightings.concat(fill.rows);
-    const matched = await kzPost('/kartz-match', { sightings, images: images.length, roster, skipped: skippedRoster(), aliases: learned });
+    const matched = await kzPost('/kartz-match', { sightings, images: images.length, roster, skipped: skippedRoster(), aliases: learned, alliance: $('alliance').value });
     rows = matched.rows;
     (matched.notes || []).forEach(log);
     render(roster);
