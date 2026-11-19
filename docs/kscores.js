@@ -60,7 +60,7 @@
   let gid = 0;
   function chart(x) {
     const M = [...months].reverse(), me = M.map(mon => fin(x.m[mon]));
-    const narrow = innerWidth < 640, W = narrow ? Math.max(Math.min(avail - 24, 600), M.length * 46) : Math.max(300, M.length * 88), H = narrow ? 150 : 170, L = 14, R = 14, T = 24, B = 26;
+    const narrow = innerWidth < 640, fit = narrow ? Math.min(avail - 8, 640) - 12 : Math.min(avail - 28, 640) - 24, W = Math.floor(Math.max(fit, M.length * (narrow ? 46 : 72))), H = narrow ? 150 : 165, L = 14, R = 14, T = 24, B = 26;
     const got = me.filter(v => v != null), hi = Math.max(0, ...got), lo = Math.min(hi, ...got), span = Math.max(hi - lo, hi * 0.15, 20);
     const floor = Math.max(0, lo - span * 0.7), top = hi + span * 0.3, base = H - B;
     const X = i => M.length === 1 ? W / 2 : L + 24 + i * (W - L - R - 48) / (M.length - 1), Y = v => T + (base - T) * (1 - (v - floor) / (top - floor || 1));
@@ -77,7 +77,7 @@
       const tag = room && ch ? `<tspan class="${ch > 0 ? 'up' : 'down'}" dx="4">(${ch > 0 ? '▲ ' + ch : '▼ ' + -ch})</tspan>` : '';
       return `<circle cx="${X(i)}" cy="${Y(v)}" r="${i === me.length - 1 ? 5 : 3.5}" class="me"/><text x="${X(i)}" y="${Y(v) - 10}" class="v">${v}${tag}</text>`;
     }).join('');
-    return `<div class="kchart"><svg viewBox="0 0 ${W} ${H}" style="min-width:${narrow ? W : Math.min(W, 520)}px">` +
+    return `<div class="kchart"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">` +
       `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2fb59a" stop-opacity=".35"/><stop offset="1" stop-color="#2fb59a" stop-opacity="0"/></linearGradient></defs>` +
       segs.map(sg => `<path d="${curve(sg)}L${sg[sg.length - 1][0].toFixed(1)} ${base}L${sg[0][0].toFixed(1)} ${base}Z" fill="url(#${id})" class="fill"/><path d="${curve(sg)}" class="me"/>`).join('') +
       labels + M.map((mon, i) => `<text x="${X(i)}" y="${H - 7}" class="m">${short(mon)}</text>`).join('') + `</svg></div>`;

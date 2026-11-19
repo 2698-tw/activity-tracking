@@ -684,7 +684,7 @@ window.Admin = (function () {
       </div>
       <div class="avbox" style="margin-top:12px"><h3>By page</h3>
         ${d.pages.length ? `<div class="agridw"><table class="avtab"><thead><tr><th>Page</th><th class="n">Unique visitors</th><th class="n">Page views</th><th class="avsh">Share of visitors</th></tr></thead><tbody>
-        ${d.pages.map(x => { const pc = u ? Math.round(x.u / u * 100) : 0; return `<tr><td>${esc(VIEW_NAMES[x.page] || x.page)}</td><td class="n">${num(x.u)}</td><td class="n">${num(x.v)}</td><td class="avsh"><div class="avshare"><i style="width:${pc}%"></i><span>${pc}%</span></div></td></tr>`; }).join('')}
+        ${d.pages.filter(x => x.page !== 'fame').map(x => { const pc = u ? Math.round(x.u / u * 100) : 0; return `<tr><td>${esc(VIEW_NAMES[x.page] || x.page)}</td><td class="n">${num(x.u)}</td><td class="n">${num(x.v)}</td><td class="avsh"><div class="avshare"><i style="width:${pc}%"></i><span>${pc}%</span></div></td></tr>`; }).join('')}
         </tbody></table></div>` : '<p class="ahint" style="margin:0">No visits yet.</p>'}</div>
       <p class="ahint" style="margin:12px 0 0">One visitor = one phone or computer, counted once per page per day. No names, game IDs, IPs or cookies are stored. Someone on two devices counts twice, and ad blockers can hide a few visits.</p></div>`;
     bindRange();
