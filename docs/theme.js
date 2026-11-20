@@ -80,7 +80,7 @@
     + 'html:root[data-theme="sunset"]{--bg:#3a0a52;--panel:rgba(22,6,34,.62);--ink:#f4ecf8;--muted:#cdb6d6;--line:rgba(255,255,255,.13);--accent:#d9a3ff;--ok:#7ee2a8;--warn:#ffc078;--bad:#ff8a8a;--okbg:rgba(60,140,90,.25);--warnbg:rgba(160,100,20,.25);--badbg:rgba(160,40,60,.25);'
     + '--card:rgba(22,6,34,.62);--dim:#cdb6d6;--head:rgba(30,8,44,.7);--acc:#d9a3ff;color-scheme:dark;'
     + '--tbg:rgba(22,6,34,.6);--thead:#2a0c3a;--tcell:#1e0a2b;--tink:#f4ecf8;--tdim:240 228 248;--tchipon:rgba(217,163,255,.22);--tchipink:#f4ecf8}'
-    + 'html:root[data-theme="sunset"]:not([data-framed]) body{background:url(art/palms-right.png) right bottom/auto 70vh no-repeat fixed,url(art/palms-left.png) left bottom/auto 47.5vh no-repeat fixed,linear-gradient(to bottom right,#2b0a55 0%,#440556 30%,#531a42 55%,#5b2a26 78%,#5a3806 100%) fixed;min-height:100vh}'
+    + 'html:root[data-theme="sunset"]:not([data-framed]) body{background:url(art/palms-right.png) right bottom/auto 70vh no-repeat fixed,url(art/palms-left.png) left bottom/auto 70vh no-repeat fixed,linear-gradient(to bottom right,#2b0a55 0%,#440556 30%,#531a42 55%,#5b2a26 78%,#5a3806 100%) fixed;min-height:100vh}'
     + 'html:root[data-theme="sunset"][data-framed] body{background:transparent}'
     + 'html:root[data-theme="sunset"] :is(.rapp,.events,.card,.hcard,.frostframe){backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}'
     + 'html:root[data-theme="sunset"] .thmenu{background:#2a0c3c}';
