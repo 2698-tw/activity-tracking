@@ -1,5 +1,5 @@
 (function () {
-  const LIST = [['light', 'Light', '#f4f5f8'], ['dark', 'Dark', '#12141a'], ['banana', 'Banana yellow', '#fff1a8'], ['ash', 'Ash', '#323339'], ['sunset', 'Sunset', 'linear-gradient(135deg,#440556,#5a3806)']];
+  const LIST = [['light', 'Light', '#f4f5f8'], ['dark', 'Dark', '#12141a'], ['banana', 'Banana yellow', '#fff1a8'], ['ash', 'Ash', '#323339'], ['lilac', 'Lilac', '#c9b3ec'], ['sunset', 'Sunset', 'linear-gradient(135deg,#440556,#5a3806)']];
   const KEY = 'kartz.theme', root = document.documentElement;
   const valid = t => LIST.some(x => x[0] === t) ? t : 'dark';
   const read = () => { try { return valid(JSON.parse(localStorage.getItem(KEY))); } catch { return 'dark'; } };
@@ -68,9 +68,15 @@
     + ':root[data-theme="banana"]{--tbg:#fffbe3;--thead:#fff3c2;--tcell:#fffbe3;--tink:#2b2510;--tstrong:#2b2510;--tfg:70 55 0;--tdim:43 37 16;--tscheme:light;'
     + '--tgreen:#2b7a36;--tblue:#2a55b0;--tamber:#8f5200;--tpurple:#7a3fb8;--tmag:#8c2fa3;--tce:#bf4d12;--tred:#b8261f;--tpinktext:#a01045;'
     + '--tnB:#e1e8fb;--tsB:#f5e0f2;--twB:#dcefd2;--tcB:#fbe2b8;--tagB:#f6ecc0;--tagF:#5a4f2a;--tleft:#8a7d48;--tleftline:#e0cf85;--tchipon:rgba(208,51,106,.13);--tchipink:#9c1038}'
-    + ':root:is([data-theme="light"],[data-theme="banana"]) .rapp{box-shadow:0 12px 40px rgba(60,40,0,.1),inset 0 0 0 2px rgba(208,51,106,.45)}'
-    + ':root:is([data-theme="light"],[data-theme="banana"]) .hlc{color:color-mix(in srgb,var(--hl) 50%,#000)!important}'
+    + ':root:is([data-theme="light"],[data-theme="banana"],[data-theme="lilac"]) .rapp{box-shadow:0 12px 40px rgba(60,40,0,.1),inset 0 0 0 2px rgba(208,51,106,.45)}'
+    + ':root:is([data-theme="light"],[data-theme="banana"],[data-theme="lilac"]) .hlc{color:color-mix(in srgb,var(--hl) 50%,#000)!important}'
     + '.rgo.pink,.rgo.danger{color:#fff}'
+    + 'html:root[data-theme="lilac"]{--bg:#ece3f8;--panel:#fbf8fe;--ink:#271c38;--muted:#6c5d85;--line:#ddd0ef;--accent:#7046c2;--ok:#2b8a3e;--warn:#a65c00;--bad:#b8261f;--okbg:#e6f4ea;--warnbg:#fbeedc;--badbg:#fbe3e6;'
+    + '--card:#fbf8fe;--dim:#6c5d85;--head:#f3ecfb;--acc:#7046c2;color-scheme:light;'
+    + '--tbg:#fbf8fe;--thead:#f1e9fb;--tcell:#fbf8fe;--tink:#271c38;--tstrong:#271c38;--tfg:50 30 80;--tdim:39 28 56;--tscheme:light;'
+    + '--tgreen:#1d7a45;--tblue:#2a62c9;--tamber:#a86200;--tpurple:#6a3ab8;--tmag:#8c2fa3;--tce:#c9531a;--tred:#c0392b;--tpinktext:#a8124f;'
+    + '--tnB:#e2e6ff;--tsB:#f3e0f7;--twB:#def0e6;--tcB:#f8e8d4;--tagB:#ece4f6;--tagF:#4d4166;--tleft:#7d6f95;--tleftline:#d6c8ea;--tchipon:rgba(112,70,194,.13);--tchipink:#5a2fa8}'
+    + 'html:root[data-theme="lilac"]:not([data-framed]) body{background:linear-gradient(160deg,#f1e9fc 0%,#e6d9f7 55%,#dccbf3 100%) fixed;min-height:100vh}'
     + 'html:root[data-theme="sunset"]{--bg:#3a0a52;--panel:rgba(22,6,34,.62);--ink:#f4ecf8;--muted:#cdb6d6;--line:rgba(255,255,255,.13);--accent:#d9a3ff;--ok:#7ee2a8;--warn:#ffc078;--bad:#ff8a8a;--okbg:rgba(60,140,90,.25);--warnbg:rgba(160,100,20,.25);--badbg:rgba(160,40,60,.25);'
     + '--card:rgba(22,6,34,.62);--dim:#cdb6d6;--head:rgba(30,8,44,.7);--acc:#d9a3ff;color-scheme:dark;'
     + '--tbg:rgba(22,6,34,.6);--thead:#2a0c3a;--tcell:#1e0a2b;--tink:#f4ecf8;--tdim:240 228 248;--tchipon:rgba(217,163,255,.22);--tchipink:#f4ecf8}'
