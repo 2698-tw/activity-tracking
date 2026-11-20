@@ -8,7 +8,7 @@
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="preload" href="fonts/satisfy.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="fonts.css?v=1">
-<script src="theme.js?v=3"></script>
+<script src="theme.js?v=4"></script>
 <style>
 @font-face{font-family:Satisfy;font-style:normal;font-weight:400;font-display:swap;src:url(fonts/satisfy.woff2) format('woff2')}
 @font-face{font-family:Orbitron;font-style:normal;font-weight:600;font-display:swap;src:url(fonts/orbitron-600.woff2) format('woff2')}
@@ -34,7 +34,7 @@ else document.documentElement.dataset.view = location.hash.slice(1);
   --okbg:#17301e; --warnbg:#33270f; --badbg:#361a1a;
   color-scheme:dark;
 }}
-:root:is([data-theme="dark"],[data-theme="ash"]){
+:root:is([data-theme="dark"],[data-theme="ash"],[data-theme="sunset"]){
   --bg:#12141a; --panel:#1a1d25; --ink:#e8eaef; --muted:#98a0b0; --line:#2b303c;
   --accent:#748ffc; --ok:#69db7c; --warn:#ffc078; --bad:#ff8787;
   --okbg:#17301e; --warnbg:#33270f; --badbg:#361a1a;
@@ -455,7 +455,7 @@ html:not(.isadmin) .rsheet{display:none!important}
 .ani{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;color:var(--ink);font:inherit;font-size:14px;font-weight:400;text-align:left;padding:7px 8px;border-radius:9px;cursor:pointer}
 .ani:hover{background:var(--bg)}
 .ani.on{background:rgba(195,20,65,.12);color:#c31441;font-weight:600}
-:root:is([data-theme="dark"],[data-theme="ash"]) .ani.on{color:#ff8fb0}
+:root:is([data-theme="dark"],[data-theme="ash"],[data-theme="sunset"]) .ani.on{color:#ff8fb0}
 @media (prefers-color-scheme:dark){:root:not([data-theme]) .ani.on{color:#ff8fb0}}
 .ani .ct{margin-left:auto;font-size:11.5px;color:var(--muted);font-weight:400}
 .ani.pg{color:var(--muted)}
@@ -498,7 +498,7 @@ html:not(.isadmin) .rsheet{display:none!important}
 @media (max-width:760px){.adm{grid-template-columns:minmax(0,1fr);gap:0}.anav{display:none}.anavsel{display:block}}
 :root{--avsoft:rgba(59,91,219,.16)}
 @media (prefers-color-scheme:dark){:root:not([data-theme]){--avsoft:rgba(116,143,252,.2)}}
-:root:is([data-theme="dark"],[data-theme="ash"]){--avsoft:rgba(116,143,252,.2)}
+:root:is([data-theme="dark"],[data-theme="ash"],[data-theme="sunset"]){--avsoft:rgba(116,143,252,.2)}
 .aseg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
 .aseg button{width:auto;border:0;border-radius:0;background:none;color:var(--ink);padding:6px 11px;font:inherit;font-size:13px;font-weight:400}
 .aseg button.on{background:var(--accent);color:#fff;font-weight:600}
@@ -888,7 +888,7 @@ tr.det td{padding:0!important;background:var(--tcell)!important;position:static!
     <button type="button" class="rgo" id="kzReload">Reload</button>
     <a class="rsheet" data-sheet="kartz" href="https://docs.google.com/spreadsheets/d/1aXTc9v4jHtB5Ma598R3Qfij-vsMlDhXho9bP_m2M5kE/edit#gid=1243524383" target="_blank" rel="noopener" title="Open in Google Sheets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 9v12"/></svg>Sheet <span aria-hidden="true">↗</span></a>
   </div>
-  <p class="ptnote"><b>Tap a name to see performance over time!</b></p>
+  <p class="ptnote"><b>Tap a name to see their score trend!</b></p>
   <div class="rbar" id="kzChips"></div>
   <div class="rbody" id="kzView"></div>
 </div>

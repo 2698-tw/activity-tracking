@@ -6,12 +6,12 @@
 <title>Frost Crystal Contest</title>
 <link rel="icon" href="icon.png">
 <link rel="stylesheet" href="fonts.css?v=1">
-<script src="theme.js?v=3"></script>
+<script src="theme.js?v=4"></script>
 <style>
 :root{--bg:#eef4f9;--card:#fff;--ink:#14212e;--dim:#62748a;--line:#dbe5ee;--head:#f4f8fb;--acc:#1789a8;--us:#e8f6ea;--usink:#1f7a3a;--bad:#b42318;
   --band1:#0b3b57;--band2:#1789a8;--band3:#8fd6e6}
 @media (prefers-color-scheme: dark){:root:not([data-theme]){--bg:#0d151d;--card:#15212c;--ink:#e6eef5;--dim:#8ea2b5;--line:#243444;--head:#1a2835;--acc:#5cc6d6;--us:#173322;--usink:#7fd99a;--bad:#ff8a80}}
-:root:is([data-theme="dark"],[data-theme="ash"]){--bg:#0d151d;--card:#15212c;--ink:#e6eef5;--dim:#8ea2b5;--line:#243444;--head:#1a2835;--acc:#5cc6d6;--us:#173322;--usink:#7fd99a;--bad:#ff8a80}
+:root:is([data-theme="dark"],[data-theme="ash"],[data-theme="sunset"]){--bg:#0d151d;--card:#15212c;--ink:#e6eef5;--dim:#8ea2b5;--line:#243444;--head:#1a2835;--acc:#5cc6d6;--us:#173322;--usink:#7fd99a;--bad:#ff8a80}
 :root[data-theme="banana"]{--bg:#fff1a8;--card:#fffbe3;--ink:#2b2510;--dim:#75682f;--line:#eedd88;--head:#fff6c8;color-scheme:light}
 :root[data-theme="ash"]{--bg:#323339;--card:#3a3b41;--ink:#eceef1;--dim:#a0a5ad;--line:#46474e;--head:#36373d;color-scheme:dark}
 *{box-sizing:border-box}
@@ -35,7 +35,7 @@ button:disabled{opacity:.55;cursor:default}
 .status.bad{color:var(--bad)}
 :root{--b1:#dbe6fb;--b1l:#b9cdf3;--b2:#e6def2;--b2l:#cdbfe3;--b3:#dfecd9;--b3l:#bfd8b4}
 @media (prefers-color-scheme: dark){:root:not([data-theme]){--b1:#1b2840;--b1l:#2c4166;--b2:#2a2238;--b2l:#44385c;--b3:#1f2e22;--b3l:#34503a}}
-:root:is([data-theme="dark"],[data-theme="ash"]){--b1:#1b2840;--b1l:#2c4166;--b2:#2a2238;--b2l:#44385c;--b3:#1f2e22;--b3l:#34503a}
+:root:is([data-theme="dark"],[data-theme="ash"],[data-theme="sunset"]){--b1:#1b2840;--b1l:#2c4166;--b2:#2a2238;--b2l:#44385c;--b3:#1f2e22;--b3l:#34503a}
 .map{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 16px}
 .bf{grid-column:2 / span 2;background:var(--bg1);border:1px solid var(--bl);border-radius:10px;overflow:hidden;--bg1:var(--b1);--bl:var(--b1l)}
 .bf.l{grid-column:1 / span 2;--bg1:var(--b2);--bl:var(--b2l)}
@@ -53,7 +53,7 @@ button:disabled{opacity:.55;cursor:default}
 .days[hidden]{display:none}
 :root{--won:#1f9d55;--wonbg:#e3f5ea;--lose:#d64545;--losebg:#fbe7e7;--oth:#6b7f94;--othbg:#eef2f6}
 @media (prefers-color-scheme: dark){:root:not([data-theme]){--won:#5fd38d;--wonbg:#16301f;--lose:#ff7a7a;--losebg:#3a1d22;--oth:#9fb1c4;--othbg:#1d2a37}}
-:root:is([data-theme="dark"],[data-theme="ash"]){--won:#5fd38d;--wonbg:#16301f;--lose:#ff7a7a;--losebg:#3a1d22;--oth:#9fb1c4;--othbg:#1d2a37}
+:root:is([data-theme="dark"],[data-theme="ash"],[data-theme="sunset"]){--won:#5fd38d;--wonbg:#16301f;--lose:#ff7a7a;--losebg:#3a1d22;--oth:#9fb1c4;--othbg:#1d2a37}
 h2.sec{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);margin:18px 2px 8px}
 h2.sec:first-child{margin-top:0}
 .tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}

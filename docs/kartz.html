@@ -7,7 +7,7 @@
 <link rel="icon" type="image/png" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="stylesheet" href="fonts.css?v=1">
-<script src="theme.js?v=3"></script>
+<script src="theme.js?v=4"></script>
 <script>try { history.replaceState(null, '', './#kartz'); } catch (e) {}</script>
 <style>
 @font-face{font-family:Satisfy;font-style:normal;font-weight:400;font-display:swap;src:url(fonts/satisfy.woff2) format('woff2')}
@@ -28,7 +28,7 @@
   --okbg:#17301e; --warnbg:#33270f; --badbg:#361a1a;
   color-scheme:dark;
 }}
-:root:is([data-theme="dark"],[data-theme="ash"]){
+:root:is([data-theme="dark"],[data-theme="ash"],[data-theme="sunset"]){
   --bg:#12141a; --panel:#1a1d25; --ink:#e8eaef; --muted:#98a0b0; --line:#2b303c;
   --accent:#748ffc; --ok:#69db7c; --warn:#ffc078; --bad:#ff8787;
   --okbg:#17301e; --warnbg:#33270f; --badbg:#361a1a;
@@ -449,7 +449,7 @@ html:not(.isadmin) .rsheet{display:none!important}
 .ani{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;color:var(--ink);font:inherit;font-size:14px;font-weight:400;text-align:left;padding:7px 8px;border-radius:9px;cursor:pointer}
 .ani:hover{background:var(--bg)}
 .ani.on{background:rgba(195,20,65,.12);color:#c31441;font-weight:600}
-:root:is([data-theme="dark"],[data-theme="ash"]) .ani.on{color:#ff8fb0}
+:root:is([data-theme="dark"],[data-theme="ash"],[data-theme="sunset"]) .ani.on{color:#ff8fb0}
 @media (prefers-color-scheme:dark){:root:not([data-theme]) .ani.on{color:#ff8fb0}}
 .ani .ct{margin-left:auto;font-size:11.5px;color:var(--muted);font-weight:400}
 .ani.pg{color:var(--muted)}

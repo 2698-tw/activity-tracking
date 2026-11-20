@@ -1,5 +1,5 @@
 (function () {
-  const LIST = [['light', 'Light', '#f4f5f8'], ['dark', 'Dark', '#12141a'], ['banana', 'Banana yellow', '#fff1a8'], ['ash', 'Ash', '#323339']];
+  const LIST = [['light', 'Light', '#f4f5f8'], ['dark', 'Dark', '#12141a'], ['banana', 'Banana yellow', '#fff1a8'], ['ash', 'Ash', '#323339'], ['sunset', 'Sunset', 'linear-gradient(135deg,#440556,#5a3806)']];
   const KEY = 'kartz.theme', root = document.documentElement;
   const valid = t => LIST.some(x => x[0] === t) ? t : 'dark';
   const read = () => { try { return valid(JSON.parse(localStorage.getItem(KEY))); } catch { return 'dark'; } };
@@ -70,9 +70,17 @@
     + '--tnB:#e1e8fb;--tsB:#f5e0f2;--twB:#dcefd2;--tcB:#fbe2b8;--tagB:#f6ecc0;--tagF:#5a4f2a;--tleft:#8a7d48;--tleftline:#e0cf85;--tchipon:rgba(208,51,106,.13);--tchipink:#9c1038}'
     + ':root:is([data-theme="light"],[data-theme="banana"]) .rapp{box-shadow:0 12px 40px rgba(60,40,0,.1),inset 0 0 0 2px rgba(208,51,106,.45)}'
     + ':root:is([data-theme="light"],[data-theme="banana"]) .hlc{color:color-mix(in srgb,var(--hl) 50%,#000)!important}'
-    + '.rgo.pink,.rgo.danger{color:#fff}';
+    + '.rgo.pink,.rgo.danger{color:#fff}'
+    + 'html:root[data-theme="sunset"]{--bg:#3a0a52;--panel:rgba(22,6,34,.62);--ink:#f4ecf8;--muted:#cdb6d6;--line:rgba(255,255,255,.13);--accent:#d9a3ff;--ok:#7ee2a8;--warn:#ffc078;--bad:#ff8a8a;--okbg:rgba(60,140,90,.25);--warnbg:rgba(160,100,20,.25);--badbg:rgba(160,40,60,.25);'
+    + '--card:rgba(22,6,34,.62);--dim:#cdb6d6;--head:rgba(30,8,44,.7);--acc:#d9a3ff;color-scheme:dark;'
+    + '--tbg:rgba(22,6,34,.6);--thead:#2a0c3a;--tcell:#1e0a2b;--tink:#f4ecf8;--tdim:240 228 248;--tchipon:rgba(217,163,255,.22);--tchipink:#f4ecf8}'
+    + 'html:root[data-theme="sunset"]:not([data-framed]) body{background:url(art/palms-right.png) right bottom/auto 70vh no-repeat fixed,url(art/palms-left.png) left bottom/auto 47.5vh no-repeat fixed,linear-gradient(to bottom right,#2b0a55 0%,#440556 30%,#531a42 55%,#5b2a26 78%,#5a3806 100%) fixed;min-height:100vh}'
+    + 'html:root[data-theme="sunset"][data-framed] body{background:transparent}'
+    + 'html:root[data-theme="sunset"] :is(.rapp,.events,.card,.hcard,.frostframe){backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}'
+    + 'html:root[data-theme="sunset"] .thmenu{background:#2a0c3c}';
   document.head.appendChild(css);
   root.dataset.theme = read();
+  try { if (window.top !== window) root.dataset.framed = ''; } catch { root.dataset.framed = ''; }
   addEventListener('storage', e => { if (e.key === KEY) apply(read()); });
   window.Theme = { mount };
 })();
