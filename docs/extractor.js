@@ -1,7 +1,7 @@
 (function () {
   'use strict';
   if (!/(^|\.)topwargame\.com$/.test(location.hostname)) {
-    var site = 'https://2698-tw.github.io/activity-tracking/';
+    var site = 'https://s2698.github.io/';
     if (!window.open(site, '_blank')) location.href = site;
     return;
   }
@@ -41,7 +41,7 @@
     var box = document.createElement('div');
     box.id = 'x2698pw';
     box.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none';
-    if (!document.getElementById('x2698font')) { var fs = document.createElement('style'); fs.id = 'x2698font'; fs.textContent = "@font-face{font-family:x2698selawik;font-weight:400;font-display:swap;src:url(https://2698-tw.github.io/activity-tracking/fonts/selawik-400.woff2) format('woff2')}" + "@font-face{font-family:x2698selawik;font-weight:600;font-display:swap;src:url(https://2698-tw.github.io/activity-tracking/fonts/selawik-600.woff2) format('woff2')}" + "@font-face{font-family:x2698selawik;font-weight:700 900;font-display:swap;src:url(https://2698-tw.github.io/activity-tracking/fonts/selawik-700.woff2) format('woff2')}"; (document.head || document.documentElement).appendChild(fs); }
+    if (!document.getElementById('x2698font')) { var fs = document.createElement('style'); fs.id = 'x2698font'; fs.textContent = "@font-face{font-family:x2698selawik;font-weight:400;font-display:swap;src:url(https://s2698.github.io/fonts/selawik-400.woff2) format('woff2')}" + "@font-face{font-family:x2698selawik;font-weight:600;font-display:swap;src:url(https://s2698.github.io/fonts/selawik-600.woff2) format('woff2')}" + "@font-face{font-family:x2698selawik;font-weight:700 900;font-display:swap;src:url(https://s2698.github.io/fonts/selawik-700.woff2) format('woff2')}"; (document.head || document.documentElement).appendChild(fs); }
     var root = box.attachShadow({ mode: 'open' });
     root.innerHTML = '<style>' +
       '*{box-sizing:border-box}' +
@@ -69,7 +69,7 @@
       '.pwgo:active{transform:scale(.98)}.pwgo[disabled]{opacity:.6;cursor:default}' +
       '.pwrem{display:flex;align-items:center;justify-content:center;gap:8px;margin:10px 0 2px;color:rgba(235,235,245,.6);font-size:12.5px;cursor:pointer;user-select:none}.pwrem input{accent-color:#e0457b}' +
       '</style>' +
-      '<div class="app"><div class="top"><img class="logo" alt="" src="https://2698-tw.github.io/activity-tracking/icon.png"><b>2698 Data Extractor</b>' +
+      '<div class="app"><div class="top"><img class="logo" alt="" src="https://s2698.github.io/icon.png"><b>2698 Data Extractor</b>' +
         '<button class="x" id="close" title="Close">×</button></div>' +
       '<div class="pw"><div class="pwic"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div>' +
         '<h2 id="pwT"></h2><p class="pwp" id="pwP" hidden></p>' +
