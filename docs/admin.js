@@ -47,7 +47,8 @@ window.Admin = (function () {
   };
   const RULE_OPS = { num: [['ge', 'at least'], ['le', 'at most'], ['eq', 'exactly'], ['bt', 'between']], opt: [['is', 'is'], ['not', 'is not']], text: [['has', 'contains'], ['is', 'is']] };
   const SHEET_NAMES = { fame: 'Fame (bookmark Send)', kartz: 'Kartz ranking (Send on the Kartz page)', cp: 'Base CP (Alliance Rosters, RawData-CP)', ranking: 'Whitebeard ranking (bookmark Send)', snowtrain: 'Snow Train (bookmark Send)', energytower: 'Energy Tower (bookmark Send)', mammoth: 'Mammoth Assault (bookmark Send)', neutral: 'Neutral City (bookmark Send)', steel: 'Steel Rush enemy marches (bookmark Read)' };
-  const HOME_NAMES = { kartz: 'Kartz scores', cp: 'Alliance roster', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault', frost: 'Frost Crystal Contest', nc: 'Neutral City', player: 'Player Summary', sd: 'Storm Duel' };
+  const HOME_SECS = { general: 'General', now: 'Happening now', older: 'Older' };
+  const HOME_NAMES = { kartz: 'Kartz scores', cp: 'Alliance roster', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault', frost: 'Frost Crystal Contest', nc: 'Neutral City', player: 'Player Summary', sd: 'Storm Duel', practice: 'Practice Round' };
   const BOOKMARK_NAMES = { members: 'Alliance members', wb: 'Whitebeard ranking', st: 'Snow Train', et: 'Energy Tower', ma: 'Mammoth Assault', ev: 'Events (home page)', frost: 'Frost Crystal Contest', nc: 'Neutral City', sd: 'Storm Duel', steel: 'Steel Rush (enemy marches)' };
   const CARD_NAMES = { wb: 'Whitebeard', st: 'Snow Train', ro: 'Alliance roster', et: 'Energy Tower', ma: 'Mammoth Assault' };
 
@@ -217,17 +218,19 @@ window.Admin = (function () {
     const prev = new Map(), listed = new Set(h.cards.map(c => c.id));
     for (const c of h.cards) {
       const el = document.querySelector(`.hcard[data-card="${c.id}"]`); if (!el) continue;
+      const to = c.sec && document.querySelector(`#home .hsec[data-sec="${c.sec}"] .hlist`);
+      if (to && el.parentElement !== to) to.appendChild(el);
       const box = el.parentElement, p = prev.get(box), at = p ? p.nextElementSibling : [...box.children].find(x => listed.has(x.dataset.card));
       if (at !== el) box.insertBefore(el, at);
       prev.set(box, el);
       if (el.hidden !== !c.show) el.hidden = !c.show;
-      const b = el.querySelector('b'); if (b.textContent !== c.title) b.textContent = c.title;
+      const b = el.querySelector('.sscin b') || el.querySelector('b'); if (b.textContent !== c.title) b.textContent = c.title;
       for (const o of document.querySelectorAll(`.rsheet[data-sheet="${c.id}"]`)) {
         if (o.getAttribute('href') !== c.link) o.href = c.link; if (o.hidden !== !c.link) o.hidden = !c.link;
       }
     }
     for (const sec of document.querySelectorAll('#home .hsec')) {
-      const cards = [...sec.querySelectorAll('.hcard')], none = cards.length > 0 && cards.every(x => x.hidden);
+      const none = [...sec.querySelectorAll('.hcard')].every(x => x.hidden);
       if (sec.hidden !== none) sec.hidden = none;
     }
     const root = document.documentElement, home = document.getElementById('home');
@@ -461,9 +464,9 @@ window.Admin = (function () {
     const H = A.settings.home;
     view.innerHTML = `<div class="apanel"><h2>Home page</h2><div class="alist">
         <div class="ali"><span class="alab">Site title</span><input type="text" data-h="title" value="${esc(H.title)}" maxlength="60"></div></div></div>
-      <div class="apanel"><h2>Cards</h2><p class="ahint">Show or hide, the title, the sheet link (the Sheet pill at the top right of the section), and the order.</p><div class="alist">
+      <div class="apanel"><h2>Cards</h2><p class="ahint">Show or hide, the title, the section, the sheet link (the Sheet pill at the top right of the section), and the order.</p><div class="alist">
       ${H.cards.map((x, i) => `<div class="ali wrapline"><input type="checkbox" data-hs="${i}" ${x.show ? 'checked' : ''} aria-label="Show on the home page">
-        <input type="text" data-ht="${i}" value="${esc(x.title)}" maxlength="40" class="short">
+        <input type="text" data-ht="${i}" value="${esc(x.title)}" maxlength="40" class="short">${x.sec ? `<select data-hsec="${i}" aria-label="Section">${Object.entries(HOME_SECS).map(([k, l]) => `<option value="${k}" ${x.sec === k ? 'selected' : ''}>${l}</option>`).join('')}</select>` : ''}
         <input type="url" data-hl="${i}" value="${esc(x.link)}" class="long">${arrows('h', i, H.cards.length)}</div>`).join('')}</div>
       <p class="ahint" style="margin-top:12px"><a href="./">Open the home page ↗</a></p></div>
       <div class="apanel"><h2>Bookmark</h2><p class="ahint">The sections the 2698 Data Extractor bookmark shows in the game. A hidden one keeps its saved reads and comes back when ticked again; it takes effect the next time the bookmark is opened.</p><div class="alist">
@@ -474,6 +477,7 @@ window.Admin = (function () {
       if (d.h === 'title') { if (!v) { t.value = H.title; return; } return save(n => { n.home.title = v; }, { what: 'Home · site title', from: H.title, to: v }); }
       if (d.hs) { const x = H.cards[d.hs]; return save(n => { n.home.cards[d.hs].show = t.checked; }, { what: `Home · ${x.title} card`, from: x.show ? 'shown' : 'hidden', to: t.checked ? 'shown' : 'hidden' }); }
       if (d.ht) { const x = H.cards[d.ht]; if (!v) { t.value = x.title; return; } return save(n => { n.home.cards[d.ht].title = v; }, { what: `Home · ${HOME_NAMES[x.id]} card title`, from: x.title, to: v }); }
+      if (d.hsec) { const x = H.cards[d.hsec]; return save(n => { n.home.cards[d.hsec].sec = t.value; }, { what: `Home · ${x.title} section`, from: HOME_SECS[x.sec], to: HOME_SECS[t.value] }); }
       if (d.hl) { const x = H.cards[d.hl]; if (!/^https:\/\/\S+$/.test(v)) { toast('The link must start with https://'); t.value = x.link; return; } return save(n => { n.home.cards[d.hl].link = v; }, { what: `Home · ${x.title} link`, from: x.link, to: v }); }
     };
     view.onclick = e => {
